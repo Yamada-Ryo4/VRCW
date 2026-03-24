@@ -3950,15 +3950,24 @@ async function initWorldsTab() {
 // Bug#3 fix: world favorites - also add "我上传的世界" and handle VRC+ worlds1
 async function loadWorldFavGroups() {
   try {
-    const r = await apiCall('/api/vrc/favorite/groups?type=world&n=10');
-    if (!r.ok) return;
-    worldFavGroups = await r.json() || [];
+    // Fetch both standard world groups AND VRC+ exclusive groups in parallel
+    const [r1, r2] = await Promise.all([
+      apiCall('/api/vrc/favorite/groups?type=world&n=50'),
+      apiCall('/api/vrc/favorite/groups?type=vrcPlusWorld&n=50')
+    ]);
+    const standard  = r1.ok ? (await r1.json() || []) : [];
+    const vrcPlus   = r2.ok ? (await r2.json() || []) : [];
+    worldFavGroups  = [...standard, ...vrcPlus];
+
     const container = document.getElementById('worldFavGroupList');
     if (!container) return;
 
-    let html = worldFavGroups.map(g =>
-      makeCatBtn(`⭐ ${escHtml(g.displayName || g.name)}`, `switchWorldCategory('fav_${g.name}')`, `worldCatFav_${g.name}`)
-    ).join('');
+    const vrcPlusNames = new Set(vrcPlus.map(g => g.name));
+    let html = worldFavGroups.map(g => {
+      const isVrcPlus = vrcPlusNames.has(g.name);
+      const icon = isVrcPlus ? '💎' : '⭐';
+      return makeCatBtn(`${icon} ${escHtml(g.displayName || g.name)}`, `switchWorldCategory('fav_${g.name}')`, `worldCatFav_${g.name}`);
+    }).join('');
 
     // Add "我上传的世界" button
     html += makeCatBtn('📤 我上传的世界', "switchWorldCategory('mine')", 'worldCatMine');
@@ -4004,11 +4013,13 @@ async function fetchWorlds(category, forceRefresh = false) {
     let worlds = [];
     if (category.startsWith('fav_')) {
       const groupName = category.slice(4);
+      // VRC+ exclusive groups have names starting with "vrcPlusWorlds"
+      const isVrcPlusGroup = groupName.startsWith('vrcPlusWorlds');
+      const favType = isVrcPlusGroup ? 'vrcPlusWorld' : 'world';
       worldFavoriteIdMap.clear();
       let offset = 0;
       while (true) {
-        // Bug#3 fix: favorites returns {id: fvrt_xxx, favoriteId: "wrld_xxx", type, tag}
-        const r = await apiCall(`/api/vrc/favorites?type=world&tag=${encodeURIComponent(groupName)}&n=100&offset=${offset}`);
+        const r = await apiCall(`/api/vrc/favorites?type=${favType}&tag=${encodeURIComponent(groupName)}&n=100&offset=${offset}`);
         if (!r.ok) break;
         const batch = await r.json();
         if (!batch || !batch.length) break;
