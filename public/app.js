@@ -269,6 +269,8 @@ function setLang(lang) {
 }
 
 // ── API Helper ──
+let currentTabAbortController = null;
+
 async function apiCall(path, options = {}) {
   const headers = options.headers || {};
   if (vrcAuth) headers["X-VRC-Auth"] = vrcAuth;
@@ -277,14 +279,28 @@ async function apiCall(path, options = {}) {
     options.body = JSON.stringify(options.json);
     delete options.json;
   }
-  const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  // Update auth from response
-  const newAuth = resp.headers.get("X-VRC-Auth");
-  if (newAuth) {
-    vrcAuth = newAuth;
-    localStorage.setItem("vrc_auth", vrcAuth);
+  
+  // Attach current tab's abort signal unless explicitly overridden
+  if (!options.signal && !options.noAbort && currentTabAbortController) {
+    options.signal = currentTabAbortController.signal;
   }
-  return resp;
+  
+  try {
+    const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    // Update auth from response
+    const newAuth = resp.headers.get("X-VRC-Auth");
+    if (newAuth) {
+      vrcAuth = newAuth;
+      localStorage.setItem("vrc_auth", vrcAuth);
+    }
+    return resp;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      // Return a dummy failed response for aborted requests
+      return { ok: false, status: 499, json: async () => ({ error: 'Aborted' }), text: async () => 'Aborted' };
+    }
+    throw err;
+  }
 }
 
 // ── Polled Asynchronous Image Loading ──
@@ -646,6 +662,10 @@ function renderFavoriteGroupButtons() {
 // ── Tabs ──
 function switchTab(tab) {
   if (window.innerWidth <= 768) toggleSidebar(false);
+  
+  if (currentTabAbortController) currentTabAbortController.abort();
+  currentTabAbortController = new AbortController();
+  
   // Legacy tab-btn support
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
   document.querySelector(`.tab-btn[onclick*="${tab}"]`)?.classList.add("active");
