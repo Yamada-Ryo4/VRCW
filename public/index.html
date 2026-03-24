@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VRCW</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- ── Login Page ── -->
+    <div id="loginPage" class="login-container">
+        <div class="login-card">
+            <h2>VRCW</h2>
+            <p class="subtitle" data-i18n="loginSubtitle">Sign in with your VRChat account</p>
+            <div class="form-group">
+                <label data-i18n="labelUser">Username or Email</label>
+                <input type="text" id="username" class="input-field" placeholder="Enter your username">
+            </div>
+            <div class="form-group">
+                <label data-i18n="labelPass">Password</label>
+                <input type="password" id="password" class="input-field" placeholder="Enter your password">
+            </div>
+            <button onclick="doLogin()" id="btnLogin" class="btn btn-primary btn-block" data-i18n="btnSignIn">Sign In</button>
+            <div id="savedAccountsContainer" class="saved-accounts"></div>
+            <div id="login-error" class="login-error"></div>
+            <div id="tfa-section" class="tfa-section">
+                <p data-i18n="tfa2faRequired">Two-factor authentication required</p>
+                <div class="form-group">
+                    <label data-i18n="labelCode">Verification Code</label>
+                    <input type="text" id="tfaCode" class="input-field" placeholder="Enter 2FA code">
+                </div>
+                <button onclick="doVerify2FA()" class="btn btn-primary btn-block" data-i18n="btnVerify">Verify</button>
+            </div>
+            <div style="text-align:center;margin-top:16px;">
+                <div class="lang-switch">
+                    <button class="lang-btn" onclick="setLang('en')">EN</button>
+                    <button class="lang-btn active" onclick="setLang('zh')">中文</button>
+                    <button class="lang-btn" onclick="setLang('ja')">日本語</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Main App ── -->
+    <div id="mainApp" class="hidden">
+        <!-- Left Global Nav -->
+        <div class="app-layout">
+            <!-- Global left nav sidebar -->
+            <nav class="global-nav" id="globalNav">
+                <div class="global-nav-header">
+                    <div class="nav-logo">
+                        <span class="app-title">VRCW</span>
+                        <span class="app-version">Workers Edition</span>
+                    </div>
+                    <button class="nav-collapse-btn" onclick="toggleGlobalNav()" title="收起">&#8249;</button>
+                </div>
+                <div class="global-nav-items">
+                    <button class="nav-item active" onclick="switchTab('download')" id="navItemDownload">
+                        <span class="nav-icon">🖼️</span><span class="nav-label">模型</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('friends')" id="navItemFriends">
+                        <span class="nav-icon">👥</span><span class="nav-label">好友</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('worlds')" id="navItemWorlds">
+                        <span class="nav-icon">🌍</span><span class="nav-label">世界</span>
+                    </button>
+                    <div style="height:1px;background:var(--border);margin:4px 0;"></div>
+                    <button class="nav-item" onclick="switchTab('groups')" id="navItemGroups">
+                        <span class="nav-icon">🏠</span><span class="nav-label">群组</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('upload')" id="navItemUpload">
+                        <span class="nav-icon">⬆️</span><span class="nav-label">上传</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('assets')" id="navItemAssets">
+                        <span class="nav-icon">💰</span><span class="nav-label">资产</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('search')" id="navItemSearch">
+                        <span class="nav-icon">🔍</span><span class="nav-label">搜索</span>
+                    </button>
+                </div>
+                <div class="global-nav-footer">
+                    <div class="lang-switch" style="flex-direction:column;background:transparent;gap:2px;">
+                        <button class="lang-btn" onclick="setLang('en')">EN</button>
+                        <button class="lang-btn active" onclick="setLang('zh')">中文</button>
+                        <button class="lang-btn" onclick="setLang('ja')">日本語</button>
+                    </div>
+                    <button onclick="doLogout()" class="btn btn-danger btn-block" style="margin-top:8px;font-size:0.75rem;" data-i18n="btnSignOut">退出登录</button>
+                </div>
+            </nav>
+            <!-- Collapsed nav (icon only) -->
+            <div class="global-nav-collapsed hidden" id="globalNavCollapsed">
+                <button class="nav-collapse-btn" onclick="toggleGlobalNav()" title="展开" style="margin:8px auto;">&#8250;</button>
+                <button class="nav-item-icon" onclick="switchTab('download')" id="navIconDownload" title="模型">🖼️</button>
+                <button class="nav-item-icon" onclick="switchTab('friends')" id="navIconFriends" title="好友">👥</button>
+                <button class="nav-item-icon" onclick="switchTab('worlds')" id="navIconWorlds" title="世界">🌍</button>
+                <hr style="width:70%;border-color:var(--border);margin:2px 0;">
+                <button class="nav-item-icon" onclick="switchTab('groups')" id="navIconGroups" title="群组">🏠</button>
+                <button class="nav-item-icon" onclick="switchTab('upload')" id="navIconUpload" title="上传">⬆️</button>
+                <button class="nav-item-icon" onclick="switchTab('assets')" id="navIconAssets" title="资产">💰</button>
+                <button class="nav-item-icon" onclick="switchTab('search')" id="navIconSearch" title="搜索">🔍</button>
+                <button class="nav-item-icon" onclick="doLogout()" title="退出" style="margin-top:auto;color:var(--error);">🚪</button>
+            </div>
+
+        <div class="main-content">
+            <!-- ── Download Panel ── -->
+            <div id="downloadPanel" class="download-panel active" style="position:relative;">
+                <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
+                <div class="sidebar" id="appSidebar">
+                    <div class="sidebar-section">
+                        <h3 data-i18n="category">Category</h3>
+                        <div class="btn-group">
+                            <button class="btn btn-primary btn-block active cat-btn" onclick="switchCategory('mine')" id="cat-mine" data-i18n="catMine">我的模型</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchCategory('avatars1')" id="cat-avatars1">Favorites 1</button>
+                            <div id="favGroupBtns"></div>
+                        </div>
+                    </div>
+                    <div class="sidebar-section">
+                        <h3 data-i18n="statTotal">Stats</h3>
+                        <div class="stats-bar">
+                            <span><i class="dot dot-total"></i> <span data-i18n="statTotal">Total</span>: <span
+                                    id="statTotal">0</span></span>
+                            <span><i class="dot dot-selected"></i> <span data-i18n="statSelected">Selected</span>: <span
+                                    id="statSelected">0</span></span>
+                        </div>
+                    </div>
+                    <div class="sidebar-section">
+                        <h3 data-i18n="actions">Actions</h3>
+                        <div class="btn-group">
+                            <button onclick="selectAll()" class="btn btn-secondary btn-block"
+                                id="btnSelectAll" data-i18n="btnSelectAll">Select All</button>
+                            <button onclick="cleanInvalidFavorites()" id="btnCleanFavs" class="btn btn-warning btn-block hidden">清理失效模型</button>
+                            <button onclick="unfavoriteSelected()" id="btnUnfavoriteSelected" class="btn btn-danger-full btn-block hidden">取消选中收藏</button>
+                            <div class="save-dir-group" id="saveDirGroup">
+                                <button onclick="pickSaveDir()" class="btn btn-secondary btn-block"
+                                    data-i18n="btnPickDir">Choose Save Location</button>
+                                <div id="saveDirLabel" class="save-dir-label" style="display:none;"></div>
+                                <button onclick="clearSaveDir()" class="btn-clear-dir" title="Clear" style="display:none;" id="clearDirBtn">×</button>
+                            </div>
+                            <button onclick="downloadSelected()" class="btn btn-primary btn-block"
+                                data-i18n="btnDownload">Download Selected</button>
+                            <button onclick="fetchAvatars(true)" class="btn btn-secondary btn-block"
+                                data-i18n="btnRefresh">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;">
+                        <h3 data-i18n="console">Console</h3>
+                        <div id="logConsole" class="log-console"><span class="log-info" data-i18n="ready">Ready.</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid-area" style="display: flex; flex-direction: column; overflow: hidden;">
+                    <!-- Filter Bar -->
+                    <div class="filter-bar" style="display: flex; gap: 10px; padding: 16px 24px 0 24px; flex-shrink: 0;">
+                        <input type="text" id="searchInput" class="input-field" data-i18n-placeholder="searchPlaceholder" placeholder="Search name, desc, tags..." oninput="applyFilters()" style="flex: 1;">
+                        <select id="filterStatus" class="input-field" onchange="applyFilters()" style="width: 130px;">
+                            <option value="all" data-i18n="filterAllStatus">All Status</option>
+                            <option value="public" data-i18n="filterPublic">Public</option>
+                            <option value="private" data-i18n="filterPrivate">Private</option>
+                        </select>
+                        <select id="filterPlatform" class="input-field" onchange="applyFilters()" style="width: 160px;">
+                            <option value="all">所有平台</option>
+                            <option value="pc">含 PC</option>
+                            <option value="pc-quest">含 PC + Quest</option>
+                            <option value="pc-quest-apple">PC + Quest + Apple</option>
+                        </select>
+                    </div>
+                    <div id="avatarGrid" class="avatar-grid" style="flex: 1; overflow-y: auto;"></div>
+                </div>
+            </div>
+
+            <!-- ── Upload Panel ── -->
+            <div id="uploadPanel" class="upload-panel">
+                <div class="upload-area">
+                    <h3 style="margin-bottom:16px;" data-i18n="tabUpload">Upload</h3>
+                    <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.4);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;">
+                        <span style="font-size:1.4em;flex-shrink:0;">🚫</span>
+                        <div>
+                            <div style="color:#ef4444;font-weight:600;font-size:0.9em;margin-bottom:4px;">上传功能不可用 / Upload Unavailable</div>
+                            <div style="color:rgba(255,255,255,0.5);font-size:0.78em;line-height:1.5;">由于 VRChat 的限制，.vrca 文件无法通过网页直接上传。<br>Due to VRChat restrictions, .vrca files cannot be uploaded directly via web.</div>
+                        </div>
+                    </div>
+                    <div class="upload-form">
+                        <div class="form-group">
+                            <label data-i18n="uploadMode">Upload Mode</label>
+                            <div class="radio-group">
+                                <div class="radio-option">
+                                    <input type="radio" name="uploadMode" id="modeNew" value="new" checked>
+                                    <label for="modeNew" data-i18n="modeNew">Create New</label>
+                                </div>
+                                <div class="radio-option">
+                                    <input type="radio" name="uploadMode" id="modeUpdate" value="update">
+                                    <label for="modeUpdate" data-i18n="modeUpdate">Update Existing</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="file-drop-zone" id="dropZone"
+                            onclick="document.getElementById('fileInput').click()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                            </svg>
+                            <div class="drop-text" data-i18n="dropText">Click or drag .vrca files here</div>
+                            <div class="drop-hint" data-i18n="dropHint">Max 500 MB per file</div>
+                        </div>
+                        <input type="file" id="fileInput" accept=".vrca" multiple hidden>
+
+                        <div id="file-list-container" class="hidden">
+                            <div id="file-list" class="file-list"></div>
+                        </div>
+
+                        <div id="newFields">
+                            <div class="form-group">
+                                <label data-i18n="avatarName">Avatar Name</label>
+                                <input type="text" id="avatarName" class="input-field" placeholder="Enter avatar name">
+                            </div>
+                            <div class="form-group">
+                                <label>Thumbnail Image (optional)</label>
+                                <input type="file" id="avatarImage" class="input-field"
+                                    accept="image/png,image/jpeg,image/webp">
+                                <small style="color:#888;font-size:0.8em;">Leave empty to use existing avatar
+                                    image</small>
+                            </div>
+                        </div>
+
+                        <div id="updateFields" class="hidden">
+                            <div class="form-group">
+                                <label data-i18n="selectAvatar">Select Avatar to Update</label>
+                                <select id="avatarSelect" class="input-field">
+                                    <option value="">-- Select --</option>
+                                </select>
+                            </div>
+                        </div>
+
+
+
+                        <div id="upload-progress" class="progress-bar-container">
+                            <div class="progress-bar-track">
+                                <div id="upload-progress-fill" class="progress-bar-fill"></div>
+                            </div>
+                            <div id="upload-progress-text" class="progress-text"></div>
+                        </div>
+                        <button onclick="startUpload()" id="btnUpload" class="btn btn-primary btn-block" disabled
+                            data-i18n="btnUpload">Upload</button>
+                        <div id="upload-status" class="upload-status"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Search Panel (avtrDB) ── -->
+            <div id="searchPanel" class="upload-panel">
+                <div class="upload-area" style="max-width:100%;padding:0;">
+                    <!-- Search bar -->
+                    <div style="display:flex;gap:10px;padding:20px 24px 0;flex-shrink:0;">
+                        <select id="searchCategory" class="input-field" style="width:120px;" onchange="doAvtrdbSearch()">
+                            <option value="avatars">模型 (Avatars)</option>
+                            <option value="users">玩家 (Users)</option>
+                            <option value="worlds">世界 (Worlds)</option>
+                            <option value="groups">群组 (Groups)</option>
+                        </select>
+                        <input type="text" id="avtrdbSearch" class="input-field"
+                            placeholder="输入关键词进行搜索..."
+                            style="flex:1;" oninput="onAvtrdbInput()" onkeydown="if(event.key==='Enter')doAvtrdbSearch()">
+                        <select id="avtrdbPlatform" class="input-field" style="width:130px;" onchange="doAvtrdbSearch()">
+                            <option value="">所有平台</option>
+                            <option value="pc">PC</option>
+                            <option value="android">Quest</option>
+                            <option value="ios">Apple</option>
+                            <option value="pc+android">PC + Quest</option>
+                            <option value="pc+android+ios">PC + Quest + Apple</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="doAvtrdbSearch()">搜索</button>
+                    </div>
+                    <!-- Stats -->
+                    <div id="avtrdbStats" style="padding:8px 24px;font-size:0.8em;color:rgba(255,255,255,0.4);"></div>
+                    <!-- Results grid -->
+                    <div id="avtrdbGrid" class="avatar-grid" style="flex:1;overflow-y:auto;padding:0 16px 16px;"></div>
+                    <!-- Load more -->
+                    <div style="text-align:center;padding:12px;" id="avtrdbLoadMoreWrap">
+                        <button id="avtrdbLoadMore" class="btn btn-secondary" onclick="avtrdbLoadMore()" style="display:none;">
+                            加载更多 / Load More
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Friends Panel ── -->
+            <div id="friendsPanel" class="download-panel upload-panel">
+                <!-- Sidebar -->
+                <div class="sidebar">
+                    <div class="sidebar-section">
+                        <h3>我的资料</h3>
+                        <div id="sidebarMyMiniProfile" class="sidebar-mini-profile" onclick="fetchMyProfile()">
+                          <div class="mini-dot" style="background:#475569"></div>
+                          <div style="flex:1;min-width:0;">
+                            <div class="mini-name">加载中...</div>
+                          </div>
+                        </div>
+                        <div class="category-list" id="friendCategoryList">
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('myprofile')" id="friendCatMyprofile" style="width:100%;display:none;">👤 完整资料</button>
+                        </div>
+                    </div>
+                    <div class="sidebar-section">
+                        <h3>好友收藏夹</h3>
+                        <div class="category-list" id="friendFavGroupList">
+                            <div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">加载中...</div>
+                        </div>
+                    </div>
+                    <div class="sidebar-section">
+                        <h3>全部好友</h3>
+                        <div class="category-list">
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('all')" id="friendCatAll" style="width:100%;">👥 所有好友</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('online')" id="friendCatOnline" style="width:100%;">🟢 仅在线</button>
+                        </div>
+                    </div>
+                    <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;">
+                        <h3>控制台</h3>
+                        <div id="friendConsole" class="log-console"><span class="log-info">就绪。</span></div>
+                    </div>
+                </div>
+                <!-- Main content -->
+                <div class="grid-area" style="display:flex;flex-direction:column;overflow:hidden;">
+                    <!-- My Profile view -->
+                    <div id="friendMyProfileView" style="flex:1;overflow-y:auto;padding:20px 24px;">
+                        <div style="text-align:center;padding:60px;color:rgba(255,255,255,0.3);">
+                            登录后点击「我的资料」加载
+                        </div>
+                    </div>
+                    <!-- Friend list view -->
+                    <div id="friendListView" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+                        <!-- Toolbar -->
+                        <div style="display:flex;gap:8px;padding:16px 24px 0;flex-shrink:0;flex-wrap:wrap;align-items:center;">
+                            <input type="text" id="friendSearch" class="input-field"
+                                placeholder="搜索好友 / Search..." style="flex:1;min-width:140px;" oninput="filterFriends()">
+                            <select id="friendSortBy" class="input-field" style="width:130px;" onchange="filterFriends()">
+                                <option value="status">在线优先</option>
+                                <option value="name_asc">名字 A→Z</option>
+                                <option value="name_desc">名字 Z→A</option>
+                                <option value="trust">信任等级</option>
+                                <option value="last_active">最近活跃</option>
+                            </select>
+                            <button class="btn btn-secondary" onclick="fetchCurrentFriendCategory(true)">🔄 刷新</button>
+                        </div>
+                        <div id="friendStats" style="padding:6px 24px;font-size:0.8em;color:rgba(255,255,255,0.4);flex-shrink:0;"></div>
+                        <div id="friendList" style="padding:0 16px 16px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Worlds Panel ── -->
+            <div id="worldsPanel" class="download-panel upload-panel">
+                <!-- Sidebar -->
+                <div class="sidebar">
+                    <div class="sidebar-section">
+                        <h3>收藏夹</h3>
+                        <div class="category-list" id="worldFavGroupList">
+                            <div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">加载中...</div>
+                        </div>
+                    </div>
+                    <div class="sidebar-section">
+                        <h3>发现</h3>
+                        <div class="category-list">
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchWorldCategory('recent')" id="worldCatRecent" style="width:100%;">🕐 最近访问</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchWorldCategory('active')" id="worldCatActive" style="width:100%;">🔥 热门世界</button>
+                        </div>
+                    </div>
+                    <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;">
+                        <h3>控制台</h3>
+                        <div id="worldConsole" class="log-console"><span class="log-info">就绪。</span></div>
+                    </div>
+                </div>
+                <!-- Main content -->
+                <div class="grid-area" style="display:flex;flex-direction:column;overflow:hidden;">
+                    <div style="display:flex;gap:8px;padding:16px 24px 0;flex-shrink:0;flex-wrap:wrap;align-items:center;">
+                        <input type="text" id="worldSearch" class="input-field"
+                            placeholder="搜索世界 / Search worlds..." style="flex:1;min-width:160px;" oninput="filterWorlds()">
+                        <button class="btn btn-secondary" onclick="fetchWorlds(currentWorldCategory, true)">🔄 刷新</button>
+                    </div>
+                    <div id="worldStats" style="padding:6px 24px;font-size:0.8em;color:rgba(255,255,255,0.4);flex-shrink:0;"></div>
+                    <div id="worldGrid" class="avatar-grid" style="flex:1;overflow-y:auto;padding:0 16px 16px;"></div>
+                </div>
+            </div>
+
+            <!-- ── Groups Panel ── -->
+            <div id="groupsPanel" class="download-panel upload-panel">
+                <div class="sidebar">
+                    <div class="sidebar-section">
+                        <h3>群组 (Groups)</h3>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-block cat-btn active btn-primary" onclick="switchGroupsCategory('mine')" id="gpCatMine">🏠 我创建的</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchGroupsCategory('joined')" id="gpCatJoined">📋 已加入的</button>
+                        </div>
+                    </div>
+                    <div class="sidebar-section" style="margin-top:12px;">
+                        <h3>发现</h3>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchGroupsCategory('search')" id="gpCatSearch">🔍 搜索群组</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid-area" style="padding:20px;overflow-y:auto;" id="groupsContentArea">
+                    <h2 style="font-size:1.3rem;font-weight:600;margin-bottom:16px;">🏠 我的群组</h2>
+                    <p style="color:var(--text-muted);font-size:0.85rem;">加载中...</p>
+                </div>
+            </div>
+
+            <!-- ── Assets & Economy Panel ── -->
+            <div id="assetsPanel" class="download-panel upload-panel">
+                <div class="sidebar">
+                    <div class="sidebar-section">
+                        <h3>💰 经济 (Economy)</h3>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('balance')" id="cat-assets-balance">👛 钱包余额</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('store')" id="cat-assets-store">🏪 商店浏览</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('tx')" id="cat-assets-tx">💸 交易记录</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('sub')" id="cat-assets-sub">⭐ VRC+ 订阅</button>
+                        </div>
+                    </div>
+                    <div class="sidebar-section" style="margin-top:12px;">
+                        <h3>🧳 库存 (Inventory)</h3>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('gallery')" id="cat-assets-gallery">🖼️ VRC+ 相册</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('prints')" id="cat-assets-prints">🎞️ 拍立得照片</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('emoji')" id="cat-assets-emoji">😊 表情与贴纸</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid-area" style="padding:20px;overflow-y:auto;" id="assetsContentArea">
+                    <h2 style="font-size:1.4rem;font-weight:600;margin-bottom:16px;">💰 资产与经济</h2>
+                    <p style="color:var(--text-muted);font-size:0.85rem;">选择左侧菜单查看你的余额、商店、库存和订阅。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="friendProfileModal" class="modal hidden" onclick="if(event.target===this)closeFriendProfile()">
+        <div class="modal-content" style="max-width:680px;width:100%;padding:0;overflow:hidden;max-height:90vh;display:flex;flex-direction:column;">
+            <!-- Header band -->
+            <div style="position:relative;height:130px;overflow:hidden;background:var(--bg-secondary);flex-shrink:0;">
+                <img id="fpBannerBg" style="width:100%;height:100%;object-fit:cover;filter:brightness(0.5);display:block;" src="" alt="">
+                <div style="position:absolute;inset:0;background:linear-gradient(to top,var(--bg-primary) 0%,transparent 70%);"></div>
+                <button onclick="closeFriendProfile()" style="position:absolute;top:10px;right:12px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:1.1em;cursor:pointer;border-radius:6px;padding:4px 10px;">✕</button>
+                <!-- Avatar + current avatar thumb -->
+                <div id="fpAvatarWrap" style="position:absolute;bottom:-24px;left:20px;width:72px;height:72px;border-radius:50%;overflow:hidden;border:3px solid var(--bg-primary);background:var(--bg-card);">
+                    <img id="fpAvatar" style="width:100%;height:100%;object-fit:cover;" src="" alt="" onerror="this.parentElement.style.display='none'">
+                </div>
+                <div id="fpAvatarThumbWrap" style="position:absolute;bottom:-14px;right:20px;width:56px;height:56px;border-radius:8px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);" title="当前模型">
+                    <img id="fpAvatarThumb" style="width:100%;height:100%;object-fit:cover;" src="" alt="" onerror="this.parentElement.style.display='none'">
+                </div>
+            </div>
+            <!-- Name row -->
+            <div style="padding:32px 20px 0;flex-shrink:0;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+                    <span id="fpStatusDot" class="friend-status-dot" style="position:static;width:11px;height:11px;flex-shrink:0;"></span>
+                    <span id="fpName" style="font-size:1.15em;font-weight:700;color:var(--text-primary);"></span>
+                    <span id="fpVrcPlus" style="font-size:0.68em;background:rgba(167,139,250,0.2);color:#a78bfa;border:1px solid rgba(167,139,250,0.4);padding:2px 8px;border-radius:99px;font-weight:600;display:none;">VRC+</span>
+                    <span id="fpPronounsEl" style="font-size:0.72em;color:var(--text-muted);"></span>
+                    <span id="fpLangsEl" style="font-size:0.7em;color:var(--text-muted);margin-left:auto;"></span>
+                </div>
+                <div style="font-size:0.75em;color:var(--text-muted);margin-bottom:6px;" id="fpUsername"></div>
+                <!-- Trust + badges row -->
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <span id="fpTrustBadge" style="font-size:0.68em;font-weight:600;padding:3px 10px;border-radius:99px;"></span>
+                    <span id="fpAgeBadge" style="display:none;font-size:0.68em;background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3);padding:3px 10px;border-radius:99px;">18+</span>
+                    <span id="fpPlatformBadge" style="font-size:0.75em;color:var(--text-muted);"></span>
+                </div>
+                <!-- Showcase badges row -->
+                <div id="fpBadgesRow" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
+                <!-- Sub tabs -->
+                <div class="tab-nav" style="border-bottom:1px solid var(--border);">
+                    <button class="tab-btn active" id="fpTabInfo" onclick="switchFriendProfileTab('info')">信息</button>
+                    <button class="tab-btn" id="fpTabGroups" onclick="switchFriendProfileTab('groups')">群组</button>
+                    <button class="tab-btn" id="fpTabMutual" onclick="switchFriendProfileTab('mutual')">共同好友</button>
+                    <button class="tab-btn" id="fpTabWorlds" onclick="switchFriendProfileTab('worlds')">创建的世界</button>
+                    <button class="tab-btn" id="fpTabAvatars" onclick="switchFriendProfileTab('avatars')">创建的模型</button>
+                </div>
+            </div>
+            <!-- Tab content -->
+            <div style="overflow-y:auto;flex:1;padding:16px 20px;">
+                <!-- Info tab -->
+                <div id="fpInfoTab">
+                    <!-- Location -->
+                    <div id="fpLocationSection" style="margin-bottom:14px;display:none;">
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px;">当前位置</div>
+                        <div id="fpWorldInfo" style="font-size:0.82em;color:var(--text-secondary);"></div>
+                    </div>
+                    <!-- Status -->
+                    <div id="fpStatusSection" style="margin-bottom:14px;">
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">状态</div>
+                        <div id="fpStatusDesc" style="font-size:0.82em;color:var(--text-secondary);"></div>
+                    </div>
+                    <!-- Bio -->
+                    <div id="fpBioSection" style="margin-bottom:14px;display:none;">
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">个人简介</div>
+                        <div id="fpBio" style="font-size:0.8em;color:var(--text-secondary);white-space:pre-line;line-height:1.6;max-height:120px;overflow-y:auto;"></div>
+                    </div>
+                    <!-- Stats grid -->
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;" id="fpStatsGrid"></div>
+                    <!-- Player ID -->
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">玩家 ID</div>
+                    <div id="fpUserId" style="font-size:0.72em;color:var(--text-muted);font-family:monospace;display:flex;align-items:center;gap:6px;"></div>
+                </div>
+                <!-- Groups tab -->
+                <div id="fpGroupsTab" style="display:none;">
+                    <div id="fpGroupsList" style="display:flex;flex-direction:column;gap:6px;"></div>
+                </div>
+                <!-- Mutual Friends tab -->
+                <div id="fpMutualTab" style="display:none;">
+                    <div id="fpMutualList" style="padding:8px 0;"></div>
+                </div>
+                <!-- Worlds tab -->
+                <div id="fpWorldsTab" style="display:none;">
+                    <div id="fpWorldsList" class="avatar-grid"></div>
+                </div>
+                <!-- Avatars tab -->
+                <div id="fpAvatarsTab" style="display:none;">
+                    <div id="fpAvatarsList" class="avatar-grid"></div>
+                </div>
+            </div>
+            <!-- Action footer -->
+            <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;" id="fpActions"></div>
+        </div>
+    </div>
+
+    <!-- ── World Detail Modal ── -->
+    <div id="worldDetailModal" class="modal hidden" onclick="if(event.target===this)closeWorldDetail()">
+        <div class="modal-content" style="max-width:600px;width:100%;padding:0;overflow:hidden;">
+            <div style="position:relative;height:160px;overflow:hidden;background:var(--bg-secondary);">
+                <img id="worldDetailImg" style="width:100%;height:100%;object-fit:cover;display:block;" src="" alt="">
+                <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(10,14,23,0.95) 0%,transparent 55%);"></div>
+                <button onclick="closeWorldDetail()" style="position:absolute;top:12px;right:14px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:1.1em;cursor:pointer;border-radius:6px;padding:4px 10px;line-height:1;">✕</button>
+                <div style="position:absolute;bottom:14px;left:18px;right:80px;">
+                    <div id="worldDetailName" style="font-size:1.15em;font-weight:700;color:#fff;line-height:1.3;"></div>
+                    <div id="worldDetailAuthor" style="font-size:0.78em;color:rgba(255,255,255,0.55);margin-top:3px;"></div>
+                </div>
+                <div id="worldDetailPlayerBadge" style="position:absolute;bottom:14px;right:14px;background:rgba(99,102,241,0.9);color:#fff;font-size:0.72em;font-weight:600;padding:4px 12px;border-radius:99px;"></div>
+            </div>
+            <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;" id="worldDetailTags"></div>
+                <div id="worldDetailDescRow">
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">描述 / Description</div>
+                    <div id="worldDetailDesc" style="font-size:0.8em;color:var(--text-secondary);line-height:1.5;max-height:80px;overflow-y:auto;"></div>
+                </div>
+                <div>
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:8px;">实例 / Instances</div>
+                    <div id="worldDetailInstances" style="display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;"></div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:4px;">
+                    <button id="worldDetailFavBtn" class="btn btn-secondary" style="flex:1;" onclick="toggleWorldFavorite()">⭐ 收藏</button>
+                    <button id="worldDetailJoinBtn" class="btn btn-primary" style="flex:1;" onclick="joinWorldInstance()">⚡ 加入世界</button>
+                </div>
+                <div id="worldDetailFavStatus" style="font-size:0.75em;text-align:center;min-height:18px;color:var(--success);"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Avatar Modal -->
+    <div id="editModal" class="modal hidden">
+        <div class="modal-content">
+            <h2 data-i18n="editTitle" style="margin-bottom: 16px;">Edit Avatar</h2>
+            <!-- Thumbnail -->
+            <div class="form-group" style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+                <div style="position:relative;flex-shrink:0;cursor:pointer;" onclick="document.getElementById('editThumbInput').click()" title="点击更换封面 / Click to change thumbnail">
+                    <img id="editThumbPreview" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--border);display:block;background:var(--bg-secondary);">
+                    <div style="position:absolute;inset:0;border-radius:8px;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0">
+                        <span style="font-size:1.4em;">📷</span>
+                    </div>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-size:0.8em;color:var(--text-secondary);margin-bottom:6px;">封面图片 / Thumbnail</div>
+                    <button type="button" class="btn btn-secondary" style="font-size:0.75em;padding:5px 10px;" onclick="document.getElementById('editThumbInput').click()">更换图片 / Change</button>
+                    <div id="editThumbNote" style="font-size:0.7em;color:var(--text-muted);margin-top:4px;"></div>
+                </div>
+                <input type="file" id="editThumbInput" accept="image/png,image/jpeg,image/webp" hidden onchange="onEditThumbSelected(this)">
+            </div>
+            <div class="form-group">
+                <label data-i18n="avatarName">Avatar Name</label>
+                <input type="text" id="editName" class="input-field" required>
+            </div>
+            <div class="form-group">
+                <label data-i18n="editDesc">Description</label>
+                <textarea id="editDesc" class="input-field" rows="3" style="resize:vertical"></textarea>
+            </div>
+            <div class="form-group">
+                <label data-i18n="editStatus">Release Status</label>
+                <select id="editStatus" class="input-field">
+                    <option value="private">Private</option>
+                    <option value="public">Public</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label data-i18n="editTags">Tags (comma separated)</label>
+                <input type="text" id="editTags" class="input-field" placeholder="e.g. funny, anime, robot">
+            </div>
+            <div class="modal-actions">
+                <button onclick="closeEditModal()" class="btn btn-secondary" data-i18n="btnCancel">Cancel</button>
+                <button onclick="saveEditAvatar()" class="btn btn-primary" id="btnSaveEdit" data-i18n="btnSave">Save</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="app.js"></script>
+
+    <!-- ── avtrDB Avatar Detail Modal ── -->
+    <div id="avtrdbDetailModal" class="modal hidden" onclick="if(event.target===this)closeAvtrdbDetail()">
+        <div class="modal-content" style="max-width:560px;width:100%;padding:0;overflow:hidden;">
+            <!-- Header with image -->
+            <div style="display:flex;gap:0;align-items:stretch;">
+                <div style="flex-shrink:0;width:120px;height:120px;overflow:hidden;background:var(--bg-secondary);">
+                    <img id="avtrdbDetailImg" style="width:100%;height:100%;object-fit:cover;display:block;" src="" alt="">
+                </div>
+                <div style="flex:1;padding:18px 20px;display:flex;flex-direction:column;justify-content:center;gap:4px;background:var(--bg-card);">
+                    <div id="avtrdbDetailName" style="font-size:1.15em;font-weight:600;color:var(--text-primary);line-height:1.3;"></div>
+                    <div id="avtrdbDetailAuthor" style="font-size:0.82em;color:var(--text-muted);"></div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;" id="avtrdbDetailPlats"></div>
+                </div>
+                <button onclick="closeAvtrdbDetail()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--text-muted);font-size:1.3em;cursor:pointer;line-height:1;padding:4px;" title="关闭">✕</button>
+            </div>
+            <!-- Detail rows -->
+            <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;border-top:1px solid var(--border);">
+                <!-- Performance -->
+                <div>
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:5px;">性能评级 / Performance</div>
+                    <div id="avtrdbDetailPerf" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                </div>
+                <!-- Avatar ID -->
+                <div>
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">模型 ID / Avatar ID</div>
+                    <div id="avtrdbDetailId" style="font-size:0.75em;color:var(--text-secondary);font-family:monospace;word-break:break-all;"></div>
+                </div>
+                <!-- Dates -->
+                <div style="display:flex;gap:24px;flex-wrap:wrap;">
+                    <div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px;">创建时间</div>
+                        <div id="avtrdbDetailCreated" style="font-size:0.75em;color:var(--text-secondary);"></div>
+                    </div>
+                    <div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px;">最后更新</div>
+                        <div id="avtrdbDetailUpdated" style="font-size:0.75em;color:var(--text-secondary);"></div>
+                    </div>
+                </div>
+                <!-- Description (hidden if empty) -->
+                <div id="avtrdbDetailDescRow">
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">描述 / Description</div>
+                    <div id="avtrdbDetailDesc" style="font-size:0.8em;color:var(--text-secondary);line-height:1.5;max-height:80px;overflow-y:auto;"></div>
+                </div>
+                <!-- Actions -->
+                <div style="display:flex;gap:10px;margin-top:4px;position:relative;">
+                    <!-- Favorite button with dropdown -->
+                    <div style="flex:1;position:relative;" id="avtrdbFavWrapper">
+                        <button id="avtrdbDetailFavBtn" class="btn btn-secondary" style="width:100%;"
+                            onclick="toggleAvtrdbFavMenu(event)">⭐ 收藏</button>
+                    </div>
+                    <button id="avtrdbDetailSwitchBtn" class="btn btn-primary" style="flex:1;">⚡ 切换模型</button>
+                </div>
+                <!-- Favorite status feedback -->
+                <div id="avtrdbFavStatus" style="font-size:0.75em;text-align:center;min-height:18px;"></div>
+            </div>
+        </div>
+    </div>
+    <!-- avtrDB Favorite Group Menu (outside modal-content to avoid overflow:hidden clipping) -->
+    <div id="avtrdbFavMenu" class="hidden"
+        style="position:fixed;min-width:180px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;overflow:hidden;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择收藏夹</div>
+        <div id="avtrdbFavGroupList"></div>
+    </div>
+        </div><!-- /app-layout -->
+    </div><!-- /mainApp -->
+</body>
+
+</html>
