@@ -187,7 +187,7 @@ select.input-field { appearance: none; cursor: pointer; background-image: url("d
     .download-panel.active { position: relative; overflow: hidden; }
 }
 
-.sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 899; backdrop-filter: blur(2px); }
+.sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: calc(56px + env(safe-area-inset-bottom)); background: rgba(0,0,0,0.5); z-index: 899; backdrop-filter: blur(2px); }
 .sidebar-overlay.active { display: block; }
 
 .btn-warning { background: var(--warning); color: #000; font-weight: 600; }
@@ -233,7 +233,7 @@ select.input-field { appearance: none; cursor: pointer; background-image: url("d
 .friend-status-dot { position: absolute; bottom: 1px; right: 1px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--bg-primary); }
 .friend-status-dot.online { background: #22c55e; }
 .friend-status-dot.active { background: #3b82f6; }
-.friend-status-dot.join-me { background: #a855f7; }
+.friend-status-dot.join-me { background: #1A75FF; }
 .friend-status-dot.ask-me { background: #f59e0b; }
 .friend-status-dot.busy { background: #ef4444; }
 .friend-status-dot.offline { background: #475569; }
@@ -261,8 +261,9 @@ select.input-field { appearance: none; cursor: pointer; background-image: url("d
 .fp-stat-value { font-size: 0.82em; color: var(--text-primary); font-weight: 500; }
 
 /* ── Friend Profile Modal sub-tabs ── */
-#friendProfileModal .tab-nav { background: transparent; border-bottom: 1px solid var(--border); margin:0; padding:0; border-radius:0; }
-#friendProfileModal .tab-btn { font-size: 0.8em; padding: 7px 14px; }
+#friendProfileModal .tab-nav { background: transparent; border-bottom: 1px solid var(--border); margin:0; padding:0; border-radius:0; overflow-x: auto; white-space: nowrap; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+#friendProfileModal .tab-nav::-webkit-scrollbar { display: none; }
+#friendProfileModal .tab-btn { font-size: 0.8em; padding: 7px 14px; flex-shrink: 0; }
 
 
 /* ══════════════════════════════════════════════
@@ -537,4 +538,10 @@ select.input-field { appearance: none; cursor: pointer; background-image: url("d
   .avatar-grid {
     grid-template-columns: repeat(2, 1fr) !important;
   }
+}
+
+/* ── My Profile Layout Tweaks ── */
+.my-profile-banner { margin: -20px -24px 0; }
+@media (max-width: 768px) {
+    .my-profile-banner { margin: -14px -14px 0; }
 }

@@ -3104,7 +3104,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // ═══════════════════════════════════════════════════════════════
 
 function getStatusLabel(state) {
-  if (state === 'active') return '网页在线';
+  if (state === 'active') return (loc && loc !== 'offline' && loc !== '') ? '游戏中' : '网页在线';
   if (state === 'online') return '游戏中';
   if (state === 'join me') return '邀请加入';
   if (state === 'ask me') return '请求加入';
@@ -3304,7 +3304,7 @@ function renderMyProfile(u) {
   const langs  = getLanguages(u.tags || []);
   const showcasedBadges = (u.badges || []);
 
-  const statusColor = {active:'#3b82f6','join me':'#a855f7','ask me':'#f59e0b',busy:'#ef4444',offline:'#475569'}[u.status] || '#22c55e';
+  const statusColor = {active:'#22c55e','join me':'#1A75FF','ask me':'#f59e0b',busy:'#ef4444',offline:'#475569'}[u.status] || '#22c55e';
   const platformIcon = {standalonewindows:'🖥️',android:'🥽',ios:'📱'}[u.last_platform] || '';
   const statCard = (label, val) =>
     `<div class="fp-stat-item"><div class="fp-stat-label">${label}</div><div class="fp-stat-value">${val||'–'}</div></div>`;
@@ -3314,11 +3314,11 @@ function renderMyProfile(u) {
 
   view.innerHTML = `<div class="my-profile-card">
     <!-- Banner + avatar row -->
-    <div style="position:relative;height:120px;margin:-20px -24px 0;overflow:hidden;background:var(--bg-secondary);">
+    <div class="my-profile-banner" style="position:relative;height:120px;overflow:hidden;background:var(--bg-secondary);">
       <img src="${escHtml(profileBig)}" style="width:100%;height:100%;object-fit:cover;filter:blur(6px) brightness(0.35);" onerror="this.style.display=\'none\'">
       <div style="position:absolute;inset:0;background:linear-gradient(to top,var(--bg-primary) 0%,transparent 70%);"></div>
     </div>
-    <div style="display:flex;align-items:flex-end;gap:16px;margin:-40px 0 12px;position:relative;">
+    <div class="my-profile-avatar-row" style="display:flex;align-items:flex-end;gap:16px;margin:-40px 0 12px;position:relative;">
       <div style="width:80px;height:80px;border-radius:50%;overflow:hidden;border:3px solid var(--bg-primary);background:var(--bg-card);flex-shrink:0;">
         <img src="${escHtml(profileBig)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">
       </div>
@@ -3588,7 +3588,24 @@ function renderFriendList(list) {
     const loc = f.location || '';
     const isOffline = f.status === 'offline' || !f.status || loc === 'offline';
     if (isOffline) { offline.push(f); continue; }
-    if (!loc.startsWith('wrld_')) { webOnline.push(f); continue; }
+    if (!loc || loc === 'offline' || loc === 'private') { 
+        if (loc === 'private' || (loc === '' && statusCss !== 'offline')) {
+            // "private" implicitly means in-game. "empty" usually means Website, but sometimes VRChat hides private instances as empty strings if we aren't friends.
+            // Since it's a friend list, an empty location with 'active' status usually strictly means 'Web Online'
+            if (loc === 'private') {
+                // handle private grouping
+                let privGroup = listMap.get('private');
+                if (!privGroup) { privGroup = []; listMap.set('private', privGroup); }
+                privGroup.push(f);
+                continue;
+            } else {
+                webOnline.push(f); continue;
+            }
+        } else {
+            webOnline.push(f);
+            continue; 
+        }
+    }
     if (!instanceMap.has(loc)) instanceMap.set(loc, []);
     instanceMap.get(loc).push(f);
   }
@@ -3701,7 +3718,7 @@ function friendCardHtml(f) {
     <div class="friend-info">
       <div class="friend-name" style="color:${trust.color};">${escHtml(f.displayName||'')} <span style="font-size:0.75em;opacity:0.7;">${langs}</span></div>
       <div class="friend-location" style="display:flex;align-items:center;gap:4px;">
-        <span style="font-weight:600;color:var(--text-primary);">${(f.status==='offline'||!f.status)?'离线':(f.location&&f.location.startsWith('wrld_'))?'游戏中':'网页在线'}</span>
+        <span style="font-weight:600;color:var(--text-primary);">${(f.status==='offline'||!f.status)?'离线':(f.location && f.location !== 'offline' && f.location !== '')?'游戏中':'网页在线'}</span>
         <span style="opacity:0.6;">|</span>
         ${(f.location && f.location !== 'offline' && f.location !== 'private' && f.location.startsWith('wrld_')) 
             ? `<a href="#" id="${locSpanId}" onclick="showWorldDetail('${f.location.split(':')[0]}'); event.stopPropagation(); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;" title="查看世界">${escHtml(locationText)}</a>` 
@@ -3810,7 +3827,7 @@ function _renderFriendProfileUI(f, modal) {
     locSection.style.display = 'none';
   }
 
-  document.getElementById('fpStatusDesc').innerHTML = `<span style="font-weight:600;color:var(--text-primary);">${(f.status==='offline'||!f.status)?'离线':(f.location&&f.location.startsWith('wrld_'))?'游戏中':'网页在线'}</span> <span style="opacity:0.6">|</span> ` + escHtml(f.status==='offline' ? '离线' : (f.statusDescription||f.status||'').replace(/\\n/g, String.fromCharCode(10)));
+  document.getElementById('fpStatusDesc').innerHTML = `<span style="font-weight:600;color:var(--text-primary);">${(f.status==='offline'||!f.status)?'离线':(f.location && f.location !== 'offline' && f.location !== '')?'游戏中':'网页在线'}</span> <span style="opacity:0.6">|</span> ` + escHtml(f.status==='offline' ? '离线' : (f.statusDescription||f.status||'').replace(/\\n/g, String.fromCharCode(10)));
   const bioSection = document.getElementById('fpBioSection');
   if (f.bio) { bioSection.style.display=''; document.getElementById('fpBio').textContent=(f.bio||'').replace(/\\n/g, String.fromCharCode(10)); }
   else bioSection.style.display='none';
@@ -4039,6 +4056,7 @@ async function fetchWorlds(category, forceRefresh = false) {
   const statsEl = document.getElementById('worldStats');
   if (!gridEl) return;
   gridEl.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:rgba(255,255,255,0.3);">加载中...</div>';
+  if (statsEl) statsEl.textContent = '加载中...';
 
   if (!forceRefresh) {
     try {
