@@ -5134,7 +5134,7 @@ function showSelfContextMenu(e, id, name) {
 // ═══════════════════════════════════════════════════════════
 // GIF → PNG Spritesheet Converter (for emojianimated)
 // ═══════════════════════════════════════════════════════════
-async function gifToSpritesheet(file, fps) {
+async function gifToSpritesheet(file, fpsOverride) {
   // Parse GIF using gifuct-js
   const buf = await file.arrayBuffer();
   let frames;
@@ -5145,6 +5145,12 @@ async function gifToSpritesheet(file, fps) {
     throw new Error('无法解析 GIF: ' + e.message);
   }
   if (!frames || frames.length < 2) throw new Error('GIF 至少需要 2 帧！');
+
+  // Auto-detect FPS from GIF frame delays (delay is in centiseconds)
+  // gifuct-js exposes frame.delay in centiseconds (1/100 s)
+  const avgDelayCentisec = frames.reduce((s, f) => s + (f.delay || 10), 0) / frames.length;
+  const detectedFps = Math.round(100 / avgDelayCentisec);  // centisec → fps
+  const fps = fpsOverride !== undefined ? Math.min(Math.max(fpsOverride, 1), 64) : Math.min(Math.max(detectedFps, 1), 64);
 
   // Clamp frames to VRChat limit (max 64)
   const SHEET_SIZE = 1024;
@@ -5178,7 +5184,7 @@ async function gifToSpritesheet(file, fps) {
 
   // Export as PNG Blob
   const pngBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-  return { blob: pngBlob, frames: totalFrames, framesOverTime: Math.min(Math.max(fps, 1), 64) };
+  return { blob: pngBlob, frames: totalFrames, framesOverTime: fps, detectedFps };
 }
 
 function makeUploadCard(opts) {
@@ -5206,7 +5212,7 @@ function makeUploadCard(opts) {
   </div>`;
 }
 
-function onUploadFileSelected(inputId, tag) {
+async function onUploadFileSelected(inputId, tag) {
   const input  = document.getElementById(inputId);
   const sel    = document.getElementById('sel_' + inputId);
   const dim    = document.getElementById('dim_' + inputId);
@@ -5234,8 +5240,28 @@ function onUploadFileSelected(inputId, tag) {
     img.onerror = () => { btn.disabled = tooBig; };
     img.src = URL.createObjectURL(f);
   } else if (tag === 'emojianimated') {
-    if (dim) dim.textContent = f.type === 'image/gif' ? '✅ GIF 将自动转换为精灵图' : '⚠️ 动态表情请上传 GIF';
-    if (dim) dim.style.color = f.type === 'image/gif' ? 'var(--accent-light)' : '#f87171';
+    // For GIFs, auto-detect FPS from frame delays
+    if (f.type === 'image/gif') {
+      if (dim) { dim.textContent = '⏳ 正在读取 GIF 帧速...'; dim.style.color = 'var(--text-muted)'; }
+      const buf = await f.arrayBuffer();
+      try {
+        const gif = window.parseGIF(buf);
+        const gifFrames = window.decompressFrames(gif, false);
+        const avgDelay = gifFrames.reduce((s, fr) => s + (fr.delay || 10), 0) / gifFrames.length;
+        const detectedFps = Math.min(Math.max(Math.round(100 / avgDelay), 1), 64);
+        if (fpsSl) { fpsSl.value = detectedFps; }
+        if (fpsEl) { fpsEl.textContent = detectedFps; }
+        if (dim) {
+          dim.textContent = `✅ ${gifFrames.length} 帧，自动检测 ${detectedFps} fps`;
+          dim.style.color = 'var(--accent-light)';
+        }
+      } catch(e) {
+        if (dim) { dim.textContent = '⚠️ 无法解析 GIF，手动设置 FPS'; dim.style.color = '#f87171'; }
+      }
+    } else {
+      if (dim) dim.textContent = '⚠️ 动态表情请上传 GIF';
+      if (dim) dim.style.color = '#f87171';
+    }
     btn.disabled = tooBig;
   } else {
     btn.disabled = tooBig;
@@ -5419,13 +5445,34 @@ async function uploadPrint(inputId) {
   const file = input.files[0];
   if (file.size > 10*1024*1024) { statusEl.textContent = '❌ 文件超过 10MB'; statusEl.style.color='#f87171'; return; }
   btn.disabled = true;
-  statusEl.textContent = '⏳ 上传中...';
+  statusEl.textContent = '⏳ 上传中 (处理图片...)';
   statusEl.style.color = 'var(--text-muted)';
   try {
+    // VRCX ALWAYS converts prints to PNG before uploading.
+    // The VRChat POST /prints API strictly expects a PNG blob.
+    const imgUrl = URL.createObjectURL(file);
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = () => rej(new Error('无法解析图片'));
+      img.src = imgUrl;
+    });
+    
+    // Draw to canvas and convert to PNG blob
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const pngBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    URL.revokeObjectURL(imgUrl);
+
+    statusEl.textContent = '⏳ 上传中 (发送到 VRChat...)';
     const fd = new FormData();
-    fd.append('image', file, file.name);
+    fd.append('image', pngBlob, 'image.png');
     fd.append('timestamp', new Date().toISOString());
     if (noteEl && noteEl.value.trim()) fd.append('note', noteEl.value.trim());
+
     const r = await fetch('/api/vrc/prints', { method: 'POST', body: fd });
     if (!r.ok) {
       const txt = await r.text();
