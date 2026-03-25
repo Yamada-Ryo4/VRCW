@@ -668,16 +668,14 @@ function switchTab(tab) {
   
   // Legacy tab-btn support
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-  document.querySelector(`.tab-btn[onclick*="${tab}"]`)?.classList.add("active");
-  // New global nav items
+  document.querySelector(`.tab-btn[onclick*="'${tab}'"]`)?.classList.add("active");
+  
+  // New global nav items - foolproof selection via onclick attribute
   document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".nav-item-icon").forEach((b) => b.classList.remove("active"));
-  const tabNavMap = { download:"Download", upload:"Upload", search:"Search", friends:"Friends", worlds:"Worlds", groups:"Groups", assets:"Assets" };
-  const key = tabNavMap[tab];
-  if (key) {
-    document.getElementById("navItem"+key)?.classList.add("active");
-    document.getElementById("navIcon"+key)?.classList.add("active");
-  }
+  
+  document.querySelector(`.nav-item[onclick*="'${tab}'"]`)?.classList.add("active");
+  document.querySelector(`.nav-item-icon[onclick*="'${tab}'"]`)?.classList.add("active");
   document
     .getElementById("downloadPanel")
     .classList.toggle("active", tab === "download");
@@ -4391,7 +4389,7 @@ async function loadGroupsPage(cat) {
     if (cat === 'mine') {
       // Created by me: check ownerId
       filtered = filtered.filter(g => g.ownerId === me.id || g.userId === me.id);
-      title = '�� 我创建的群组 (' + filtered.length + ')';
+      title = "👑 我创建的群组 (" + filtered.length + ")";
     } else {
       // Joined: not created by me
       filtered = filtered.filter(g => g.ownerId !== me.id && g.userId !== me.id);
