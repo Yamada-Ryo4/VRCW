@@ -4462,6 +4462,8 @@ function initAssetsTab() {
   }
 }
 
+let _assetsGen = 0;  // incremented each time a sub-tab is clicked
+
 function switchAssetsPage(page) {
   document.querySelectorAll('#assetsPanel .cat-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
   const btn = document.getElementById('cat-assets-' + page);
@@ -4470,20 +4472,23 @@ function switchAssetsPage(page) {
   const content = document.getElementById('assetsContentArea');
   content.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载中... (Loading...)</div>';
 
-  if (page === 'balance') fetchBalance(content);
-  else if (page === 'store') fetchStore(content);
-  else if (page === 'tx') fetchTransactions(content);
-  else if (page === 'sub') fetchSubscriptions(content);
-  else if (page === 'gallery') fetchGalleryOnly(content);
-  else if (page === 'prints') fetchPrints(content);
-  else if (page === 'emoji') fetchEmoji(content);
+  const gen = ++_assetsGen;  // capture current generation
+  if (page === 'balance') fetchBalance(content, gen);
+  else if (page === 'store') fetchStore(content, gen);
+  else if (page === 'tx') fetchTransactions(content, gen);
+  else if (page === 'sub') fetchSubscriptions(content, gen);
+  else if (page === 'gallery') fetchGalleryOnly(content, gen);
+  else if (page === 'prints') fetchPrints(content, gen);
+  else if (page === 'emoji') fetchEmoji(content, gen);
 }
 
-async function fetchBalance(container) {
+async function fetchBalance(container, gen) {
   try {
     const me = await (await apiCall('/api/vrc/auth/user')).json();
+    if (_assetsGen !== gen) return;
     if (!me || !me.id) throw new Error("Not logged in");
     const bal = await (await apiCall(`/api/vrc/user/${me.id}/balance`)).json();
+    if (_assetsGen !== gen) return;
     container.innerHTML = `
       <h2 style="margin-bottom:16px;">👛 钱包余额</h2>
       <div class="my-profile-card" style="display:flex;align-items:center;gap:20px;max-width:400px;">
@@ -4500,14 +4505,14 @@ async function fetchBalance(container) {
   }
 }
 
-async function fetchStore(container) {
+async function fetchStore(container, gen) {
   try {
     container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载商店中...</div>';
-    // Fetch balance + available listings in parallel
     const [balResp, listResp] = await Promise.all([
       apiCall('/api/vrc/economy/balance'),
       apiCall('/api/vrc/economy/listings?n=20&offset=0')
     ]);
+    if (_assetsGen !== gen) return;
 
     let balHtml = '';
     if (balResp.ok) {
@@ -4621,14 +4626,15 @@ async function fetchSubscriptions(container) {
   }
 }
 
-async function fetchGallery(container) {
+async function fetchGallery(container, gen) {
   try {
     const me = await (await apiCall('/api/vrc/auth/user')).json();
-    // Fetch BOTH: gallery images (from /files?tag=gallery) and prints (from /prints/user/{id})
+    if (_assetsGen !== gen) return;
     const [rGallery, rPrints] = await Promise.all([
       apiCall('/api/vrc/files?tag=gallery&n=60'),
       apiCall('/api/vrc/prints/user/' + me.id + '?n=60&offset=0'),
     ]);
+    if (_assetsGen !== gen) return;
     const galleryFiles = rGallery.ok ? await rGallery.json() : [];
     const prints = rPrints.ok ? await rPrints.json() : [];
 
@@ -4692,10 +4698,9 @@ async function fetchGallery(container) {
 }
 
 
-async function fetchEmoji(container) {
+async function fetchEmoji(container, gen) {
   try {
     container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载中...</div>';
-    // Fetch emoji, animated emoji, and stickers
     const [rEmoji, rEmojiAnim, rSticker] = await Promise.all([
       apiCall('/api/vrc/files?tag=emoji&n=100'),
       apiCall('/api/vrc/files?tag=emojianimated&n=100'),
@@ -4704,6 +4709,7 @@ async function fetchEmoji(container) {
     const emojis = rEmoji.ok ? await rEmoji.json() : [];
     const emojisAnim = rEmojiAnim.ok ? await rEmojiAnim.json() : [];
     const stickers = rSticker.ok ? await rSticker.json() : [];
+    if (_assetsGen !== gen) return;
     const allEmojis = emojis.concat(emojisAnim);
 
     const renderFileGrid = (files, emptyText) => {
