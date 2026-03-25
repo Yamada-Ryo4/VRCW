@@ -3594,8 +3594,8 @@ function renderFriendList(list) {
             // Since it's a friend list, an empty location with 'active' status usually strictly means 'Web Online'
             if (loc === 'private') {
                 // handle private grouping
-                let privGroup = listMap.get('private');
-                if (!privGroup) { privGroup = []; listMap.set('private', privGroup); }
+                let privGroup = instanceMap.get('private');
+                if (!privGroup) { privGroup = []; instanceMap.set('private', privGroup); }
                 privGroup.push(f);
                 continue;
             } else {
