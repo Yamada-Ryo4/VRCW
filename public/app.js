@@ -676,6 +676,11 @@ function switchTab(tab) {
   
   document.querySelector(`.nav-item[onclick*="'${tab}'"]`)?.classList.add("active");
   document.querySelector(`.nav-item-icon[onclick*="'${tab}'"]`)?.classList.add("active");
+
+  const tabTitles = { download:"头像模型", upload:"上传", search:"全站搜索", friends:"社交与好友", worlds:"虚拟世界", groups:"群组", assets:"虚拟资产" };
+  const topTitle = document.querySelector('.mobile-top-title');
+  if (topTitle && tabTitles[tab]) topTitle.textContent = "VRCW - " + tabTitles[tab];
+
   document
     .getElementById("downloadPanel")
     .classList.toggle("active", tab === "download");
