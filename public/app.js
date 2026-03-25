@@ -4729,8 +4729,9 @@ async function fetchEmoji(container, gen) {
 
     container.innerHTML = '<h2 style="margin-bottom:16px;">�� 表情与贴纸</h2>' +
       '<div class="vrc-upload-row">' +
-        makeUploadCard({title:'😊 上传自定义表情', hint:'PNG/GIF · 最大 10MB', tag:'emoji', accept:'image/*', refreshPage:'emoji'}) +
-        makeUploadCard({title:'🏷️ 上传贴纸', hint:'PNG · 最大 10MB', tag:'sticker', accept:'image/*', refreshPage:'emoji'}) +
+        makeUploadCard({title:'😊 上传静态表情', hint:'PNG · 最大 10MB · 最大 1024×1024', tag:'emoji', accept:'image/png,image/jpeg,image/webp', refreshPage:'emoji'}) +
+        makeUploadCard({title:'🎞️ 上传动态表情 (GIF)', hint:'GIF → 自动转精灵图 · 最大 10MB', tag:'emojianimated', accept:'image/gif', refreshPage:'emoji'}) +
+        makeUploadCard({title:'🏷️ 上传贴纸', hint:'PNG · 最大 10MB · 最大 1024×1024', tag:'sticker', accept:'image/png,image/jpeg,image/webp', refreshPage:'emoji'}) +
       '</div>' +
       '<h3 style="font-size:0.9rem;margin-bottom:10px;">自定义表情 (' + allEmojis.length + ')</h3>' +
       renderFileGrid(allEmojis, '暂无自定义表情（需要 VRC+，可在官网或此处上传）') +
@@ -5130,22 +5131,75 @@ function showSelfContextMenu(e, id, name) {
 // ═══════════════════════════════════════════════════════════
 // GALLERY ONLY (VRC+ 相册, no prints)
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// GIF → PNG Spritesheet Converter (for emojianimated)
+// ═══════════════════════════════════════════════════════════
+async function gifToSpritesheet(file, fps) {
+  // Parse GIF using gifuct-js
+  const buf = await file.arrayBuffer();
+  let frames;
+  try {
+    const gif = window.parseGIF(buf);
+    frames = window.decompressFrames(gif, true);
+  } catch(e) {
+    throw new Error('无法解析 GIF: ' + e.message);
+  }
+  if (!frames || frames.length < 2) throw new Error('GIF 至少需要 2 帧！');
+
+  // Clamp frames to VRChat limit (max 64)
+  const SHEET_SIZE = 1024;
+  const totalFrames = Math.min(frames.length, 64);
+  // Pick best grid: 2x2 (4), 4x4 (16), 8x8 (64)
+  let cols;
+  if (totalFrames <= 4)  { cols = 2; }
+  else if (totalFrames <= 16) { cols = 4; }
+  else { cols = 8; }
+  const rows = cols;
+  const frameSize = SHEET_SIZE / cols;  // 512, 256, or 128
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = SHEET_SIZE;
+  const ctx = canvas.getContext('2d');
+
+  // Patch all frames onto the canvas grid
+  for (let i = 0; i < cols * rows && i < totalFrames; i++) {
+    const f = frames[i];
+    // Draw gifuct frame to a temp canvas
+    const tmp = document.createElement('canvas');
+    tmp.width = f.dims.width; tmp.height = f.dims.height;
+    const tmpCtx = tmp.getContext('2d');
+    const id = tmpCtx.createImageData(f.dims.width, f.dims.height);
+    id.data.set(f.patch);
+    tmpCtx.putImageData(id, 0, 0);
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    ctx.drawImage(tmp, col * frameSize, row * frameSize, frameSize, frameSize);
+  }
+
+  // Export as PNG Blob
+  const pngBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  return { blob: pngBlob, frames: totalFrames, framesOverTime: Math.min(Math.max(fps, 1), 64) };
+}
+
 function makeUploadCard(opts) {
-  // opts: { id, title, hint, tag, accept, refreshPage }
+  // opts: { id, title, hint, tag, accept, refreshPage, showFps }
   const uniqueId = 'upl_' + opts.tag + '_' + Date.now();
+  const isAnimated = opts.tag === 'emojianimated';
   return `<div class="vrc-upload-card">
     <h4>${opts.title}</h4>
     <div class="vrc-upload-zone" id="zone_${uniqueId}"
       ondragover="event.preventDefault();this.classList.add('dragover')"
       ondragleave="this.classList.remove('dragover')"
       ondrop="event.preventDefault();this.classList.remove('dragover');document.getElementById('${uniqueId}').files=event.dataTransfer.files;onUploadFileSelected('${uniqueId}','${opts.tag}')">
-      <span class="upload-icon">📤</span>
+      <span class="upload-icon">${isAnimated ? '🎞️' : '📤'}</span>
       <span class="upload-label">点击或拖拽文件</span>
       <span class="upload-hint">${opts.hint}</span>
       <span class="upload-selected" id="sel_${uniqueId}">未选择文件</span>
+      <span class="upload-dim" id="dim_${uniqueId}" style="font-size:0.72em;color:var(--text-muted);"></span>
       <input type="file" id="${uniqueId}" accept="${opts.accept}"
         onchange="onUploadFileSelected('${uniqueId}','${opts.tag}')">
     </div>
+    ${isAnimated ? `<label style="font-size:0.78em;color:var(--text-muted);display:flex;align-items:center;gap:8px;margin-top:6px;">动画 FPS：<input type="range" id="fps_${uniqueId}" min="1" max="64" value="12" style="flex:1;"><span id="fpsval_${uniqueId}">12</span></label>` : ''}
     <button class="vrc-upload-btn" id="btn_${uniqueId}" disabled
       onclick="uploadToVRCStyled('${uniqueId}','${opts.tag}','${opts.refreshPage}')">上传</button>
     <div class="vrc-upload-status" id="status_${uniqueId}"></div>
@@ -5153,36 +5207,105 @@ function makeUploadCard(opts) {
 }
 
 function onUploadFileSelected(inputId, tag) {
-  const input = document.getElementById(inputId);
-  const sel = document.getElementById('sel_' + inputId);
-  const btn = document.getElementById('btn_' + inputId);
+  const input  = document.getElementById(inputId);
+  const sel    = document.getElementById('sel_' + inputId);
+  const dim    = document.getElementById('dim_' + inputId);
+  const btn    = document.getElementById('btn_' + inputId);
+  const fpsEl  = document.getElementById('fpsval_' + inputId);
+  const fpsSl  = document.getElementById('fps_' + inputId);
   if (!input || !input.files || !input.files[0]) return;
   const f = input.files[0];
+  const tooBig = f.size > 10 * 1024 * 1024;
   sel.textContent = f.name + ' (' + (f.size/1024/1024).toFixed(2) + ' MB)';
-  sel.style.color = f.size > 10*1024*1024 ? '#f87171' : 'var(--accent-light)';
-  btn.disabled = f.size > 10*1024*1024;
+  sel.style.color = tooBig ? '#f87171' : 'var(--accent-light)';
+  // Sync FPS slider label
+  if (fpsEl && fpsSl) {
+    fpsSl.oninput = () => fpsEl.textContent = fpsSl.value;
+  }
+  // For static emoji/sticker—show dimension warning if needed
+  if (tag === 'emoji' || tag === 'sticker') {
+    const img = new Image();
+    img.onload = () => {
+      const ok = img.width <= 1024 && img.height <= 1024;
+      if (dim) dim.textContent = img.width + '×' + img.height + (ok ? '' : ' ⚠️ 超出 1024×1024！');
+      if (dim) dim.style.color = ok ? 'var(--text-muted)' : '#f87171';
+      btn.disabled = tooBig || !ok;
+    };
+    img.onerror = () => { btn.disabled = tooBig; };
+    img.src = URL.createObjectURL(f);
+  } else if (tag === 'emojianimated') {
+    if (dim) dim.textContent = f.type === 'image/gif' ? '✅ GIF 将自动转换为精灵图' : '⚠️ 动态表情请上传 GIF';
+    if (dim) dim.style.color = f.type === 'image/gif' ? 'var(--accent-light)' : '#f87171';
+    btn.disabled = tooBig;
+  } else {
+    btn.disabled = tooBig;
+  }
 }
 
 async function uploadToVRCStyled(inputId, tag, refreshPage) {
-  const input = document.getElementById(inputId);
-  const btn = document.getElementById('btn_' + inputId);
+  const input    = document.getElementById(inputId);
+  const btn      = document.getElementById('btn_' + inputId);
   const statusEl = document.getElementById('status_' + inputId);
+  const fpsSl    = document.getElementById('fps_' + inputId);
   if (!input || !input.files || !input.files[0]) { statusEl.textContent = '请先选择文件'; return; }
-  const file = input.files[0];
+  let file = input.files[0];
   if (file.size > 10*1024*1024) { statusEl.textContent = '❌ 文件超过 10MB'; statusEl.style.color='#f87171'; return; }
+
   btn.disabled = true;
-  statusEl.textContent = '⏳ 上传中...';
   statusEl.style.color = 'var(--text-muted)';
+
+  const fd = new FormData();
+
   try {
-    const fd = new FormData();
-    fd.append('file', file, file.name);
-    fd.append('tag', tag);
-    const r = await fetch('/api/vrc/file/image', { method:'POST', body: fd });
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + await r.text());
+    if (tag === 'emojianimated') {
+      // GIF → Spritesheet conversion
+      statusEl.textContent = '⏳ 正在转换 GIF → 精灵图（可能需要几秒）...';
+      if (file.type !== 'image/gif') throw new Error('动态表情必须上传 GIF 文件！');
+      const fps = fpsSl ? parseInt(fpsSl.value) || 12 : 12;
+      const { blob, frames, framesOverTime } = await gifToSpritesheet(file, fps);
+      fd.append('filestring', blob, 'spritesheet.png');
+      fd.append('tagstring', 'emojianimated');
+      fd.append('frames', String(frames));
+      fd.append('framesOverTime', String(framesOverTime));
+      statusEl.textContent = `⏳ 上传精灵图（${frames} 帧，${framesOverTime}fps）...`;
+    } else if (tag === 'emoji' || tag === 'sticker') {
+      // Static emoji/sticker — validate 1024×1024
+      statusEl.textContent = '⏳ 检查尺寸...';
+      await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => {
+          if (img.width > 1024 || img.height > 1024) rej(new Error(`图片尺寸 ${img.width}×${img.height} 超出上限 1024×1024`));
+          else res();
+        };
+        img.onerror = res; // if can't load dimensions, proceed anyway
+        img.src = URL.createObjectURL(file);
+      });
+      fd.append('filestring', file, file.name);
+      fd.append('tagstring', tag);
+      statusEl.textContent = '⏳ 上传中...';
+    } else {
+      // gallery, icon, prints preview
+      fd.append('filestring', file, file.name);
+      fd.append('tagstring', tag);
+      statusEl.textContent = '⏳ 上传中...';
+    }
+
+    const r = await fetch('/api/vrc/file/image', {
+      method: 'POST',
+      headers: { 'X-VRC-Auth': localStorage.getItem('vrc_auth') || '' },
+      body: fd
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      throw new Error('HTTP ' + r.status + ': ' + txt.substring(0, 200));
+    }
     statusEl.textContent = '✅ 上传成功！';
     statusEl.style.color = '#86efac';
     input.value = '';
-    document.getElementById('sel_' + inputId).textContent = '未选择文件';
+    const selEl = document.getElementById('sel_' + inputId);
+    if (selEl) selEl.textContent = '未选择文件';
+    const dimEl = document.getElementById('dim_' + inputId);
+    if (dimEl) dimEl.textContent = '';
     setTimeout(() => { if (refreshPage) switchAssetsPage(refreshPage); }, 1800);
   } catch(e) {
     statusEl.textContent = '❌ ' + e.message;
