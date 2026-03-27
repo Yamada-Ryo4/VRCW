@@ -86,6 +86,27 @@ async function performSingleAvatarRecovery(id) {
   return null;
 }
 
+// ── Unified Platform/Performance Helper ──
+function getAvatarPlatforms(av) {
+  const ratings = new Map();
+  // A. unityPackages (Preferred)
+  if (Array.isArray(av.unityPackages)) {
+    av.unityPackages.forEach(p => {
+      const plat = p.platform === 'standalonewindows' ? 'pc' : (p.platform === 'android' ? 'android' : (p.platform === 'ios' ? 'ios' : p.platform));
+      if (plat && p.performanceRating && p.performanceRating !== "None") {
+        ratings.set(plat, p.performanceRating);
+      }
+    });
+  }
+  // B. performance object (Avtrdb fallback)
+  if (av.performance) {
+    if (av.performance.pc_rating && av.performance.pc_rating !== "None") ratings.set('pc', av.performance.pc_rating);
+    if (av.performance.android_rating && av.performance.android_rating !== "None") ratings.set('android', av.performance.android_rating);
+    if (av.performance.ios_rating && av.performance.ios_rating !== "None") ratings.set('ios', av.performance.ios_rating);
+  }
+  return ratings;
+}
+
 // ── Local IndexedDB Cache ──
 const idb = {
   db: null,
@@ -3020,7 +3041,10 @@ async function avtrdbFetch(append) {
     // Post-filter for compatibility
     const actualRequiredPlats = avtrdbCurrentPlatform ? avtrdbCurrentPlatform.split("+") : [];
     const filteredList = actualRequiredPlats.length > 0
-      ? finalResultsList.filter(av => actualRequiredPlats.every(p => (av.compatibility || []).includes(p)))
+      ? finalResultsList.filter(av => {
+          const realRatings = getAvatarPlatforms(av);
+          return actualRequiredPlats.every(p => realRatings.has(p));
+        })
       : finalResultsList;
 
     if (!append) grid.innerHTML = "";
@@ -3052,15 +3076,8 @@ async function avtrdbFetch(append) {
       card.title = "点击查看详情";
       card.addEventListener("click", () => openAvtrdbDetail(av));
 
-      const perf = av.performance || {};
-      const actualPlats = (av.compatibility || []).filter(p => {
-        if (p === "pc") return !!perf.pc_rating;
-        if (p === "android") return !!perf.android_rating;
-        if (p === "ios") return !!perf.ios_rating;
-        return true;
-      });
-
-      const platBadges = actualPlats.map(p => {
+      const ratings = getAvatarPlatforms(av);
+      const platBadges = Array.from(ratings.keys()).map(p => {
         const label = { pc: "PC", android: "Quest", ios: "Apple" }[p] || p;
         return `<span class="avtrdb-badge">${label}</span>`;
       }).join("");
@@ -3123,49 +3140,22 @@ function displayAvatarDetail(av) {
   document.getElementById("avtrdbDetailCreated").textContent = fmt(createdAt);
   document.getElementById("avtrdbDetailUpdated").textContent = fmt(updatedAt);
 
-  // 3. Platform & Performance Logic (Multi-platform robust)
-  const platMap = { pc: "PC", android: "Quest", ios: "Apple", standalonewindows: "PC" };
+  // 3. Platform & Performance Logic (Strict Alignment)
+  const platMap = { pc: "PC", android: "Quest", ios: "Apple" };
   const ratingColor = r => ({ VeryPoor:"#ef4444", Poor:"#f59e0b", Medium:"#eab308", Good:"#22c55e", Excellent:"#a3e635" }[r] || "#64748b");
   const ratingHtml = (label, r) => r && r !== "None" ? `<span style="display:inline-block;font-size:0.75em;color:${ratingColor(r)};background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px;border:1px solid ${ratingColor(r)}40;margin-right:8px;margin-bottom:4px;">${label}: ${r}</span>` : "";
 
-  let plats = new Set();
-  let ratingsMap = new Map(); // platformKey -> bestRating
-
-  // A. VRChat API format (unityPackages)
-  if (Array.isArray(av.unityPackages)) {
-    av.unityPackages.forEach(p => {
-       const plat = p.platform === 'standalonewindows' ? 'pc' : (p.platform === 'android' ? 'android' : (p.platform === 'ios' ? 'ios' : p.platform));
-       if (plat) {
-         plats.add(plat);
-         if (p.performanceRating && p.performanceRating !== "None") {
-           ratingsMap.set(plat, p.performanceRating);
-         }
-       }
-    });
-  }
-  
-  // B. AvtrDB/VRCX format (performance object)
-  if (av.performance) {
-    if (av.performance.pc_rating) { plats.add("pc"); ratingsMap.set("pc", av.performance.pc_rating); }
-    if (av.performance.android_rating) { plats.add("android"); ratingsMap.set("android", av.performance.android_rating); }
-    if (av.performance.ios_rating) { plats.add("ios"); ratingsMap.set("ios", av.performance.ios_rating); }
-  }
-
-  // C. Compatibility fallbacks
-  if (Array.isArray(av.compatibility)) av.compatibility.forEach(p => plats.add(p));
+  const ratingsMap = getAvatarPlatforms(av);
+  const plats = Array.from(ratingsMap.keys());
 
   // Render Platform Badges at top
-  const platBadges = Array.from(plats).map(p =>
+  const platBadges = plats.map(p =>
     `<span class="avtrdb-badge" style="font-size:0.85em;padding:3px 10px;">${platMap[p] || p}</span>`
   ).join("") || "<span style='color:rgba(255,255,255,0.4)'>-</span>";
   document.getElementById("avtrdbDetailPlats").innerHTML = platBadges;
 
-  // Render Performance section (All platforms)
-  const perfumes = Array.from(plats).map(p => {
-    const r = ratingsMap.get(p);
-    return ratingHtml(platMap[p] || p, r);
-  }).filter(Boolean);
-  
+  // Render Performance section
+  const perfumes = plats.map(p => ratingHtml(platMap[p] || p, ratingsMap.get(p))).filter(Boolean);
   const perfHtml = perfumes.join("") || "<span style='color:rgba(255,255,255,0.4)'>-</span>";
   document.getElementById("avtrdbDetailPerf").innerHTML = perfHtml;
 
@@ -4382,11 +4372,19 @@ async function fetchFriendAvatars(userId) {
 
     const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     el.innerHTML = allAvatars.map((av, idx) => {
+        const ratings = getAvatarPlatforms(av);
+        const platBadges = Array.from(ratings.keys()).map(p => {
+          const label = { pc: "PC", android: "Quest", ios: "Apple" }[p] || p;
+          return `<span class="avtrdb-badge" style="font-size:0.8em;padding:2px 6px;">${label}</span>`;
+        }).join("");
+
         return `<div class="avatar-card" data-id="${av.id}" style="cursor:pointer;" onclick="displayAvatarDetail(window._friendAvatars[${idx}])">
           <div class="avatar-thumb-wrapper img-loading">
             <img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(proxyImg(av.thumbnailImageUrl||av.imageUrl||''))}" alt="">
             <div class="avatar-name-overlay">${escHtml(av.name||'')}</div>
-          </div></div>`;
+          </div>
+          <div style="padding:6px;display:flex;gap:4px;flex-wrap:wrap;">${platBadges}</div>
+        </div>`;
     }).join('');
     
     el.querySelectorAll('.avatar-thumb[data-src]').forEach(img => avatarObserver.observe(img));
