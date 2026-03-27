@@ -4167,12 +4167,19 @@ async function buildLocalFavoriteNameMap() {
   return map;
 }
 
-async function fetchFriendAvatars(userId, listEl) {
+const fpAvatarFetchCache = new Map(); // userId -> Promise
+
+async function fetchFriendAvatars(userId) {
   const el = document.getElementById('fpAvatarsList');
   if(!el) return;
-  el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">加载中...</div>';
   
-  try {
+  // Prevent duplicate concurrent loads for same user
+  if (fpAvatarFetchCache.has(userId)) return fpAvatarFetchCache.get(userId);
+  
+  const fetchTask = (async () => {
+    el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">正在通过 4 个数据库跨服搜寻模型 (Scanning 4 DBs)...</div>';
+    
+    try {
     const promises = [];
     
     // 1. Official VRChat API (may return 401/403 for non-friends or restricted users)
@@ -4272,57 +4279,69 @@ async function fetchFriendAvatars(userId, listEl) {
     el.querySelectorAll('.avatar-thumb[data-src]').forEach(img => avatarObserver.observe(img));
 
     // ═══════════════════════════════════════════════════════════════
-    // Background Recovery Logic (favorites -> AvatarRecovery -> VRChat)
+    // Bounded Parallel Background Recovery (Deduplicated & Fast)
     // ═══════════════════════════════════════════════════════════════
-    const unknownAvs = allAvatars.filter(av => !av.name || av.name.startsWith('Model ') || av.name === 'Unknown').slice(0, 20);
-    for (const av of unknownAvs) {
-      await new Promise(r => setTimeout(r, 100)); // 100ms rate limit
-      try {
-        // 1. Check local favorites map (built during initial render)
-        if (localNameMap && localNameMap.has(av.id)) {
-          updateAvatarNameInUI(el, av.id, localNameMap.get(av.id));
-          continue;
-        }
+    const unknownAvs = allAvatars.filter(av => !av.name || av.name.startsWith('Model ') || av.name === 'Unknown').slice(0, 30);
+    const BATCH_SIZE = 5; // Process 5 at a time for speed vs safety balance
+    
+    for (let i = 0; i < unknownAvs.length; i += BATCH_SIZE) {
+      const batch = unknownAvs.slice(i, i + BATCH_SIZE);
+      await Promise.allSettled(batch.map(async (av) => {
+        try {
+          // 1. Check local favorites map (built during initial render)
+          if (localNameMap && localNameMap.has(av.id)) {
+            updateAvatarNameInUI(el, av.id, localNameMap.get(av.id));
+            return;
+          }
 
-        // 2. Try AvatarRecovery search by ID (Proxy)
-        const arUrl = `https://api.avatarrecovery.com/Avatar/vrcx?search=${av.id}`;
-        const arResp = await apiCall(`/api/proxy?url=${encodeURIComponent(arUrl)}`);
-        if (arResp.ok) {
-          const arData = await arResp.json();
-          const found = Array.isArray(arData) ? arData.find(x => x.id === av.id) : arData;
-          if (found && found.name && found.name !== 'Unknown') {
-            updateAvatarNameInUI(el, av.id, found.name);
-            continue;
+          // 2. Try AvatarRecovery search by ID (Proxy)
+          const arUrl = `https://api.avatarrecovery.com/Avatar/vrcx?search=${av.id}`;
+          const arResp = await apiCall(`/api/proxy?url=${encodeURIComponent(arUrl)}`);
+          if (arResp.ok) {
+            const arData = await arResp.json();
+            const found = Array.isArray(arData) ? arData.find(x => x.id === av.id) : arData;
+            if (found && found.name && found.name !== 'Unknown') {
+              updateAvatarNameInUI(el, av.id, found.name);
+              return;
+            }
           }
-        }
-        
-        // 3. Try AvtrDB by ID (V3)
-        const avtrUrl = `https://api.avtrdb.com/v3/avatar/search/vrcx?search=${av.id}`;
-        const avtrResp = await apiCall(`/api/proxy?url=${encodeURIComponent(avtrUrl)}`);
-        if (avtrResp.ok) {
-          const avtrData = await avtrResp.json();
-          const found = avtrData.avatars && avtrData.avatars[0] ? avtrData.avatars[0] : (Array.isArray(avtrData) ? avtrData[0] : avtrData);
-          if (found && found.name && found.name !== 'Unknown') {
-            updateAvatarNameInUI(el, av.id, found.name);
-            continue;
+          
+          // 3. Try AvtrDB by ID (V3)
+          const avtrUrl = `https://api.avtrdb.com/v3/avatar/search/vrcx?search=${av.id}`;
+          const avtrResp = await apiCall(`/api/proxy?url=${encodeURIComponent(avtrUrl)}`);
+          if (avtrResp.ok) {
+            const avtrData = await avtrResp.json();
+            const found = avtrData.avatars && avtrData.avatars[0] ? avtrData.avatars[0] : (Array.isArray(avtrData) ? avtrData[0] : avtrData);
+            if (found && found.name && found.name !== 'Unknown') {
+              updateAvatarNameInUI(el, av.id, found.name);
+              return;
+            }
           }
-        }
-        
-        // 4. Fallback to official API detail (Proxy)
-        const r = await apiCall(`/api/vrc/avatars/${av.id}`);
-        if (r.ok) {
-          const det = await r.json();
-          if (det.name && det.name !== 'Unknown') {
-            updateAvatarNameInUI(el, av.id, det.name);
+          
+          // 4. Fallback to official API detail (Proxy)
+          const r = await apiCall(`/api/vrc/avatars/${av.id}`);
+          if (r.ok) {
+            const det = await r.json();
+            if (det.name && det.name !== 'Unknown') {
+              updateAvatarNameInUI(el, av.id, det.name);
+            }
           }
-        }
-      } catch (e) { /* silent fail */ }
+        } catch (e) { /* silent fail */ }
+      }));
+      // Small pause between batches
+      if (i + BATCH_SIZE < unknownAvs.length) await new Promise(r => setTimeout(r, 200));
     }
     
   } catch(e) { 
     console.error('fetchFriendAvatars error:', e);
     el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:var(--text-muted);font-size:0.85em;text-align:center;">读取列表时出错: ${escHtml(e.message)}</div>`; 
+  } finally {
+    fpAvatarFetchCache.delete(userId);
   }
+  })();
+  
+  fpAvatarFetchCache.set(userId, fetchTask);
+  return fetchTask;
 }
 
 async function deleteFriend(userId, name) {
