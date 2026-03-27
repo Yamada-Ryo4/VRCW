@@ -15,6 +15,7 @@ let visibleAvatars = [];
 let currentUserId = ""; // Current logged-in user's VRChat ID
 let favoriteGroups = []; // Avatar favorite groups from API (dynamic)
 let favoriteIdMap = new Map(); // avatarId -> favoriteId (for unfavoriting)
+window._localNameMap = new Map(); // GLOBAL CACHE: avatarId -> name (for recovery)
 
 // ── Local IndexedDB Cache ──
 const idb = {
@@ -37,6 +38,10 @@ const idb = {
       };
     });
     return this._initPromise;
+  },
+  async initAndLoadMap() {
+    await this.init();
+    await initLocalNameMap();
   },
   async get(key) {
     await this.init();
@@ -66,6 +71,7 @@ const idb = {
     });
   }
 };
+idb.initAndLoadMap();
 
 // ── HTML escape helper (prevent XSS) ──
 function escHtml(str) {
@@ -673,6 +679,12 @@ async function preloadAllFavorites(groups) {
       }
       if (allFetched.length > 0) {
         await idb.set("avatars_" + g, allFetched);
+        // Incremental update to global map
+        allFetched.forEach(av => {
+          if (av.id && av.name && av.name !== 'Unknown') {
+            window._localNameMap.set(av.id, av.name);
+          }
+        });
         logMsg(`✓ Preloaded ${allFetched.length} for ${g}`, "info");
       }
       // Small delay between groups to prevent rate limiting
@@ -4118,6 +4130,24 @@ function updateAvatarNameInUI(listEl, avId, newName) {
 }
 
 // Build a global map of ID -> Name from all locally cached favorites
+async function initLocalNameMap() {
+  const map = window._localNameMap;
+  try {
+    const keys = await idb.keys();
+    const favKeys = keys.filter(k => typeof k === 'string' && k.startsWith('avatars_avatars'));
+    for (const key of favKeys) {
+      const list = await idb.get(key);
+      if (Array.isArray(list)) {
+        list.forEach(av => {
+          if (av.id && av.name && av.name !== 'Unknown') {
+            map.set(av.id, av.name);
+          }
+        });
+      }
+    }
+  } catch (e) { console.warn('initLocalNameMap failed', e); }
+}
+
 async function buildLocalFavoriteNameMap() {
   const map = new Map();
   try {
@@ -4178,8 +4208,8 @@ async function fetchFriendAvatars(userId, listEl) {
     const flattenedResults = results.map(r => r.status === 'fulfilled' ? r.value : []).flat();
 
     // Build local name map to recover from favorites
-    const localNameMap = await buildLocalFavoriteNameMap();
-    window._localNameMap = localNameMap; // Store globally for modals
+    // We now use the global window._localNameMap which is kept in sync
+    const localNameMap = window._localNameMap;
 
     // Merge and deduplicate
     const allAvatars = [];
