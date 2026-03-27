@@ -56,6 +56,15 @@ const idb = {
       req.onerror = () => reject(req.error);
     });
   },
+  async keys() {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction("cache", "readonly");
+      const req = tx.objectStore("cache").getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
 };
 
 // ── HTML escape helper (prevent XSS) ──
@@ -4094,7 +4103,7 @@ async function buildLocalFavoriteNameMap() {
   const map = new Map();
   try {
     const keys = await idb.keys();
-    const favKeys = keys.filter(k => k.startsWith('avatars_avatars'));
+    const favKeys = keys.filter(k => typeof k === 'string' && k.startsWith('avatars_avatars'));
     for (const key of favKeys) {
       const list = await idb.get(key);
       if (Array.isArray(list)) {
@@ -4225,17 +4234,31 @@ async function fetchFriendAvatars(userId, listEl) {
         }
 
         // 2. Try AvatarRecovery search by ID (Proxy)
-        const arUrl = `https://api.avatarrecovery.com/Avatar/vrcx?avatarId=${av.id}`;
+        // Using ?search=AV_ID often works better across various providers
+        const arUrl = `https://api.avatarrecovery.com/Avatar/vrcx?search=${av.id}`;
         const arResp = await apiCall(`/api/proxy?url=${encodeURIComponent(arUrl)}`);
         if (arResp.ok) {
           const arData = await arResp.json();
-          if (arData && arData.name && arData.name !== 'Unknown') {
-            updateAvatarNameInUI(el, av.id, arData.name);
+          const found = Array.isArray(arData) ? arData.find(x => x.id === av.id) : arData;
+          if (found && found.name && found.name !== 'Unknown') {
+            updateAvatarNameInUI(el, av.id, found.name);
             return;
           }
         }
         
-        // 3. Fallback to official API detail (Proxy)
+        // 3. Try AvtrDB by ID (V3)
+        const avtrUrl = `https://api.avtrdb.com/v3/avatar/search/vrcx?id=${av.id}`;
+        const avtrResp = await apiCall(`/api/proxy?url=${encodeURIComponent(avtrUrl)}`);
+        if (avtrResp.ok) {
+          const avtrData = await avtrResp.json();
+          const found = avtrData.avatars && avtrData.avatars[0] ? avtrData.avatars[0] : (Array.isArray(avtrData) ? avtrData[0] : avtrData);
+          if (found && found.name && found.name !== 'Unknown') {
+            updateAvatarNameInUI(el, av.id, found.name);
+            return;
+          }
+        }
+        
+        // 4. Fallback to official API detail (Proxy)
         const r = await apiCall(`/api/vrc/avatars/${av.id}`);
         if (r.ok) {
           const det = await r.json();
