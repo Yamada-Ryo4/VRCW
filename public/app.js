@@ -4135,8 +4135,9 @@ async function initLocalNameMap() {
   try {
     const keys = await idb.keys();
     const favKeys = keys.filter(k => typeof k === 'string' && k.startsWith('avatars_avatars'));
-    for (const key of favKeys) {
-      const list = await idb.get(key);
+    // Fetch all favorite groups in parallel
+    const lists = await Promise.all(favKeys.map(k => idb.get(k)));
+    lists.forEach(list => {
       if (Array.isArray(list)) {
         list.forEach(av => {
           if (av.id && av.name && av.name !== 'Unknown') {
@@ -4144,7 +4145,7 @@ async function initLocalNameMap() {
           }
         });
       }
-    }
+    });
   } catch (e) { console.warn('initLocalNameMap failed', e); }
 }
 
