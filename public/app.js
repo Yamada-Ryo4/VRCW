@@ -49,34 +49,39 @@ const avatarLookupQueue = {
 };
 
 async function performSingleAvatarRecovery(id) {
-  // Try sources in order
-  const sources = [
-    async () => {
-      const r = await apiCall(`/api/proxy?url=${encodeURIComponent(`https://api.avatarrecovery.com/Avatar/vrcx?search=${id}`)}`);
-      if (!r.ok) { if(r.status===429) throw new Error('429'); return null; }
-      const data = await r.json();
-      const found = Array.isArray(data) ? data.find(x => x.id === id) : data;
-      return (found && found.name && found.name !== 'Unknown') ? found.name : null;
-    },
-    async () => {
-      const r = await apiCall(`/api/proxy?url=${encodeURIComponent(`https://api.avtrdb.com/v3/avatar/search/vrcx?search=${id}`)}`);
-      if (!r.ok) { if(r.status===429) throw new Error('429'); return null; }
-      const data = await r.json();
-      const found = data.avatars && data.avatars[0] ? data.avatars[0] : (Array.isArray(data) ? data[0] : data);
-      return (found && found.name && found.name !== 'Unknown') ? found.name : null;
-    },
-    async () => {
-      const r = await apiCall(`/api/vrc/avatars/${id}`);
-      if (!r.ok) return null;
-      const det = await r.json();
-      return (det.name && det.name !== 'Unknown') ? det.name : null;
-    }
+  // Query all sources in PARALLEL for maximum speed
+  const promises = [
+    apiCall(`/api/proxy?url=${encodeURIComponent(`https://api.avatarrecovery.com/Avatar/vrcx?search=${id}`)}`)
+      .then(async r => {
+        if (!r.ok) { if(r.status===429) throw new Error('429'); return null; }
+        const data = await r.json();
+        const found = Array.isArray(data) ? data.find(x => x.id === id) : data;
+        return (found && found.name && found.name !== 'Unknown') ? found.name : null;
+      }),
+    apiCall(`/api/proxy?url=${encodeURIComponent(`https://api.avtrdb.com/v3/avatar/search/vrcx?search=${id}`)}`)
+      .then(async r => {
+        if (!r.ok) { if(r.status===429) throw new Error('429'); return null; }
+        const data = await r.json();
+        const found = data.avatars && data.avatars[0] ? data.avatars[0] : (Array.isArray(data) ? data[0] : data);
+        return (found && found.name && found.name !== 'Unknown') ? found.name : null;
+      }),
+    apiCall(`/api/vrc/avatars/${id}`)
+      .then(async r => {
+        if (!r.ok) return null;
+        const det = await r.json();
+        return (det.name && det.name !== 'Unknown') ? det.name : null;
+      })
   ];
-  for (const s of sources) {
-    try {
-      const res = await s();
-      if (res) return res;
-    } catch (e) { if(e.message==='429') throw e; }
+  
+  try {
+    const results = await Promise.allSettled(promises);
+    // Return first non-null success
+    for (const res of results) {
+       if (res.status === 'fulfilled' && res.value) return res.value;
+       if (res.status === 'rejected' && res.reason.message === '429') throw new Error('429');
+    }
+  } catch (e) {
+    if (e.message === '429') throw e;
   }
   return null;
 }
@@ -4177,6 +4182,9 @@ async function fetchFriendWorlds(userId) {
 }
 
 function updateAvatarNameInUI(listEl, avId, newName) {
+  if (!newName || newName === 'Unknown' || newName.startsWith('Model ')) return;
+  persistName(avId, newName);
+  
   // Update current list object in memory
   if (window._friendAvatars) {
     const memAv = window._friendAvatars.find(a => a.id === avId);
@@ -4197,9 +4205,15 @@ function updateAvatarNameInUI(listEl, avId, newName) {
 async function initLocalNameMap() {
   const map = window._localNameMap;
   try {
+    // 1. Load the shared persistent cache first (fastest)
+    const shared = await idb.get('persistent_avatar_names');
+    if (shared && typeof shared === 'object') {
+       Object.entries(shared).forEach(([id, name]) => map.set(id, name));
+    }
+
+    // 2. Scan favorites as backup/override
     const keys = await idb.keys();
     const favKeys = keys.filter(k => typeof k === 'string' && k.startsWith('avatars_avatars'));
-    // Fetch all favorite groups in parallel
     const lists = await Promise.all(favKeys.map(k => idb.get(k)));
     lists.forEach(list => {
       if (Array.isArray(list)) {
@@ -4211,6 +4225,27 @@ async function initLocalNameMap() {
       }
     });
   } catch (e) { console.warn('initLocalNameMap failed', e); }
+}
+
+let namePersistenceTimeout = null;
+async function persistName(id, name) {
+   if (!id || !name || name === 'Unknown' || name.startsWith('Model ')) return;
+   window._localNameMap.set(id, name);
+   
+   // Throttle IDB writes to once every 2 seconds
+   if (namePersistenceTimeout) return;
+   namePersistenceTimeout = setTimeout(async () => {
+      try {
+         const current = await idb.get('persistent_avatar_names') || {};
+         // Take all current contents of window._localNameMap and save
+         const exportMap = {};
+         window._localNameMap.forEach((v, k) => {
+            if (v && v !== 'Unknown' && !v.startsWith('Model ')) exportMap[k] = v;
+         });
+         await idb.set('persistent_avatar_names', exportMap);
+      } catch(e) {}
+      namePersistenceTimeout = null;
+   }, 2000);
 }
 
 async function buildLocalFavoriteNameMap() {
@@ -4344,11 +4379,26 @@ async function fetchFriendAvatars(userId) {
     el.querySelectorAll('.avatar-thumb[data-src]').forEach(img => avatarObserver.observe(img));
 
     // ═══════════════════════════════════════════════════════════════
-    // Global Queued Background Recovery (Strict 429 Safety)
+    // Global Queued Background Recovery (Speed Optimized)
     // ═══════════════════════════════════════════════════════════════
-    const unknownAvs = allAvatars.filter(av => !av.name || av.name.startsWith('Model ') || av.name === 'Unknown').slice(0, 40);
-    unknownAvs.forEach(av => {
-       // Check local map one last time BEFORE queuing
+    const unknownAvs = allAvatars.filter(av => !av.name || av.name.startsWith('Model ') || av.name === 'Unknown').slice(0, 50);
+    
+    // BURST MODE: Fire the first 5 models in parallel IMMEDIATELY (no queue)
+    const burst = unknownAvs.slice(0, 5);
+    const remaining = unknownAvs.slice(5);
+    
+    burst.forEach(async av => {
+       if (localNameMap.has(av.id)) {
+          updateAvatarNameInUI(el, av.id, localNameMap.get(av.id));
+          return;
+       }
+       performSingleAvatarRecovery(av.id).then(name => {
+          if (name) updateAvatarNameInUI(el, av.id, name);
+       }).catch(() => {});
+    });
+
+    // Queue the rest to maintain rate limit safety
+    remaining.forEach(av => {
        if (localNameMap.has(av.id)) {
           updateAvatarNameInUI(el, av.id, localNameMap.get(av.id));
           return;
