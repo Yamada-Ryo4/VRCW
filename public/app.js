@@ -3123,37 +3123,50 @@ function displayAvatarDetail(av) {
   document.getElementById("avtrdbDetailCreated").textContent = fmt(createdAt);
   document.getElementById("avtrdbDetailUpdated").textContent = fmt(updatedAt);
 
-  // 3. Platform & Performance Logic
+  // 3. Platform & Performance Logic (Multi-platform robust)
   const platMap = { pc: "PC", android: "Quest", ios: "Apple", standalonewindows: "PC" };
   const ratingColor = r => ({ VeryPoor:"#ef4444", Poor:"#f59e0b", Medium:"#eab308", Good:"#22c55e", Excellent:"#a3e635" }[r] || "#64748b");
-  const ratingHtml = (label, r) => r && r !== "None" ? `<span style="font-size:0.75em;color:${ratingColor(r)};background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px;border:1px solid ${ratingColor(r)}40;">${label}: ${r}</span>` : "";
+  const ratingHtml = (label, r) => r && r !== "None" ? `<span style="display:inline-block;font-size:0.75em;color:${ratingColor(r)};background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px;border:1px solid ${ratingColor(r)}40;margin-right:8px;margin-bottom:4px;">${label}: ${r}</span>` : "";
 
   let plats = new Set();
-  let perfumes = [];
+  let ratingsMap = new Map(); // platformKey -> bestRating
 
-  if (av.unityPackages) {
-    // VRChat API format
+  // A. VRChat API format (unityPackages)
+  if (Array.isArray(av.unityPackages)) {
     av.unityPackages.forEach(p => {
-       if (p.platform && p.performanceRating && p.performanceRating !== "None") {
-         plats.add(p.platform);
-         perfumes.push(ratingHtml(platMap[p.platform] || p.platform, p.performanceRating));
+       const plat = p.platform === 'standalonewindows' ? 'pc' : (p.platform === 'android' ? 'android' : (p.platform === 'ios' ? 'ios' : p.platform));
+       if (plat) {
+         plats.add(plat);
+         if (p.performanceRating && p.performanceRating !== "None") {
+           ratingsMap.set(plat, p.performanceRating);
+         }
        }
     });
-  } else if (av.performance) {
-    // AvtrDB/VRCX format
-    if (av.performance.pc_rating) { plats.add("pc"); perfumes.push(ratingHtml("PC", av.performance.pc_rating)); }
-    if (av.performance.android_rating) { plats.add("android"); perfumes.push(ratingHtml("Quest", av.performance.android_rating)); }
-    if (av.performance.ios_rating) { plats.add("ios"); perfumes.push(ratingHtml("Apple", av.performance.ios_rating)); }
-    // Fallback platforms from compatibility
-    if (av.compatibility) av.compatibility.forEach(p => plats.add(p));
+  }
+  
+  // B. AvtrDB/VRCX format (performance object)
+  if (av.performance) {
+    if (av.performance.pc_rating) { plats.add("pc"); ratingsMap.set("pc", av.performance.pc_rating); }
+    if (av.performance.android_rating) { plats.add("android"); ratingsMap.set("android", av.performance.android_rating); }
+    if (av.performance.ios_rating) { plats.add("ios"); ratingsMap.set("ios", av.performance.ios_rating); }
   }
 
+  // C. Compatibility fallbacks
+  if (Array.isArray(av.compatibility)) av.compatibility.forEach(p => plats.add(p));
+
+  // Render Platform Badges at top
   const platBadges = Array.from(plats).map(p =>
     `<span class="avtrdb-badge" style="font-size:0.85em;padding:3px 10px;">${platMap[p] || p}</span>`
   ).join("") || "<span style='color:rgba(255,255,255,0.4)'>-</span>";
   document.getElementById("avtrdbDetailPlats").innerHTML = platBadges;
 
-  const perfHtml = perfumes.filter(Boolean).join(" ") || "<span style='color:rgba(255,255,255,0.4)'>-</span>";
+  // Render Performance section (All platforms)
+  const perfumes = Array.from(plats).map(p => {
+    const r = ratingsMap.get(p);
+    return ratingHtml(platMap[p] || p, r);
+  }).filter(Boolean);
+  
+  const perfHtml = perfumes.join("") || "<span style='color:rgba(255,255,255,0.4)'>-</span>";
   document.getElementById("avtrdbDetailPerf").innerHTML = perfHtml;
 
   const descRow = document.getElementById("avtrdbDetailDescRow");
