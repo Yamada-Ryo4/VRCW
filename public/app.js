@@ -4099,17 +4099,24 @@ async function fetchFriendAvatars(userId) {
     const seenIds = new Set();
     
     results.flat().forEach(av => {
-      const id = av.id || av.Id; // Handle different casing
+      if (!av) return;
+      const id = av.id || av.Id || av.id_vrc || ''; // Handle multiple ID variants
       if (id && !seenIds.has(id)) {
         seenIds.add(id);
-        // Normalize fields
+        
+        // Comprehensive field normalization for various third-party databases (VRCX, AvtrDB, etc.)
+        const name = av.name || av.Name || av.getName || av.displayName || av.AvatarName || 'Unknown';
+        const authorName = av.authorName || av.AuthorName || av.ownerName || av.author_name || '';
+        const thumb = av.thumbnailImageUrl || av.ThumbnailImageUrl || av.thumbnail_url || av.imageUrl || av.ImageUrl || av.image_url || '';
+        const fullImg = av.imageUrl || av.ImageUrl || av.image_url || av.thumbnailImageUrl || av.ThumbnailImageUrl || '';
+        
         allAvatars.push({
           id,
-          name: av.name || av.Name || 'Unknown',
-          authorName: av.authorName || av.AuthorName || '',
-          imageUrl: av.imageUrl || av.ImageUrl || '',
-          thumbnailImageUrl: av.thumbnailImageUrl || av.ThumbnailImageUrl || '',
-          releaseStatus: av.releaseStatus || av.ReleaseStatus || 'public',
+          name: name,
+          authorName: authorName,
+          imageUrl: fullImg,
+          thumbnailImageUrl: thumb,
+          releaseStatus: av.releaseStatus || av.ReleaseStatus || av.release_status || 'public',
           version: av.version || av.Version || 0,
           unityPackages: av.unityPackages || av.UnityPackages || []
         });
@@ -4117,7 +4124,8 @@ async function fetchFriendAvatars(userId) {
     });
 
     if (!allAvatars.length) { 
-      el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">暂无公开模型 (No public avatars found)</div>'; 
+      // If we got NO results at all, show a specific empty message
+      el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">暂无公开模型记录 (No database records found)</div>'; 
       return; 
     }
     
