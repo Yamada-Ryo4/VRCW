@@ -218,7 +218,10 @@ export default {
             if (cached) return cached;
 
             try {
-                const headers = { "User-Agent": USER_AGENT };
+                const headers = { 
+                    "User-Agent": USER_AGENT,
+                    "Referer": "https://vrchat.com/"
+                };
                 if (imgAuth) headers["Cookie"] = imgAuth;
 
                 const imgResp = await fetch(targetUrl, {
@@ -297,7 +300,10 @@ export default {
                 if (existing) { cachedCount++; return; }
 
                 try {
-                    const headers = { "User-Agent": USER_AGENT };
+                    const headers = { 
+                        "User-Agent": USER_AGENT,
+                        "Referer": "https://vrchat.com/"
+                    };
                     if (auth) headers["Cookie"] = auth;
 
                     const imgResp = await fetch(rawUrl, {

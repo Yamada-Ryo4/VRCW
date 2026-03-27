@@ -4078,7 +4078,19 @@ async function fetchFriendWorlds(userId) {
   } catch(e) { el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:var(--error);">${escHtml(e.message)}</div>`; }
 }
 
-async function fetchFriendAvatars(userId) {
+function updateAvatarNameInUI(listEl, avId, newName) {
+  if (!listEl) return;
+  const cards = listEl.querySelectorAll('.avatar-card');
+  cards.forEach(card => {
+    // Check if this card belongs to the avatar id
+    if (card.dataset.id === avId) {
+      const nameEl = card.querySelector('.avatar-name-overlay'); // Changed from .avatar-name to .avatar-name-overlay
+      if (nameEl) nameEl.textContent = newName;
+    }
+  });
+}
+
+async function fetchFriendAvatars(userId, listEl) {
   const el = document.getElementById('fpAvatarsList');
   if(!el) return;
   el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">加载中...</div>';
@@ -4163,7 +4175,7 @@ async function fetchFriendAvatars(userId) {
 
     const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     el.innerHTML = allAvatars.map((av, idx) => {
-        return `<div class="avatar-card" style="cursor:pointer;" onclick="displayAvatarDetail(window._friendAvatars[${idx}])">
+        return `<div class="avatar-card" data-id="${av.id}" style="cursor:pointer;" onclick="displayAvatarDetail(window._friendAvatars[${idx}])">
           <div class="avatar-thumb-wrapper img-loading">
             <img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(proxyImg(av.thumbnailImageUrl||av.imageUrl||''))}" alt="">
             <div class="avatar-name-overlay">${escHtml(av.name||'')}</div>
@@ -5353,7 +5365,7 @@ function showFriendContextMenu(e) {
         const avId = f.currentAvatarId; if (avId) window.open(`https://vrchat.com/home/avatar/${avId}`, '_blank');
       }},
       { icon:'👤', label:'显示备用模型信息', action: () => alert('备用模型信息在 VRChat 内查看') },
-      { icon:'📊', label:'显示一起加入过的房间', action: () => fetchSharedInstances(id) },
+      { icon:'🛒', label:'显示正在使用的道具', action: () => alert('暂时没有任何道具信息') },
     ]},
     { label:'管理', items: [
       { icon:'🔇', label:'屏蔽', action: () => blockUser(id, name) },
@@ -5391,17 +5403,19 @@ async function sendPoke(userId, name) {
 async function blockUser(userId, name) {
   if (!confirm(`确认屏蔽 ${name}?`)) return;
   try {
-    await apiCall(`/api/vrc/auth/user/blocks`, {method:'POST', json:{blocked:userId}});
-    alert(`✅ 已屏蔽 ${name}`);
-  } catch(e) { alert('失败: ' + e.message); }
+    const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'block'}});
+    if (r.ok) alert(`✅ 已成功屏蔽 ${name}`);
+    else alert(`❌ 屏蔽失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
 }
 
 async function muteUser(userId, name) {
   if (!confirm(`确认静音 ${name}?`)) return;
   try {
-    await apiCall(`/api/vrc/user/${userId}/mute`, {method:'PUT'});
-    alert(`✅ 已静音 ${name}`);
-  } catch(e) { alert('失败: ' + e.message); }
+    const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'mute'}});
+    if (r.ok) alert(`✅ 已成功静音 ${name}`);
+    else alert(`❌ 静音失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
 }
 
 async function fetchSharedInstances(userId) {
