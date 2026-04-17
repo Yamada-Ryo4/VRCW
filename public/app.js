@@ -146,7 +146,7 @@ function getAvatarPlatforms(av) {
     // PC EXCEPTION: Always allow PC from compatibility lists even without rating, 
     // as it's rarely an "Impostor-only" platform in these DBs.
     if (plat === 'pc' && isFallback) {
-      if (!ratings.has('pc')) ratings.set('pc', "Unknown");
+      if (!ratings.has('pc')) ratings.set('pc', null); // null = platform exists, no rating data
       return;
     }
 
@@ -3290,12 +3290,15 @@ async function avtrdbFetch(append) {
       card.className = "avatar-card";
       card.style.cursor = "pointer";
       card.title = "点击查看详情";
+      card.setAttribute('data-avid', av.vrc_id);
       card.addEventListener("click", () => openAvtrdbDetail(av));
 
       const ratings = getAvatarPlatforms(av);
       const platBadges = Array.from(ratings.keys()).map(p => {
         const label = { pc: "PC", android: "Quest", ios: "Apple" }[p] || p;
-        return `<span class="avtrdb-badge">${label}</span>`;
+        const rating = ratings.get(p);
+        const ratingText = rating && rating !== 'Unknown' ? ` · ${rating}` : '';
+        return `<span class="avtrdb-badge">${label}${ratingText}</span>`;
       }).join("");
 
       card.innerHTML = `
@@ -3308,12 +3311,34 @@ async function avtrdbFetch(append) {
         <div style="padding:8px 6px 4px;font-size:0.7em;color:rgba(255,255,255,0.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
           by ${escHtml(av.author?.name || "Unknown")}
         </div>
-        <div style="padding:0 6px 10px;display:flex;gap:4px;flex-wrap:wrap;">${platBadges}</div>
+        <div class="card-plat-badges" style="padding:0 6px 10px;display:flex;gap:4px;flex-wrap:wrap;">${platBadges}</div>
       `;
       grid.appendChild(card);
+
+      // BACKGROUND REFRESH: Queue official API verification for accurate platform data
+      avatarMetadataQueue.add(av.vrc_id, (data) => {
+        // Update the av object in memory so clicking the card shows updated data
+        Object.assign(av, { 
+          unityPackages: data.unityPackages || av.unityPackages,
+          performance: (data.performance && Object.keys(data.performance).length) ? data.performance : av.performance
+        });
+        // Update badges on the card
+        const liveCard = grid.querySelector(`[data-avid="${av.vrc_id}"]`);
+        if (!liveCard) return;
+        const badgeWrap = liveCard.querySelector('.card-plat-badges');
+        if (!badgeWrap) return;
+        const liveRatings = getAvatarPlatforms(av);
+        badgeWrap.innerHTML = Array.from(liveRatings.keys()).map(p => {
+          const label = { pc: "PC", android: "Quest", ios: "Apple" }[p] || p;
+          const r = liveRatings.get(p);
+          const ratingText = r && r !== 'Unknown' ? ` · ${r}` : '';
+          return `<span class="avtrdb-badge">${label}${ratingText}</span>`;
+        }).join("");
+      });
     });
 
     loadMoreBtn.style.display = hasMoreGlobal ? "inline-block" : "none";
+
 
   } catch (e) {
     if (!append) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:#ef4444;">搜索失败: ${escHtml(e.message)}</div>`;
@@ -3370,7 +3395,7 @@ function displayAvatarDetail(av) {
   ).join("") || "<span style='color:rgba(255,255,255,0.4)'>-</span>";
   document.getElementById("avtrdbDetailPlats").innerHTML = platBadges;
 
-  // Render Performance section
+  // Render Performance section (only show platforms that have actual ratings)
   const perfumes = plats.map(p => ratingHtml(platMap[p] || p, ratingsMap.get(p))).filter(Boolean);
   const perfHtml = perfumes.join("") || "<span style='color:rgba(255,255,255,0.4)'>-</span>";
   document.getElementById("avtrdbDetailPerf").innerHTML = perfHtml;
