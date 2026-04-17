@@ -128,6 +128,7 @@
                         <div class="btn-group">
                             <button class="btn btn-primary btn-block active cat-btn" onclick="switchCategory('mine')" id="cat-mine" data-i18n="catMine">我的模型</button>
                             <button class="btn btn-secondary btn-block cat-btn" onclick="switchCategory('avatars1')" id="cat-avatars1">Favorites 1</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchCategory('local')" id="cat-local">⭐ 本地收藏</button>
                             <div id="favGroupBtns"></div>
                         </div>
                     </div>
@@ -202,6 +203,7 @@
                     <div id="avatarGrid" class="avatar-grid" style="flex: 1; overflow-y: auto;"></div>
                 </div>
             </div>
+
 
             <!-- ── Upload Panel ── -->
             <div id="uploadPanel" class="upload-panel">
@@ -375,6 +377,8 @@
                         <div class="category-list">
                             <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('all')" id="friendCatAll" style="width:100%;">👥 所有好友</button>
                             <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('online')" id="friendCatOnline" style="width:100%;">🟢 仅在线</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('notifications')" id="friendCatNotifications" style="width:100%;">🔔 消息通知</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('modlog')" id="friendCatModlog" style="width:100%;">📜 管理记录</button>
                         </div>
                     </div>
                     <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;">
@@ -415,6 +419,26 @@
                         </div>
                         <div id="friendStats" style="padding:6px 24px;font-size:0.8em;color:rgba(255,255,255,0.4);flex-shrink:0;"></div>
                         <div id="friendList" style="padding:0 16px 16px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1;"></div>
+                    </div>
+                    <!-- Moderation Log view -->
+                    <div id="friendModlogView" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border);">
+                            <h3 style="margin:0;font-size:1.1em;">📜 玩家管理记录</h3>
+                            <button class="btn btn-secondary" style="font-size:0.8em;color:var(--text-danger);" onclick="clearModerationLog()">🗑️ 清空记录</button>
+                        </div>
+                        <div id="modLogList" style="flex:1;overflow-y:auto;padding:16px 24px;">
+                            <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无管理记录</div>
+                        </div>
+                    </div>
+                    <!-- Notification view -->
+                    <div id="friendNotificationsView" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border);">
+                            <h3 style="margin:0;font-size:1.1em;">🔔 消息通知</h3>
+                            <button class="btn btn-secondary" style="font-size:0.8em;" onclick="seeAllNotifications()">🧹 全部标为已读</button>
+                        </div>
+                        <div id="notificationList" style="flex:1;overflow-y:auto;padding:16px 24px;">
+                            <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无消息通知</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -550,6 +574,7 @@
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
                     <span id="fpTrustBadge" style="font-size:0.68em;font-weight:600;padding:3px 10px;border-radius:99px;"></span>
                     <span id="fpAgeBadge" style="display:none;font-size:0.68em;background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3);padding:3px 10px;border-radius:99px;">18+</span>
+                    <span id="fpModBadge" style="display:none;font-size:0.68em;font-weight:600;padding:3px 10px;border-radius:99px;"></span>
                     <span id="fpPlatformBadge" style="font-size:0.75em;color:var(--text-muted);"></span>
                 </div>
                 <!-- Showcase badges row -->
@@ -634,7 +659,7 @@
                     <div id="worldDetailInstances" style="display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;"></div>
                 </div>
                 <div style="display:flex;gap:10px;margin-top:4px;">
-                    <button id="worldDetailFavBtn" class="btn btn-secondary" style="flex:1;" onclick="toggleWorldFavorite()">⭐ 收藏</button>
+                    <button id="worldDetailFavBtn" class="btn btn-secondary" style="flex:1;" onclick="toggleWorldFavMenu(event)">⭐ 收藏</button>
                     <button id="worldDetailJoinBtn" class="btn btn-primary" style="flex:1;" onclick="joinWorldInstance()">⚡ 加入世界</button>
                 </div>
                 <div id="worldDetailFavStatus" style="font-size:0.75em;text-align:center;min-height:18px;color:var(--success);"></div>
@@ -754,11 +779,25 @@
             </div>
         </div>
     </div>
-    <!-- avtrDB Favorite Group Menu (outside modal-content to avoid overflow:hidden clipping) -->
+    <!-- avtrDB Favorite Group Menu -->
     <div id="avtrdbFavMenu" class="hidden"
         style="position:fixed;min-width:180px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;overflow:hidden;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,0.5);">
-        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择收藏夹</div>
+        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择模型收藏夹</div>
         <div id="avtrdbFavGroupList"></div>
+    </div>
+
+    <!-- World Favorite Group Menu -->
+    <div id="worldFavMenu" class="hidden"
+        style="position:fixed;min-width:180px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;overflow:hidden;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择世界收藏夹</div>
+        <div id="worldFavGroupList"></div>
+    </div>
+
+    <!-- Friend Favorite Group Menu -->
+    <div id="friendFavMenu" class="hidden"
+        style="position:fixed;min-width:180px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;overflow:hidden;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择好友分组</div>
+        <div id="friendFavGroupListMenu"></div>
     </div>
         </div><!-- /app-layout -->
     </div><!-- /mainApp -->

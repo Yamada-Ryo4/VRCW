@@ -13,9 +13,16 @@ let currentLang = localStorage.getItem("vrc_lang") || "zh";
 let saveDirHandle = null; // File System Access API directory handle
 let visibleAvatars = [];
 let currentUserId = ""; // Current logged-in user's VRChat ID
-let favoriteGroups = []; // Avatar favorite groups from API (dynamic)
-let favoriteIdMap = new Map(); // avatarId -> favoriteId (for unfavoriting)
+let myModerations = []; // Player moderations (mute/block)
+let favoriteGroups = []; // Avatar favorite groups
+let worldFavGroups  = []; // World favorite groups
+let friendFavGroups = []; // Friend favorite groups
+let favoriteIdMap = new Map(); // avatarId -> favoriteId
+let worldFavoriteIdMap = new Map(); // worldId -> favoriteId (moved/sync)
+let friendFavoriteIdMap = new Map(); // userId -> favoriteId
 window._localNameMap = new Map(); // GLOBAL CACHE: avatarId -> name (for recovery)
+let localAvatarFavs = []; // Local favorites collection (max 200)
+let localAvatarIdMap = new Map(); // avatarId -> true (for UI binary check)
 
 // ── Global Avatar Lookup Queue (Strict Rate Limiting & 429 Backoff) ──
 const avatarLookupQueue = {
@@ -89,20 +96,30 @@ async function performSingleAvatarRecovery(id) {
 // ── Unified Platform/Performance Helper ──
 function getAvatarPlatforms(av) {
   const ratings = new Map();
-  // A. unityPackages (Preferred)
+  // A. unityPackages (Preferred - Official VRChat API)
   if (Array.isArray(av.unityPackages)) {
     av.unityPackages.forEach(p => {
       const plat = p.platform === 'standalonewindows' ? 'pc' : (p.platform === 'android' ? 'android' : (p.platform === 'ios' ? 'ios' : p.platform));
-      if (plat && p.performanceRating && p.performanceRating !== "None") {
-        ratings.set(plat, p.performanceRating);
+      if (plat) {
+        ratings.set(plat, (p.performanceRating && p.performanceRating !== "None") ? p.performanceRating : "Unknown");
       }
     });
   }
-  // B. performance object (Avtrdb fallback)
+  // B. compatibility / platforms (Generic fallbacks for third-party search APIs)
+  const otherPlats = av.compatibility || av.platforms || [];
+  if (Array.isArray(otherPlats)) {
+    otherPlats.forEach(p => {
+      const plat = p.toLowerCase() === 'standalonewindows' ? 'pc' : p.toLowerCase();
+      if (['pc', 'android', 'ios'].includes(plat) && !ratings.has(plat)) {
+        ratings.set(plat, "Unknown");
+      }
+    });
+  }
+  // C. performance object (Old Avtrdb/VRCX fallback)
   if (av.performance) {
-    if (av.performance.pc_rating && av.performance.pc_rating !== "None") ratings.set('pc', av.performance.pc_rating);
-    if (av.performance.android_rating && av.performance.android_rating !== "None") ratings.set('android', av.performance.android_rating);
-    if (av.performance.ios_rating && av.performance.ios_rating !== "None") ratings.set('ios', av.performance.ios_rating);
+    if (av.performance.pc_rating && av.performance.pc_rating !== "None" && !ratings.has('pc')) ratings.set('pc', av.performance.pc_rating);
+    if (av.performance.android_rating && av.performance.android_rating !== "None" && !ratings.has('android')) ratings.set('android', av.performance.android_rating);
+    if (av.performance.ios_rating && av.performance.ios_rating !== "None" && !ratings.has('ios')) ratings.set('ios', av.performance.ios_rating);
   }
   return ratings;
 }
@@ -115,7 +132,7 @@ const idb = {
     if (this.db) return;
     if (this._initPromise) return this._initPromise;
     this._initPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open("vrcw_DB", 1);
+      const request = indexedDB.open("vrcw_DB", 3); // Upgrade to v3
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         this.db = request.result;
@@ -125,6 +142,10 @@ const idb = {
         const db = e.target.result;
         if (!db.objectStoreNames.contains("cache"))
           db.createObjectStore("cache");
+        if (!db.objectStoreNames.contains("mod_logs"))
+          db.createObjectStore("mod_logs", { keyPath: "id", autoIncrement: true });
+        if (!db.objectStoreNames.contains("local_avatars"))
+          db.createObjectStore("local_avatars", { keyPath: "id" });
       };
     });
     return this._initPromise;
@@ -159,9 +180,85 @@ const idb = {
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+  },
+  async addLog(store, data) {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(store, "readwrite");
+      const s = tx.objectStore(store);
+      const req = s.add(data);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async getAllLogs(store) {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(store, "readonly");
+      const s = tx.objectStore(store);
+      const req = s.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async clearLogs(store) {
+    await this.init();
+    const tx = this.db.transaction(store, "readwrite");
+    tx.objectStore(store).clear();
+  },
+  async getLocalAvatars() {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction("local_avatars", "readonly");
+      const req = tx.objectStore("local_avatars").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async saveLocalAvatar(av) {
+    await this.init();
+    const tx = this.db.transaction("local_avatars", "readwrite");
+    tx.objectStore("local_avatars").put(av);
+  },
+  async removeLocalAvatar(id) {
+    await this.init();
+    const tx = this.db.transaction("local_avatars", "readwrite");
+    tx.objectStore("local_avatars").delete(id);
   }
 };
-idb.initAndLoadMap();
+idb.initAndLoadMap().then(() => syncLocalFavorites());
+
+async function syncLocalFavorites() {
+  try {
+    localAvatarFavs = await idb.getLocalAvatars();
+    localAvatarIdMap.clear();
+    localAvatarFavs.forEach(av => localAvatarIdMap.set(av.id, true));
+    const btn = document.getElementById("cat-local");
+    if (btn) btn.textContent = `⭐ 本地收藏 (${localAvatarFavs.length}/200)`;
+  } catch(e) { console.error("syncLocalFavorites", e); }
+}
+
+async function saveToLocalFavorite(av) {
+  if (localAvatarFavs.length >= 200) {
+    alert("本地收藏已满 (上限 200)。请删除一些再添加。");
+    return;
+  }
+  if (localAvatarIdMap.has(av.id)) return;
+  localAvatarFavs.push(av);
+  localAvatarIdMap.set(av.id, true);
+  await idb.saveLocalAvatar(av);
+  syncLocalFavorites();
+  logMsg(`✅ 已保存到本地收藏: ${av.name}`, "info");
+}
+
+async function removeFromLocalFavorite(id) {
+  localAvatarFavs = localAvatarFavs.filter(a => a.id !== id);
+  localAvatarIdMap.delete(id);
+  await idb.removeLocalAvatar(id);
+  syncLocalFavorites();
+  if (currentCategory === 'local') switchCategory('local');
+  logMsg(`🗑️ 已从本地收藏移除`, "info");
+}
 
 // ── HTML escape helper (prevent XSS) ──
 function escHtml(str) {
@@ -704,9 +801,9 @@ function showMainApp() {
 
 // ── Sync All Favorites Globally ──
 async function syncAllFavoriteIds() {
-  let offset = 0;
-  // Don't clear, just merge (in case fetchAvatars already populated some)
   try {
+    // 1. Avatars
+    let offset = 0;
     while (true) {
       const resp = await apiCall(`/api/vrc/favorites?type=avatar&n=100&offset=${offset}`);
       if (!resp.ok) break;
@@ -715,31 +812,75 @@ async function syncAllFavoriteIds() {
       favs.forEach((f) => favoriteIdMap.set(f.favoriteId, f.id));
       if (favs.length < 100) break;
       offset += 100;
-      await new Promise((r) => setTimeout(r, 100)); // Rate limit protection
+      if (offset >= 500) break;
     }
-    logMsg(`✅ 已同步 ${favoriteIdMap.size} 个全局收藏状态`, "info");
+    // 2. Worlds
+    offset = 0;
+    while (true) {
+      const resp = await apiCall(`/api/vrc/favorites?type=world&n=100&offset=${offset}`);
+      if (!resp.ok) break;
+      const favs = await resp.json();
+      if (!favs || favs.length === 0 || favs.error) break;
+      favs.forEach((f) => worldFavoriteIdMap.set(f.favoriteId, f.id));
+      if (favs.length < 100) break;
+      offset += 100;
+    }
+    // 3. Friends
+    offset = 0;
+    while (true) {
+      const resp = await apiCall(`/api/vrc/favorites?type=friend&n=100&offset=${offset}`);
+      if (!resp.ok) break;
+      const favs = await resp.json();
+      if (!favs || favs.length === 0 || favs.error) break;
+      favs.forEach((f) => friendFavoriteIdMap.set(f.favoriteId, f.id));
+      if (favs.length < 100) break;
+      offset += 100;
+    }
+    logMsg(`✅ 已同步收藏状态 (模型:${favoriteIdMap.size} 世界:${worldFavoriteIdMap.size} 好友:${friendFavoriteIdMap.size})`, "info");
   } catch (e) {
-    console.warn("Failed to sync favorite IDs globally", e);
+    console.warn("Failed to sync favorite IDs", e);
   }
 }
 
 // ── Favorite Groups (dynamic sidebar) ──
 async function fetchFavoriteGroups() {
   try {
-    const resp = await apiCall("/api/vrc/favorite/groups?type=avatar&n=50");
-    if (!resp.ok) throw new Error("failed");
-    const groups = await resp.json();
-    favoriteGroups = (groups || [])
-      .filter((g) => g.name && g.name.startsWith("avatars"))
-      .sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { numeric: true }),
-      );
-    renderFavoriteGroupButtons();
-    preloadAllFavorites(favoriteGroups.map((g) => g.name));
+    // 1. Avatars
+    const rAv = await apiCall("/api/vrc/favorite/groups?type=avatar&n=50");
+    if (rAv.ok) {
+      const g = await rAv.json();
+      favoriteGroups = (g || []).filter(x => x.name && x.name.startsWith('avatars')).sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true}));
+      renderFavoriteGroupButtons();
+      preloadAllFavorites(favoriteGroups.map(x => x.name));
+    }
+    // 2. Worlds
+    const rW = await apiCall("/api/vrc/favorite/groups?type=world&n=50");
+    if (rW.ok) {
+      const g = await rW.json();
+      worldFavGroups = (g || []).filter(x => x.name && x.name.startsWith('worlds')).sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true}));
+    }
+    // 3. Friends
+    const rF = await apiCall("/api/vrc/favorite/groups?type=friend&n=50");
+    if (rF.ok) {
+      const g = await rF.json();
+      friendFavGroups = (g || []).filter(x => x.name && (x.name.startsWith('group_') || x.name==='friends')).sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true}));
+      renderFriendFavGroupButtons();
+    }
   } catch (e) {
-    // Fallback: show avatars1 only (already in HTML)
     console.warn("Could not fetch favorite groups", e);
   }
+}
+
+function renderFriendFavGroupButtons() {
+  const container = document.getElementById('friendFavGroupList');
+  if (!container) return;
+  if (!friendFavGroups.length) {
+    container.innerHTML = '<div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">无收藏分组</div>';
+    return;
+  }
+  container.innerHTML = friendFavGroups.map(g =>
+    makeCatBtn(`⭐ ${escHtml(g.displayName || g.name)}`, `switchFriendCategory('fav_${g.name}')`, `friendCatFav_${g.name}`)
+  ).join('');
 }
 
 async function preloadAllFavorites(groups) {
@@ -829,7 +970,7 @@ function switchTab(tab) {
   document.querySelector(`.nav-item[onclick*="'${tab}'"]`)?.classList.add("active");
   document.querySelector(`.nav-item-icon[onclick*="'${tab}'"]`)?.classList.add("active");
 
-  const tabTitles = { download:"头像模型", upload:"上传", search:"全站搜索", friends:"社交与好友", worlds:"虚拟世界", groups:"群组", assets:"虚拟资产" };
+  const tabTitles = { download:"头像模型", upload:"上传", search:"全站搜索", friends:"社交与好友", worlds:"虚拟世界", groups:"群组", assets:"虚拟资产", history:"变动日志" };
   const topTitle = document.querySelector('.mobile-top-title');
   if (topTitle && tabTitles[tab]) topTitle.textContent = "VRCW - " + tabTitles[tab];
 
@@ -940,6 +1081,8 @@ async function fetchAvatars(forceRefresh = false) {
       const resp = await apiCall("/api/avatars");
       if (!resp.ok) throw new Error("Failed to fetch avatars");
       allFetched = await resp.json();
+    } else if (currentCategory === "local") {
+      allFetched = localAvatarFavs;
     } else {
       // VRC+ favorites max is around 256. Fetch sequentially to avoid rate-limiting (429 errors)
       let offset = 0;
@@ -1186,6 +1329,10 @@ function renderGrid(list) {
     // Both mine and favorites support selection now
     card.className = "avatar-card" + (selectedIds.has(av.id) ? " selected" : "");
 
+    const isLocalFaved = localAvatarIdMap.has(av.id);
+    const isCloudFaved = favoriteIdMap.has(av.id);
+    const isFaved = isLocalFaved || isCloudFaved;
+
     // Build action buttons: edit/delete only for owner; unfavorite only in favorites view
     let actionBtns = "";
     if (isOwner) {
@@ -1193,7 +1340,14 @@ function renderGrid(list) {
       actionBtns += `<button class="btn-action delete" title="Delete" onclick="event.stopPropagation(); deleteAvatar('${safeId}', '${escHtml(av.name).replace(/'/g, "\\'")}')">🗑️</button>`;
     }
     if (isFavoriteView) {
-      actionBtns += `<button class="btn-action unfavorite" title="移出收藏" onclick="event.stopPropagation(); unfavorite('${safeId}', '${escHtml(av.name).replace(/'/g, "\\'")}')">&times;</button>`;
+      if (currentCategory === 'local') {
+        actionBtns += `<button class="btn-action unfavorite" title="移出本地收藏" onclick="event.stopPropagation(); removeFromLocalFavorite('${safeId}')">&times;</button>`;
+      } else {
+        actionBtns += `<button class="btn-action unfavorite" title="移出收藏" onclick="event.stopPropagation(); unfavorite('${safeId}', '${escHtml(av.name).replace(/'/g, "\\'")}')">&times;</button>`;
+      }
+    } else if (!isFaved) {
+      // In non-favorite view (e.g. mine), show Favorite button if not already favorited
+      actionBtns += `<button class="btn-action favorite" title="收藏" onclick="event.stopPropagation(); toggleAvatarFavGridMenu(event, '${safeId}', '${escHtml(av.name).replace(/'/g, "\\'")}', this)">⭐</button>`;
     }
 
     // Apply memory cache for instant render if already loaded previously
@@ -1205,6 +1359,7 @@ function renderGrid(list) {
 
     card.innerHTML = `
             ${actionBtns ? `<div class="avatar-actions">${actionBtns}</div>` : ""}
+            ${isFaved ? `<div class="fav-badge" title="已收藏">⭐</div>` : ""}
             <div class="avatar-checkbox" onclick="event.stopPropagation(); toggleSelect('${safeId}')" title="选中/取消选中">✓</div>
             <div class="avatar-thumb-wrapper ${isCached ? '' : 'img-loading'}">
                 ${imgHtml}
@@ -2933,7 +3088,7 @@ async function vrcdbFetch(cat, query) {
       }).join('');
     } else if (cat === 'worlds') {
       grid.innerHTML = filteredData.map(w => {
-        return `<div class="avatar-card" onclick="showWorldDetail('${w.id}')">
+        return `<div class="avatar-card" onclick="openWorldDetail('${w.id}')">
           <img src="${escHtml(proxyImg(w.thumbnailImageUrl))}" class="avatar-thumb" style="aspect-ratio:16/9;" onerror="this.style.display=\'none\'">
           <div class="avatar-info">
             <div class="avatar-name" style="font-size:1em;margin-bottom:4px;">${escHtml(w.name)}</div>
@@ -3168,20 +3323,29 @@ function displayAvatarDetail(av) {
   document.getElementById("avtrdbFavMenu")?.classList.add("hidden");
 
   const favBtn = document.getElementById("avtrdbDetailFavBtn");
-  if (favoriteIdMap.has(id)) {
+  const isLocalFaved = localAvatarIdMap.has(id);
+  const isCloudFaved = favoriteIdMap.has(id);
+  
+  if (isCloudFaved) {
      favBtn.innerHTML = "⭐ 移除收藏";
      favBtn.className = "btn btn-danger-full";
      favBtn.onclick = (e) => { e.stopPropagation(); unfavorite(id, name); };
+  } else if (isLocalFaved) {
+     favBtn.innerHTML = "⭐ 移除本地收藏";
+     favBtn.className = "btn btn-danger-full";
+     favBtn.onclick = (e) => { e.stopPropagation(); removeFromLocalFavorite(id); };
   } else {
      favBtn.innerHTML = "⭐ 收藏";
      favBtn.className = "btn btn-secondary";
      favBtn.onclick = toggleAvtrdbFavMenu;
      const favList = document.getElementById("avtrdbFavGroupList");
      if (favList) {
-        if (favoriteGroups.length === 0) favList.innerHTML = `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载收藏夹</div>`;
-        else favList.innerHTML = favoriteGroups.map(g =>
+        let html = `<button class="avtrdb-fav-group-btn" style="color:var(--secondary);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:4px;" onclick="saveToLocalFavorite(currentAvatarDetail)">📦 保存到本地 (200槽位)</button>`;
+        if (favoriteGroups.length === 0) html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载收藏夹</div>`;
+        else html += favoriteGroups.map(g =>
           `<button class="avtrdb-fav-group-btn" onclick="addToFavorite('${escHtml(id)}','${escHtml(g.name)}',this)">${escHtml(g.displayName || g.name)}</button>`
         ).join("");
+        favList.innerHTML = html;
      }
   }
 
@@ -3205,31 +3369,63 @@ function closeAvtrdbDetail() {
   document.getElementById("avtrdbFavMenu")?.classList.add("hidden");
 }
 
-function toggleAvtrdbFavMenu(event) {
-  event.stopPropagation();
+function toggleAvatarFavGridMenu(event, id, name, btn) {
   const menu = document.getElementById("avtrdbFavMenu");
   if (!menu) return;
+  toggleFavMenuGeneric(event, menu, btn, () => {
+    let html = `<button class="avtrdb-fav-group-btn" style="color:var(--secondary);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:4px;" onclick="saveToLocalFavorite(visibleAvatars.find(a=>a.id==='${id}'))">📦 保存到本地 (200槽位)</button>`;
+    if (favoriteGroups.length === 0) html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载收藏夹</div>`;
+    else html += favoriteGroups.map(g =>
+      `<button class="avtrdb-fav-group-btn" onclick="addToFavorite('${escHtml(id)}','${escHtml(g.name)}',this)">${escHtml(g.displayName || g.name)}</button>`
+    ).join("");
+    return html;
+  });
+}
 
+function toggleAvtrdbFavMenu(event) {
+  const menu = document.getElementById("avtrdbFavMenu");
+  const btn = document.getElementById("avtrdbDetailFavBtn");
+  if (!menu || !btn) return;
+  toggleFavMenuGeneric(event, menu, btn, () => {
+    const idRow = document.getElementById("avtrdbDetailId");
+    const id = idRow ? idRow.textContent : "";
+    let html = `<button class="avtrdb-fav-group-btn" style="color:var(--secondary);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:4px;" onclick="saveToLocalFavorite(currentAvatarDetail)">📦 保存到本地 (200槽位)</button>`;
+    if (favoriteGroups.length === 0) html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载收藏夹</div>`;
+    else html += favoriteGroups.map(g =>
+      `<button class="avtrdb-fav-group-btn" onclick="addToFavorite('${escHtml(id)}','${escHtml(g.name)}',this)">${escHtml(g.displayName || g.name)}</button>`
+    ).join("");
+    return html;
+  });
+}
+
+function toggleFavMenuGeneric(event, menu, btn, contentFn) {
+  event.stopPropagation();
   if (!menu.classList.contains("hidden")) {
     menu.classList.add("hidden");
     return;
   }
+  const list = menu.querySelector('div:last-child');
+  if (list) list.innerHTML = contentFn();
 
-  // Position the fixed menu above the button using viewport coords
-  const btn = document.getElementById("avtrdbDetailFavBtn");
-  const rect = btn.getBoundingClientRect();
-  menu.style.left = rect.left + "px";
-  menu.style.top = (rect.top - menu.offsetHeight - 6) + "px";
   menu.classList.remove("hidden");
-
-  // Recalculate after render (height may not be known before display)
-  requestAnimationFrame(() => {
-    menu.style.top = (rect.top - menu.offsetHeight - 6) + "px";
-  });
-
-  // Close on outside click
+  
+  let left, top;
+  if (btn) {
+    const rect = btn.getBoundingClientRect();
+    const menuH = menu.offsetHeight || 160;
+    left = Math.min(rect.left, window.innerWidth - 200);
+    top = rect.top - menuH - 6;
+    if (top < 10) top = rect.bottom + 6;
+  } else {
+    left = Math.min(event.clientX, window.innerWidth - 200);
+    top = Math.min(event.clientY, window.innerHeight - 200);
+  }
+  
+  menu.style.left = left + "px";
+  menu.style.top = top + "px";
+  
   const close = (e) => {
-    if (!document.getElementById("avtrdbFavWrapper")?.contains(e.target) && !menu.contains(e.target)) {
+    if (!menu.contains(e.target)) {
       menu.classList.add("hidden");
       document.removeEventListener("click", close);
     }
@@ -3312,7 +3508,10 @@ document.addEventListener("DOMContentLoaded", () => {
   if (vrcAuth) {
     apiCall("/api/vrc/auth/user")
       .then((r) => {
-        if (r.ok) showMainApp();
+        if (r.ok) {
+          showMainApp();
+          fetchMyModerations();
+        }
       })
       .catch(() => {});
   }
@@ -3359,7 +3558,7 @@ async function getLocationDisplay(location, worldId) {
   if (rest.includes('~private'))        type = '🔒 私人';
   else if (rest.includes('~friends+')) type = '👥 好友+';
   else if (rest.includes('~friends'))  type = '👥 好友';
-  else if (rest.includes('~hidden'))   type = '👁 隐藏';
+  else if (rest.includes('~hidden'))   type = '👥 好友+';
   else if (rest.includes('group('))    type = '🏠 群组';
 
   const regionMatch = rest.match(/region\(([^)]+)\)/);
@@ -3428,36 +3627,19 @@ function proxyImg(url) {
 let allFriends       = [];
 let currentFriendCategory = 'myprofile';
 let friendsLoaded    = false;
-let friendFavGroups  = [];
 let currentFriendProfile = null;
 let myProfileData    = null;
 
 async function initFriendsTab() {
   friendsLoaded = true;
-  await loadFriendFavGroups();
+  fetchMyModerations();
   switchFriendCategory('myprofile');
 }
 
 // Helper: make a sidebar button with cat-btn + btn-secondary styling identical to Models tab
+
 function makeCatBtn(text, onclick, id) {
   return `<button class="btn btn-secondary btn-block cat-btn" onclick="${escHtml(onclick)}" id="${escHtml(id)}">${text}</button>`;
-}
-
-async function loadFriendFavGroups() {
-  try {
-    const resp = await apiCall('/api/vrc/favorite/groups?type=friend&n=10');
-    if (!resp.ok) return;
-    friendFavGroups = await resp.json() || [];
-    const container = document.getElementById('friendFavGroupList');
-    if (!container) return;
-    if (!friendFavGroups.length) {
-      container.innerHTML = '<div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">无收藏夹</div>';
-      return;
-    }
-    container.innerHTML = friendFavGroups.map(g =>
-      makeCatBtn(`⭐ ${escHtml(g.displayName || g.name)}`, `switchFriendCategory('fav_${g.name}')`, `friendCatFav_${g.name}`)
-    ).join('');
-  } catch(e) { console.warn('loadFriendFavGroups', e); }
 }
 
 function switchFriendCategory(cat) {
@@ -3474,11 +3656,24 @@ function switchFriendCategory(cat) {
 
   const myView   = document.getElementById('friendMyProfileView');
   const listView = document.getElementById('friendListView');
+  const logView  = document.getElementById('friendModlogView');
+  const notifyView = document.getElementById('friendNotificationsView');
+  if (myView)   myView.style.display = 'none';
+  if (listView) listView.style.display = 'none';
+  if (logView)  logView.style.display = 'none';
+  if (notifyView) notifyView.style.display = 'none';
+
   if (cat === 'myprofile') {
-    myView.style.display = 'block'; listView.style.display = 'none';
+    if (myView) myView.style.display = 'block';
     fetchMyProfile();
+  } else if (cat === 'modlog') {
+    if (logView) logView.style.display = 'flex';
+    renderModerationLog();
+  } else if (cat === 'notifications') {
+    if (notifyView) notifyView.style.display = 'flex';
+    fetchNotifications();
   } else {
-    myView.style.display = 'none'; listView.style.display = 'flex';
+    if (listView) listView.style.display = 'flex';
     fetchCurrentFriendCategory();
   }
 }
@@ -3509,6 +3704,7 @@ async function fetchMyProfile(forceRefresh = false) {
     renderMyProfile(u);
     // Update the sidebar mini-profile card
     renderSidebarMiniProfile(u);
+    fetchMyModerations();
   } catch(e) {
     if (myView) myView.innerHTML = `<div style="text-align:center;padding:60px;color:var(--error);">加载失败: ${escHtml(e.message)}</div>`;
   }
@@ -3607,7 +3803,8 @@ function renderMyProfile(u) {
 
     <!-- Action buttons -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
-      <button class="btn btn-primary" style="padding:6px 14px;font-size:0.82em;" onclick="fetchMyProfile(true)">🔄 刷新资料</button>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:0.82em;" onclick="openEditProfileModal()">✏️ 编辑个人资料</button>
+      <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;" onclick="fetchMyProfile(true)">🔄 刷新资料</button>
       <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;" onclick="showSelfContextMenu(event)">··· 操作菜单</button>
       <button class="btn btn-secondary" style="font-size:0.82em;" onclick="window.open('https://vrchat.com/home/user/${escHtml(u.id||'')}','_blank')">🔗 VRChat 主页</button>
       <button class="btn btn-secondary" style="font-size:0.82em;" onclick="navigator.clipboard.writeText('${escHtml(u.id||'')}').then(()=>this.textContent='✓ 已复制').catch(()=>{})">📋 复制 ID</button>
@@ -3618,7 +3815,7 @@ function renderMyProfile(u) {
   if (u.location && u.location !== 'offline' && u.location !== 'private') {
     getLocationDisplay(u.location).then(txt => {
       const el = document.getElementById('myProfileLocText');
-      if (el) el.innerHTML = `<a href="#" onclick="showWorldDetail('${u.location.split(':')[0]}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${txt}</a>`;
+      if (el) el.innerHTML = `<a href="#" onclick="openWorldDetail('${u.location.split(':')[0]}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${txt}</a>`;
     }).catch(() => {});
   }
 }
@@ -3636,6 +3833,7 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
   try {
     let friendsList = [];
     let cacheKey = '';
+    const onlineOnly = (cat === 'online');
 
     if (cat.startsWith('fav_')) {
       const groupName = cat.slice(4);
@@ -3674,7 +3872,6 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
       }
       friendsList = users;
     } else {
-      const onlineOnly = (cat === 'online');
       cacheKey = 'friends_' + cat;
       if (!forceRefresh) {
         const cached = await idb.get(cacheKey);
@@ -3714,6 +3911,8 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
     if (cat !== currentFriendCategory) return; // Cancel if changed
     allFriends = friendsList;
     if (cacheKey) await idb.set(cacheKey, friendsList);
+    
+    
     filterFriends();
     if (statsEl) statsEl.textContent = `共 ${allFriends.length} 位好友`;
     friendLogMsg(`✅ 加载了 ${allFriends.length} 位好友`, 'success');
@@ -3723,6 +3922,140 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
     if (statsEl) statsEl.textContent = '加载失败';
     friendLogMsg('❌ ' + e.message, 'error');
   }
+}
+
+async function fetchNotifications() {
+  const el = document.getElementById('notificationList');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">加载中...</div>';
+  try {
+    const r = await apiCall('/api/vrc/auth/user/notifications');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const notifications = await r.json();
+    
+    // Sort notifications: unread first, then newest
+    notifications.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+    const activeCount = notifications.filter(n => !n.seen).length;
+
+    if (!notifications || !notifications.length) {
+      el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无消息通知 (No notifications)</div>';
+      updateNotificationBadge(0);
+      return;
+    }
+
+    updateNotificationBadge(activeCount);
+
+    el.innerHTML = notifications.map(n => {
+      const isUnread = !n.seen;
+      const date = new Date(n.created_at).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const sender = n.senderName || '系统';
+      
+      let typeLabel = '';
+      let actions = `<button class="btn btn-secondary btn-xs" onclick="seeNotification('${n.id}')">标为已读</button>`;
+      
+      if (n.type === 'friendRequest') {
+        typeLabel = '➕ 好友申请';
+        actions = `<button class="btn btn-primary btn-xs" onclick="handleNotification('${n.id}','accept')">接受</button>
+                   <button class="btn btn-secondary btn-xs" onclick="handleNotification('${n.id}','see')">忽略</button>`;
+      } else if (n.type === 'groupInvite') {
+        typeLabel = '🏘️ 群组邀请';
+        actions = `<button class="btn btn-primary btn-xs" onclick="handleNotification('${n.id}','accept')">接受</button>
+                   <button class="btn btn-secondary btn-xs" onclick="handleNotification('${n.id}','see')">忽略</button>`;
+      } else if (n.type === 'invite') {
+        typeLabel = '✉️ 房间邀请';
+      } else if (n.type === 'requestInvite') {
+        typeLabel = '✋ 请求邀请';
+      }
+
+      return `<div class="friend-card" style="margin-bottom:8px; border-left: 3px solid ${isUnread ? 'var(--accent)' : 'transparent'};">
+        <div style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:0.7em;font-weight:700;color:var(--accent-light);">${typeLabel}</span>
+            <span style="font-size:0.65em;color:var(--text-muted);">${date}</span>
+          </div>
+          <div style="font-size:0.85em;font-weight:500;">来自 <span style="color:var(--text-primary); cursor:pointer;" onclick="openFriendProfileById('${n.senderUserId}')">${escHtml(sender)}</span></div>
+          ${n.message ? `<div style="font-size:0.75em;color:var(--text-secondary);margin-top:4px;background:rgba(255,255,255,0.03);padding:6px;border-radius:4px;">${escHtml(n.message)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          ${actions}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--error);">加载失败: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function handleNotification(id, action) {
+  try {
+    let url = `/api/vrc/auth/user/notifications/${id}/${action}`;
+    const r = await apiCall(url, { method: 'PUT' });
+    if (!r.ok) throw new Error(await r.text());
+    logMsg(`✅ 已${action==='accept'?'接受':'已读'}通知`, 'success');
+    fetchNotifications();
+  } catch(e) {
+    alert('操作失败: ' + e.message);
+  }
+}
+
+async function seeNotification(id) {
+  handleNotification(id, 'see');
+}
+
+async function seeAllNotifications() {
+  if (!confirm('确定要将所有通知标记为已读吗？')) return;
+  try {
+    const r = await apiCall('/api/vrc/auth/user/notifications/clear', { method: 'PUT' });
+    if (!r.ok) throw new Error('Failed to clear notifications');
+    fetchNotifications();
+  } catch(e) {
+     alert('操作失败: ' + e.message);
+  }
+}
+
+function updateNotificationBadge(count) {
+  const btn = document.getElementById('friendCatNotifications');
+  if (!btn) return;
+  if (count > 0) {
+    btn.innerHTML = `🔔 消息通知 <span style="background:var(--error);color:white;font-size:0.7em;padding:1px 6px;border-radius:99px;margin-left:4px;">${count}</span>`;
+  } else {
+    btn.innerHTML = `🔔 消息通知`;
+  }
+}
+
+// Global Notification Poller
+setInterval(() => {
+  if (vrcAuth && document.visibilityState === 'visible') {
+    // Silent fetch to update badge only
+    apiCall('/api/vrc/auth/user/notifications').then(r => r.ok ? r.json() : null).then(data => {
+      if (data) {
+        const activeCount = data.filter(n => !n.seen).length;
+        updateNotificationBadge(activeCount);
+      }
+    }).catch(()=>{});
+  }
+}, 60000);
+
+async function openFriendProfileById(userId) {
+  try {
+    const r = await apiCall('/api/vrc/users/' + userId);
+    if (r.ok) {
+       const u = await r.json();
+       const mockEl = { dataset: { friend: JSON.stringify(u).replace(/"/g,'&quot;') } };
+       openFriendProfile(mockEl);
+    }
+  } catch(e) {}
+}
+
+function friendLogMsg(msg, type) {
+  const el = document.getElementById('friendConsole');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.className = 'log-' + (type || 'info');
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
 }
 
 function filterFriends() {
@@ -3861,10 +4194,13 @@ function renderFriendList(list) {
       // Instance header for multi-friend instances
       if (multi) {
         const isMineTag = isMine ? ' <span style="font-size:0.85em;background:rgba(167,139,250,0.3);color:#c4b5fd;padding:1px 6px;border-radius:4px;">📍 你也在这里</span>' : '';
+        const groupJoinBtn = `<button class="btn btn-xs" onclick="event.stopPropagation();joinInstance('${escHtml(loc)}')" style="margin-left:auto;padding:2px 8px;font-size:0.8em;border-radius:4px;background:#86efac11;color:#86efac;border:1px solid #86efac33;cursor:pointer;">拉通协议</button>`;
+        const groupInviteBtn = `<button class="btn btn-xs" onclick="event.stopPropagation();inviteSelf('${escHtml(loc)}')" style="padding:2px 8px;font-size:0.8em;border-radius:4px;background:#86efac22;color:#86efac;border:1px solid #86efac44;cursor:pointer;">邀请自己</button>`;
+        
         html += `<div class="loc-group-header" id="loc_${loc.split(':')[0]}" data-loc="${escHtml(loc)}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;margin:4px 0 2px;background:rgba(134,239,172,0.06);border-left:2px solid #86efac;border-radius:0 6px 6px 0;font-size:0.75em;color:#86efac;">` +
           `<span>👥 ${friends.length} 位好友在此</span>` +
           `<span style="opacity:0.6;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="lgn_${loc.split(':')[0]}">加载中...</span>` +
-          isMineTag + '</div>';
+          isMineTag + groupInviteBtn + groupJoinBtn + '</div>';
       }
     } else {
       if (!shownRestHeader) {
@@ -3896,7 +4232,7 @@ function renderFriendList(list) {
       nameEl.textContent = txt;
       // Also make the header clickable to open world detail
       div.style.cursor = 'pointer';
-      div.onclick = (e) => { showWorldDetail(loc.split(':')[0]); e.stopPropagation(); };
+      div.onclick = (e) => { openWorldDetail(loc.split(':')[0]); e.stopPropagation(); };
     } catch {}
   });
 
@@ -3919,26 +4255,33 @@ function friendCardHtml(f) {
   const langs = getLanguages(f.tags||[]).join('');
   const fJson  = JSON.stringify(f).replace(/\\/g,'\\\\').replace(/"/g,'&quot;');
 
-  return `<div class="friend-card" onclick="openFriendProfile(this);" data-friend="${fJson}">
-    <div class="friend-avatar-wrap">
-      ${thumb ? `<img src="${escHtml(thumb)}" alt="" onerror="this.style.display=\'none\'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.3em;">👤</div>'}
-      <span class="friend-status-dot ${statusCss}"></span>
-    </div>
-    <div class="friend-info">
-      <div class="friend-name" style="color:${trust.color};">${escHtml(f.displayName||'')} <span style="font-size:0.75em;opacity:0.7;">${langs}</span></div>
-      <div class="friend-location" style="display:flex;align-items:center;gap:4px;">
-        <span style="font-weight:600;color:var(--text-primary);">${getStatusLabel(f)}</span>
-        <span style="opacity:0.6;">|</span>
-        ${(f.location && f.location !== 'offline' && f.location !== 'private' && f.location.startsWith('wrld_')) 
-            ? `<a href="#" id="${locSpanId}" onclick="showWorldDetail('${f.location.split(':')[0]}'); event.stopPropagation(); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;" title="查看世界">${escHtml(locationText)}</a>` 
-            : `<span>${escHtml((f.state==='online' && f.statusDescription) ? f.statusDescription : locationText)}</span>`}
+    const isJoinable = f.location && f.location !== 'private' && f.location !== 'offline' && f.state === 'online';
+    const joinBtn = isJoinable ? `
+      <div style="display:flex;gap:4px;margin-bottom:2px;">
+        <button class="btn btn-xs" onclick="event.stopPropagation();inviteSelf('${escHtml(f.location)}')" style="padding:2px 6px;font-size:0.7em;border-radius:4px;background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);cursor:pointer;" title="发送邀请给自己">📩</button>
+      </div>` : '';
+
+    return `<div class="friend-card" onclick="openFriendProfile(this);" data-friend="${fJson}">
+      <div class="friend-avatar-wrap">
+        ${thumb ? `<img src="${escHtml(thumb)}" alt="" onerror="this.style.display=\'none\'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.3em;">👤</div>'}
+        <span class="friend-status-dot ${statusCss}"></span>
       </div>
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
-      <span style="font-size:0.62em;padding:2px 7px;border-radius:99px;background:${trust.color}22;color:${trust.color};border:1px solid ${trust.color}44;">${trust.label}</span>
-      <span style="font-size:0.68em;color:var(--text-muted);">${getPlatformEmoji(f.last_platform)}</span>
-    </div>
-  </div>`;
+      <div class="friend-info">
+        <div class="friend-name" style="color:${trust.color};">${escHtml(f.displayName||'')} <span style="font-size:0.75em;opacity:0.7;">${langs}</span></div>
+        <div class="friend-location" style="display:flex;align-items:center;gap:4px;">
+          <span style="font-weight:600;color:var(--text-primary);">${getStatusLabel(f)}</span>
+          <span style="opacity:0.6;">|</span>
+          ${(f.location && f.location !== 'offline' && f.location !== 'private' && f.location.startsWith('wrld_')) 
+              ? `<a href="#" id="${locSpanId}" onclick="openWorldDetail('${f.location.split(':')[0]}'); event.stopPropagation(); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;" title="查看世界">${escHtml(locationText)}</a>` 
+              : `<span>${escHtml((f.state==='online' && f.statusDescription) ? f.statusDescription : locationText)}</span>`}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
+        ${joinBtn}
+        <span style="font-size:0.62em;padding:2px 7px;border-radius:99px;background:${trust.color}22;color:${trust.color};border:1px solid ${trust.color}44;">${trust.label}</span>
+        <span style="font-size:0.68em;color:var(--text-muted);">${getPlatformEmoji(f.last_platform)}</span>
+      </div>
+    </div>`;
 }
 
 // Async resolve world names in friend cards
@@ -4015,6 +4358,27 @@ function _renderFriendProfileUI(f, modal) {
   tb.style.cssText = `background:${trust.color}22;color:${trust.color};border:1px solid ${trust.color}55;font-size:0.68em;font-weight:600;padding:3px 10px;border-radius:99px;`;
   const ab = document.getElementById('fpAgeBadge');
   if (ab) ab.style.display = f.ageVerificationStatus==='18+' ? '' : 'none';
+
+  const isBlocked = myModerations.some(m => m.moderated === f.id && m.type === 'block');
+  const isMuted   = myModerations.some(m => m.moderated === f.id && m.type === 'mute');
+  const modBadge = document.getElementById('fpModBadge');
+  if (modBadge) {
+    if (isBlocked) {
+      modBadge.style.display = '';
+      modBadge.textContent = '🚫 已屏蔽';
+      modBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+      modBadge.style.color = '#ef4444';
+      modBadge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+    } else if (isMuted) {
+      modBadge.style.display = '';
+      modBadge.textContent = '🔇 已静音';
+      modBadge.style.background = 'rgba(245, 158, 11, 0.2)';
+      modBadge.style.color = '#f59e0b';
+      modBadge.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+    } else {
+      modBadge.style.display = 'none';
+    }
+  }
   const platb = document.getElementById('fpPlatformBadge');
   if (platb) platb.textContent = getPlatformEmoji(f.last_platform);
 
@@ -4031,7 +4395,13 @@ function _renderFriendProfileUI(f, modal) {
     locSection.style.display = '';
     const fpWorldInfo = document.getElementById('fpWorldInfo');
     fpWorldInfo.textContent = '加载位置...';
-    getLocationDisplay(f.location).then(txt => { fpWorldInfo.textContent = txt; }).catch(()=>{ fpWorldInfo.textContent = f.location||''; });
+    getLocationDisplay(f.location).then(txt => { 
+      const isJoinable = f.location && f.location !== 'private' && f.location !== 'offline' && f.state === 'online';
+      const btns = isJoinable ? `
+        <button onclick="inviteSelf('${escHtml(f.location)}')" class="btn btn-xs" style="background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);padding:2px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;margin-left:8px;" title="发送邀请给自己">📩 邀请自己</button>
+      ` : '';
+      fpWorldInfo.innerHTML = escHtml(txt) + btns; 
+    }).catch(()=>{ fpWorldInfo.textContent = f.location||''; });
   } else {
     locSection.style.display = 'none';
   }
@@ -4064,18 +4434,32 @@ function _renderFriendProfileUI(f, modal) {
 
   const isSelf = f.id === (window._myUser && window._myUser.id);
   const isFriend = f.isFriend || (allFriends && allFriends.some(af => af.id === f.id));
+  const id = f.id || '';
+  const name = f.displayName || '';
+  const isFriendFaved = friendFavoriteIdMap.has(id);
+  const isOnline = f.state === 'online';
   
   let actionButtons = `
-    <button class="btn btn-secondary" style="font-size:0.82em;padding:6px 14px;" onclick="showFriendContextMenu(event)">··· 操作菜单</button>
-    <button class="btn btn-secondary" style="font-size:0.82em;" onclick="window.open('https://vrchat.com/home/user/${escHtml(f.id||'')}','_blank')">🔗 VRChat 主页</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="btn btn-secondary" style="font-size:0.82em;padding:6px 14px;" onclick="showFriendContextMenu(event)">··· 操作菜单</button>
+      <button class="btn ${isFriendFaved?'btn-warning':'btn-secondary'}" style="font-size:0.82em;" onclick="${isFriendFaved?'toggleFriendFavorite(\''+escHtml(id)+'\',\''+escHtml(name).replace(/'/g,"\\'")+'\')':'toggleFriendFavMenu(event,\''+escHtml(id)+'\')'}">${isFriendFaved?'⭐ 已收藏':'⭐ 收藏'}</button>
+      <button class="btn btn-secondary" style="font-size:0.82em;" onclick="window.open('https://vrchat.com/home/user/${escHtml(f.id||'')}','_blank')">🔗 VRChat 主页</button>
+    </div>
   `;
 
   if (!isSelf) {
+    actionButtons += `<div style="display:flex;gap:8px;flex-wrap:wrap;">`;
     if (isFriend) {
-      actionButtons += `<button class="btn" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:0.82em;" onclick="deleteFriend('${escHtml(f.id||'')}','${escHtml(f.displayName||'')}')">🗑️ 删除好友</button>`;
+      actionButtons += `
+        <button class="btn btn-primary" style="font-size:0.82em;" onclick="sendPoke('${escHtml(id)}','${escHtml(name)}')">👋 戳一戳</button>
+        ${isOnline ? `<button class="btn btn-success" style="font-size:0.82em;" onclick="sendInvite('${escHtml(id)}','${escHtml(name)}')">📩 邀请</button>` : ''}
+        ${isOnline && f.location !== 'private' ? `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="requestInvite('${escHtml(id)}','${escHtml(name)}')">📩 请求邀请</button>` : ''}
+        <button class="btn" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:0.82em;" onclick="deleteFriend('${escHtml(f.id||'')}','${escHtml(f.displayName||'')}')">🗑️ 删除好友</button>
+      `;
     } else {
       actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.82em;" onclick="sendFriendRequest('${escHtml(f.id||'')}','${escHtml(f.displayName||'')}')">➕ 添加好友</button>`;
     }
+    actionButtons += `</div>`;
   }
 
   document.getElementById('fpActions').innerHTML = actionButtons;
@@ -4460,8 +4844,6 @@ async function sendFriendRequest(userId, name) {
 let allWorlds           = [];
 let worldsLoaded        = false;
 let currentWorldCategory = 'recent';
-let worldFavGroups      = [];
-let worldFavoriteIdMap  = new Map();
 let currentWorldDetail  = null;
 
 async function initWorldsTab() {
@@ -4696,7 +5078,7 @@ async function openWorldDetail(worldId, worldObj = null) {
         if (instStr.includes('~private'))   { typeLabel='🔒 私人'; typeColor='#f59e0b'; }
         else if (instStr.includes('~friends+') || instStr.includes('canRequestInvite')) { typeLabel='👥 好友+'; typeColor='#22c55e'; }
         else if (instStr.includes('~friends')) { typeLabel='👥 好友'; typeColor='#22c55e'; }
-        else if (instStr.includes('~hidden')) { typeLabel='👁 隐藏'; typeColor='#8b5cf6'; }
+        else if (instStr.includes('~hidden')) { typeLabel='👥 好友+'; typeColor='#22c55e'; }
         else if (instStr.includes('group(')) { typeLabel='🏠 群组'; typeColor='#3b82f6'; }
 
         const regionMatch = instStr.match(/region\(([^)]+)\)/);
@@ -4704,11 +5086,13 @@ async function openWorldDetail(worldId, worldObj = null) {
         const regionFlag = {JP:'🇯🇵',US:'🇺🇸',EU:'🇪🇺',USE:'🇺🇸',USW:'🇺🇸'}[region] || (region?`[${region}]`:'');
 
         const instShortId = instStr.split('~')[0];
-        return `<div class="world-instance-item">
+        return `<div class="world-instance-item" style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px;margin-bottom:4px;">
           <span style="flex:1;font-size:0.78em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${regionFlag} ${escHtml(instShortId)}</span>
           <span style="font-size:0.68em;padding:2px 7px;border-radius:99px;background:${typeColor}22;color:${typeColor};border:1px solid ${typeColor}44;">${typeLabel}</span>
-          <span class="inst-players">👥 ${count}/${w.capacity||'∞'}</span>
-          <button class="btn btn-primary inst-join-btn" onclick="joinSpecificInstance('${escHtml(w.id)}','${escHtml(instShortId)}')">加入</button>
+          <span class="inst-players" style="font-size:0.75em;opacity:0.7;">👥 ${count}/${w.capacity||'∞'}</span>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-xs" onclick="event.stopPropagation();inviteSelf('${escHtml(w.id)}:${escHtml(instStr)}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px;background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);cursor:pointer;" title="发送邀请">&nbsp;📩&nbsp;</button>
+          </div>
         </div>`;
       }).join('');
     }
@@ -4740,6 +5124,59 @@ function joinSpecificInstance(worldId, instanceId) {
   window.open(`vrchat://launch?ref=vrchat.com&id=${encodeURIComponent(worldId+':'+instanceId)}`, '_self');
 }
 
+async function addWorldToFavorite(worldId, groupName, btn) {
+  const menu = document.getElementById('worldFavMenu');
+  if (menu) menu.classList.add('hidden');
+  const statusEl = document.getElementById('worldDetailFavStatus');
+  if (statusEl) {
+    statusEl.textContent = `正在收藏到 ${groupName}...`;
+    statusEl.style.color = 'var(--text-muted)';
+  }
+  if (btn) btn.disabled = true;
+
+  try {
+    const r = await apiCall('/api/vrc/favorites', {
+      method: "POST",
+      json: { type: "world", favoriteId: worldId, tags: [groupName] },
+    });
+    if (r.ok) {
+      const res = await r.json();
+      worldFavoriteIdMap.set(worldId, res.id);
+      if (statusEl) { statusEl.textContent = `✓ 已收藏到 ${groupName}`; statusEl.style.color='var(--success)'; }
+      const favBtn = document.getElementById('worldDetailFavBtn');
+      if (favBtn) { favBtn.innerHTML='⭐ 取消收藏'; favBtn.className='btn btn-warning'; }
+      try { await idb.set('worlds_' + groupName, null); } catch (_) {}
+    } else {
+      const err = await r.json().catch(() => ({}));
+      if (statusEl) { statusEl.textContent = `✗ 失败: ${err.error?.message || r.status}`; statusEl.style.color='var(--error)'; }
+    }
+  } catch(e) {
+    if (statusEl) { statusEl.textContent = '✗ ' + e.message; statusEl.style.color='var(--error)'; }
+  } finally {
+    if (btn) btn.disabled = false;
+    setTimeout(()=>{ if(statusEl) statusEl.textContent=''; }, 3000);
+  }
+}
+
+function toggleWorldFavMenu(event) {
+  const menu = document.getElementById("worldFavMenu");
+  const btn = document.getElementById("worldDetailFavBtn");
+  if (!menu || !btn) return;
+  
+  const w = currentWorldDetail;
+  if (worldFavoriteIdMap.has(w?.id)) {
+    toggleWorldFavorite(); // Pass through to unfavorite logic
+    return;
+  }
+
+  toggleFavMenuGeneric(event, menu, btn, () => {
+    if (worldFavGroups.length === 0) return `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载世界收藏夹</div>`;
+    return worldFavGroups.map(g =>
+      `<button class="avtrdb-fav-group-btn" onclick="addWorldToFavorite('${escHtml(w?.id)}','${escHtml(g.name)}',this)">${escHtml(g.displayName || g.name)}</button>`
+    ).join("");
+  });
+}
+
 async function toggleWorldFavorite() {
   if (!currentWorldDetail) return;
   const w       = currentWorldDetail;
@@ -4762,13 +5199,9 @@ async function toggleWorldFavorite() {
         filterWorlds();
       }
     } else {
-      const groupName = worldFavGroups.length>0 ? worldFavGroups[0].name : 'worlds1';
-      const r = await apiCall('/api/vrc/favorites',{method:'POST',json:{type:'world',favoriteId:w.id,tags:[groupName]}});
-      if (!r.ok) throw new Error(await r.text());
-      const res = await r.json();
-      worldFavoriteIdMap.set(w.id, res.id);
-      if (favBtn) { favBtn.innerHTML='⭐ 取消收藏'; favBtn.className='btn btn-warning'; }
-      if (statusEl) { statusEl.textContent='✓ 已收藏'; statusEl.style.color='var(--success)'; }
+       // This fallback is only used if called directly without selection menu
+       const groupName = worldFavGroups.length>0 ? worldFavGroups[0].name : 'worlds1';
+       await addWorldToFavorite(w.id, groupName, favBtn);
     }
   } catch(e) {
     if (statusEl) { statusEl.textContent = '✗ '+e.message; statusEl.style.color='var(--error)'; }
@@ -5092,23 +5525,28 @@ async function fetchTransactions(container) {
     const statusLabels = {succeeded:'✅ 成功',expired:'⏰ 已过期',failed:'❌ 失败'};
     container.innerHTML += items.map(t => {
       const sub = t.subscription || {};
-      const amt = sub.amount ? (sub.amount / 100).toFixed(2) : '—';
-      const created = t.created_at ? new Date(t.created_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}) : '';
+      const amt = t.amount || sub.amount;
+      const amtStr = amt ? (amt / 100).toFixed(2) : '—';
+      const created = t.created_at ? new Date(t.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
       const st = t.status || 'unknown';
       const stColor = statusColors[st] || 'var(--text-muted)';
       const stLabel = statusLabels[st] || st;
       const giftTo = t.isGift && t.targetDisplayName ? ' → 🎁 ' + escHtml(t.targetDisplayName) : '';
-      const bulkLabel = t.isBulkGift ? ' (批量礼物)' : '';
-      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-glass);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">' +
-        '<div style="flex:1;min-width:0;">' +
-          '<div style="font-weight:500;font-size:0.88em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(sub.description || t.id) + giftTo + bulkLabel + '</div>' +
-          '<div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;">' + created + '</div>' +
-        '</div>' +
-        '<div style="text-align:right;flex-shrink:0;">' +
-          '<div style="font-size:0.85em;font-weight:600;">$' + amt + ' USD</div>' +
-          '<div style="font-size:0.72em;font-weight:600;color:' + stColor + ';">' + stLabel + '</div>' +
-        '</div>' +
-      '</div>';
+      const isCredits = t.active && t.orderId && t.orderId.startsWith('tx_');
+      
+      return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-glass);border:1px solid var(--border);border-radius:12px;margin-bottom:8px; transition: transform 0.2s;" onmouseover="this.style.transform='translateX(4px)'" onmouseout="this.style.transform='none'">
+        <div style="width:36px;height:36px;border-radius:50%;background:${isCredits ? 'rgba(167,139,250,0.1)' : 'rgba(99,102,241,0.1)'};display:flex;align-items:center;justify-content:center;font-size:1.1em;border:1px solid var(--border);">
+          ${isCredits ? '💎' : '💳'}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:0.85em;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(sub.description || t.id || '交易')} ${giftTo}</div>
+          <div style="font-size:0.68em;color:var(--text-muted);margin-top:2px;">${created} · ID: ${escHtml(t.id?.substring(0,8))}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:0.9em;font-weight:700;color:var(--text-primary);">$${amtStr} <span style="font-size:0.75em;opacity:0.6;font-weight:400;">USD</span></div>
+          <div style="font-size:0.7em;font-weight:700;color:${stColor};margin-top:2px;">${stLabel}</div>
+        </div>
+      </div>`;
     }).join('');
   } catch(e) {
     container.innerHTML = '<div style="color:var(--error);">加载失败: ' + e.message + '</div>';
@@ -5307,7 +5745,7 @@ async function openGroupDetail(groupId) {
         <div id="gdBanner" style="height:120px;background:var(--bg-secondary);background-size:cover;background-position:center;position:relative;">
           <button onclick="document.getElementById('groupDetailModal').classList.add('hidden')" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.6);border:none;color:#fff;border-radius:99px;width:28px;height:28px;cursor:pointer;font-size:1rem;">\u00d7</button>
         </div>
-        <div style="padding:0 24px 24px;">
+        <div style="padding:0 24px 24px; overflow-y:auto; max-height:calc(100vh - 160px);">
           <div style="display:flex;gap:16px;align-items:flex-end;margin:-28px 0 12px;position:relative;z-index:2;">
             <div style="width:56px;height:56px;border-radius:10px;overflow:hidden;border:2px solid var(--bg-primary);background:var(--bg-card);flex-shrink:0;">
               <img id="gdIcon" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">
@@ -5319,7 +5757,15 @@ async function openGroupDetail(groupId) {
           </div>
           <div id="gdStats" style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.8em;color:var(--text-secondary);margin-bottom:10px;"></div>
           <div id="gdActions" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
-          <div id="gdDesc" style="font-size:0.85em;color:var(--text-secondary);line-height:1.6;max-height:180px;overflow-y:auto;white-space:pre-line;"></div>
+          <div id="gdDesc" style="font-size:0.85em;color:var(--text-secondary);line-height:1.6;max-height:180px;overflow-y:auto;white-space:pre-line;margin-bottom:16px;"></div>
+          
+          <div class="tab-nav" style="background:transparent;border-bottom:1px solid var(--border);margin-bottom:12px;">
+            <button class="tab-btn active" onclick="switchGroupDetailTab(this, 'instances')">当前实例</button>
+            <button class="tab-btn" onclick="switchGroupDetailTab(this, 'members')">成员列表</button>
+          </div>
+          
+          <div id="gdInstances" class="group-instance-list"></div>
+          <div id="gdMembers" class="group-member-list" style="display:none;"></div>
         </div>
       </div>
     </div>`;
@@ -5361,6 +5807,9 @@ async function openGroupDetail(groupId) {
       actionHtml += `<button onclick="vrcGroupAction('${groupId}','join')" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));border:none;border-radius:6px;padding:4px 10px;font-size:0.75em;color:#fff;cursor:pointer;font-weight:600;">➕ 申请加入</button>`;
     }
     document.getElementById('gdActions').innerHTML = actionHtml;
+    
+    // Fetch extra data
+    fetchGroupExtraData(groupId);
 
   } catch(e) {
     document.getElementById('gdName').textContent = '加载失败: ' + e.message;
@@ -5394,6 +5843,75 @@ async function vrcGroupAction(groupId, action, myId, nextVis) {
     openGroupDetail(groupId);
   } catch(e) {
     alert('操作失败: ' + e.message);
+  }
+}
+
+function switchGroupDetailTab(btn, tab) {
+  const container = btn.closest('.modal-content');
+  container.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+  document.getElementById('gdInstances').style.display = tab === 'instances' ? '' : 'none';
+  document.getElementById('gdMembers').style.display = tab === 'members' ? '' : 'none';
+}
+
+async function fetchGroupExtraData(groupId) {
+  fetchGroupInstances(groupId);
+  fetchGroupMembers(groupId);
+}
+
+async function fetchGroupInstances(groupId) {
+  const el = document.getElementById('gdInstances');
+  if(!el) return;
+  el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">加载实例中...</div>';
+  try {
+    const r = await apiCall('/api/vrc/groups/' + groupId + '/instances');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const insts = await r.json();
+    if (!insts || !insts.length) {
+      el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8rem;">暂无活动实例</div>';
+      return;
+    }
+    el.innerHTML = insts.map(i => {
+      const region = { us: '🇺🇸', use: '🇺🇸', eu: '🇪🇺', jp: '🇯🇵' }[i.region] || '🌐';
+      return `<div class="group-instance-card">
+        <div class="inst-info">
+          <div class="inst-name">${escHtml(i.world.name)}</div>
+          <div class="inst-meta">${region} ${escHtml(i.instanceId)} · ${escHtml(i.accessType)}</div>
+        </div>
+        <div class="inst-occupants">${i.n_users||0} / ${i.world.capacity||0}</div>
+        <button class="btn btn-xs btn-primary" style="padding:4px 8px;font-size:0.7em;" onclick="inviteSelf('${escHtml(i.worldId + ':' + i.instanceId)}')">加入</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">无法加载实例: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function fetchGroupMembers(groupId) {
+  const el = document.getElementById('gdMembers');
+  if(!el) return;
+  el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">加载成员中...</div>';
+  try {
+    // Note: VRChat API limit is 100 per page. We'll just fetch the first page for now.
+    const r = await apiCall('/api/vrc/groups/' + groupId + '/members?n=50');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const members = await r.json();
+    if (!members || !members.length) {
+      el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8rem;">暂无可见成员</div>';
+      return;
+    }
+    el.innerHTML = members.map(m => {
+      const u = m.user || {};
+      const fJson = JSON.stringify(u).replace(/\\/g,'\\\\').replace(/"/g,'&quot;');
+      return `<div class="group-member-card" onclick="openFriendProfile(this)" data-friend="${fJson}" style="cursor:pointer;">
+        <img src="${escHtml(proxyImg(u.userIcon||u.profilePicOverrideThumbnail||u.currentAvatarThumbnailImageUrl||''))}" class="member-avatar" onerror="this.src='https://vrchat.com/assets/images/default_avatar.png'">
+        <div style="flex:1;">
+          <div class="member-name">${escHtml(u.displayName || 'Unknown')}</div>
+          <div style="font-size:0.65em;color:var(--text-muted);">${escHtml(m.roleNames?.[0] || 'Member')}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">无法加载成员: ' + escHtml(e.message) + '</div>';
   }
 }
 
@@ -5582,6 +6100,12 @@ function showFriendContextMenu(e) {
   const id = f.id || '';
   const name = f.displayName || '';
   const hasLocation = f.location && f.location.startsWith('wrld_');
+  const isBlocked = myModerations.some(m => m.moderated === id && m.type === 'block');
+  const isMuted   = myModerations.some(m => m.moderated === id && m.type === 'mute');
+  const isShown   = myModerations.some(m => m.moderated === id && m.type === 'showAvatar');
+  const isHidden  = myModerations.some(m => m.moderated === id && m.type === 'hideAvatar');
+  const isInteractOff = myModerations.some(m => m.moderated === id && m.type === 'interactOff');
+  const isFriendFaved = friendFavoriteIdMap.has(id);
 
   const menu = buildCtxMenu([
     { items: [
@@ -5596,22 +6120,26 @@ function showFriendContextMenu(e) {
     { label:'位置互动', items: [
       hasLocation ? { icon:'📩', label:'申请加入实例', action: () => friendRequestJoin(id, name) } : null,
       hasLocation ? { icon:'📨', label:'发送带消息的申请', action: () => friendRequestJoinMsg(id, name) } : null,
+      { icon:'📩', label:'请求邀请', action: () => requestInvite(id, name) },
+      { icon:'📨', label:'发送邀请', action: () => sendInvite(id, name) },
       { icon:'👋', label:'发送戳一戳', action: () => sendPoke(id, name) },
     ].filter(Boolean)},
+    { label:'模型控制', items: [
+      { icon:'👁️', label: isShown ? '重置模型显示 (默认)' : '显示该玩家模型', action: () => isShown ? resetAvatarModeration(id, name, 'showAvatar') : showAvatarUser(id, name) },
+      { icon:'👓', label: isHidden ? '重置模型显示 (默认)' : '隐藏该玩家模型', action: () => isHidden ? resetAvatarModeration(id, name, 'hideAvatar') : hideAvatarUser(id, name) },
+      { icon:'🤝', label: isInteractOff ? '打开模型互动 (PhysBones)' : '关闭模型互动', action: () => isInteractOff ? resetAvatarModeration(id, name, 'interactOff') : disableAvatarInteraction(id, name) },
+      { icon:'🧑', label:'查看模型信息 (官网)', action: () => {
+        const avId = f.currentAvatarId; if (avId) window.open(`https://vrchat.com/home/avatar/${avId}`, '_blank');
+      }},
+    ]},
     { label:'群组', items: [
       { icon:'🏠', label:'邀请加入群组', action: () => alert('请在游戏内操作邀请加入群组') },
     ]},
-    { label:'模型信息', items: [
-      { icon:'🧑', label:'显示模型信息', action: () => {
-        const avId = f.currentAvatarId; if (avId) window.open(`https://vrchat.com/home/avatar/${avId}`, '_blank');
-      }},
-      { icon:'👤', label:'显示备用模型信息', action: () => alert('备用模型信息在 VRChat 内查看') },
-      { icon:'🛒', label:'显示正在使用的道具', action: () => alert('暂时没有任何道具信息') },
-    ]},
     { label:'管理', items: [
-      { icon:'🔇', label:'屏蔽', action: () => blockUser(id, name) },
-      { icon:'🔕', label:'静音', action: () => muteUser(id, name) },
-      { icon:'🚩', label:'举报作弊/盗模行为', action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
+      { icon:'⭐', label: isFriendFaved ? '针对该好友移除收藏' : '收藏到分组', action: (ev) => isFriendFaved ? toggleFriendFavorite(id, name) : toggleFriendFavMenu(ev, id) },
+      { icon:'🔇', label: isBlocked ? '解除屏蔽' : '屏蔽', action: () => isBlocked ? unblockUser(id, name) : blockUser(id, name) },
+      { icon:'🔕', label: isMuted ? '解除静音' : '静音', action: () => isMuted ? unmuteUser(id, name) : muteUser(id, name) },
+      { icon:'🚩', label:'举报', action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
     ]},
     { items: [
       { icon:'🗑️', label:'删除好友', danger: true, action: () => deleteFriend(id, name) },
@@ -5627,6 +6155,57 @@ async function friendRequestJoin(userId, name) {
   } catch(e) { alert('失败: ' + e.message); }
 }
 
+function toggleFriendFavMenu(event, userId) {
+  const menu = document.getElementById("friendFavMenu");
+  // We don't have a reliable button ID here as it's coming from ctx menu, 
+  // so we use the event coordinate approach for FavMenuGeneric if btn is null
+  if (!menu) return;
+  
+  toggleFavMenuGeneric(event, menu, null, () => {
+    if (friendFavGroups.length === 0) return `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载好友分组</div>`;
+    return friendFavGroups.map(g =>
+      `<button class="avtrdb-fav-group-btn" onclick="addFriendToFavorite('${escHtml(userId)}','${escHtml(g.name)}',this)">${escHtml(g.displayName || g.name)}</button>`
+    ).join("");
+  });
+}
+
+async function addFriendToFavorite(userId, groupName, btn) {
+  const menu = document.getElementById('friendFavMenu');
+  if (menu) menu.classList.add('hidden');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await apiCall('/api/vrc/favorites', {
+      method: "POST",
+      json: { type: "friend", favoriteId: userId, tags: [groupName] },
+    });
+    if (r.ok) {
+      const res = await r.json();
+      friendFavoriteIdMap.set(userId, res.id);
+      logMsg(`✅ 已将好友添加到分组: ${groupName}`, "success");
+    } else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 收藏失败: ${err.error?.message || r.status}`);
+    }
+  } catch(e) { alert('错误: ' + e.message); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function toggleFriendFavorite(userId, name) {
+  if (friendFavoriteIdMap.has(userId)) {
+    const favId = friendFavoriteIdMap.get(userId);
+    if (!confirm(`确定要为 ${name} 移除好友收藏吗？`)) return;
+    try {
+      const r = await apiCall(`/api/vrc/favorites/${favId}`, {method:'DELETE'});
+      if (r.ok) {
+        friendFavoriteIdMap.delete(userId);
+        logMsg(`✅ 已移除好友 ${name} 的收藏`, "info");
+      } else {
+        alert(`❌ 移除失败: ${r.status}`);
+      }
+    } catch(e) { alert('错误: ' + e.message); }
+  }
+}
+
 function friendRequestJoinMsg(userId, name) {
   const msg = prompt(`发送带消息的加入申请给 ${name}：`);
   if (msg === null) return;
@@ -5636,8 +6215,41 @@ function friendRequestJoinMsg(userId, name) {
 
 async function sendPoke(userId, name) {
   try {
-    const r = await apiCall('/api/vrc/notification', {method:'POST', json:{receiverUserId:userId, type:'requestInvite', message:'戳一戳！'}});
-    alert(r.ok ? `✅ 已向 ${name} 发送戳一戳` : `❌ 失败 ${r.status}`);
+    const r = await apiCall('/api/vrc/notifications', {
+      method: "POST",
+      json: { receiverUserId: userId, type: "message", message: "👋 戳一戳！" },
+    });
+    if (r.ok) logMsg(`✅ 已向 ${name} 发送戳一戳`, "success");
+    else alert(`❌ 发送失败：${r.status}`);
+  } catch(e) { alert('失败: ' + e.message); }
+}
+
+async function requestInvite(userId, name) {
+  try {
+    const r = await apiCall('/api/vrc/notifications', {
+      method: 'POST',
+      json: { receiverUserId: userId, type: 'requestInvite', message: '我想加入你的实例！' }
+    });
+    if (r.ok) logMsg(`✅ 已向 ${name} 发送请求邀请`, "success");
+    else alert(`❌ 发送失败：${r.status}`);
+  } catch(e) { alert('失败: ' + e.message); }
+}
+
+async function sendInvite(userId, name) {
+  try {
+    const meResp = await apiCall('/api/vrc/auth/user');
+    if (!meResp.ok) throw new Error("无法获取当前状态");
+    const me = await meResp.json();
+    if (!me.location || me.location === 'offline' || me.location === 'private') {
+      alert("你目前不在公共实例或处于离线状态，无法发送邀请。");
+      return;
+    }
+    const r = await apiCall('/api/vrc/notifications', {
+      method: 'POST',
+      json: { receiverUserId: userId, type: 'invite', instanceId: me.location, message: '快来加入我！' }
+    });
+    if (r.ok) logMsg(`✅ 已向 ${name} 发送邀请`, "success");
+    else alert(`❌ 发送失败：${r.status}`);
   } catch(e) { alert('失败: ' + e.message); }
 }
 
@@ -5645,8 +6257,22 @@ async function blockUser(userId, name) {
   if (!confirm(`确认屏蔽 ${name}?`)) return;
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'block'}});
-    if (r.ok) alert(`✅ 已成功屏蔽 ${name}`);
-    else alert(`❌ 屏蔽失败: ${r.status}`);
+    if (r.ok) {
+      alert(`✅ 已成功屏蔽 ${name}`);
+      logModerationAction(userId, name, 'block', 'block');
+      fetchMyModerations();
+    } else alert(`❌ 屏蔽失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
+}
+
+async function unblockUser(userId, name) {
+  try {
+    const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type:'block'}});
+    if (r.ok) {
+      alert(`✅ 已解除对 ${name} 的屏蔽`);
+      logModerationAction(userId, name, 'block', 'unblock');
+      fetchMyModerations();
+    } else alert(`❌ 解除失败: ${r.status}`);
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -5654,8 +6280,67 @@ async function muteUser(userId, name) {
   if (!confirm(`确认静音 ${name}?`)) return;
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'mute'}});
-    if (r.ok) alert(`✅ 已成功静音 ${name}`);
-    else alert(`❌ 静音失败: ${r.status}`);
+    if (r.ok) {
+      alert(`✅ 已成功静音 ${name}`);
+      logModerationAction(userId, name, 'mute', 'mute');
+      fetchMyModerations();
+    } else alert(`❌ 静音失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
+}
+
+async function unmuteUser(userId, name) {
+  try {
+    const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type:'mute'}});
+    if (r.ok) {
+      alert(`✅ 已解除对 ${name} 的静音`);
+      logModerationAction(userId, name, 'mute', 'unmute');
+      fetchMyModerations();
+    } else alert(`❌ 解除失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
+}
+
+async function showAvatarUser(userId, name) {
+  try {
+    const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'showAvatar'}});
+    if (r.ok) {
+      alert(`✅ 已展示 ${name} 的模型`);
+      logModerationAction(userId, name, 'avatar', 'show');
+      fetchMyModerations();
+    } else alert(`❌ 操作失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
+}
+
+async function hideAvatarUser(userId, name) {
+  try {
+    const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'hideAvatar'}});
+    if (r.ok) {
+      alert(`✅ 已隐藏 ${name} 的模型`);
+      logModerationAction(userId, name, 'avatar', 'hide');
+      fetchMyModerations();
+    } else alert(`❌ 操作失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
+}
+
+async function disableAvatarInteraction(userId, name) {
+  try {
+    const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'interactOff'}});
+    if (r.ok) {
+      alert(`✅ 已关闭 ${name} 的模型互动`);
+      logModerationAction(userId, name, 'avatar', 'disableInteraction');
+      fetchMyModerations();
+    } else alert(`❌ 操作失败: ${r.status}`);
+  } catch(e) { alert('发生错误: ' + e.message); }
+}
+
+async function resetAvatarModeration(userId, name, type) {
+  try {
+    const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type}});
+    if (r.ok) {
+      const typeText = { showAvatar:'显示设置', hideAvatar:'隐藏设置', interactOff:'互动设置' }[type] || type;
+      alert(`✅ 已重置 ${name} 的 ${typeText}`);
+      logModerationAction(userId, name, 'avatar', 'reset_' + type);
+      fetchMyModerations();
+    } else alert(`❌ 重置失败: ${r.status}`);
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -5691,11 +6376,9 @@ function showSelfContextMenu(e) {
       }},
       { icon:'👤', label:'显示备用模型信息', action: () => alert('请在游戏内查看备用模型') },
     ]},
-    { label:'编辑资料', items: [
-      { icon:'✏️', label:'社交状态', action: () => window.open('https://vrchat.com/home/profile', '_blank') },
-      { icon:'🌍', label:'语言', action: () => window.open('https://vrchat.com/home/profile', '_blank') },
-      { icon:'📝', label:'个人简介', action: () => window.open('https://vrchat.com/home/profile', '_blank') },
-      { icon:'🏷️', label:'人称代词', action: () => window.open('https://vrchat.com/home/profile', '_blank') },
+    { label:'个人账号', items: [
+      { icon:'✏️', label:'修改个人资料 (Bio/状态)', action: () => openEditProfileModal() },
+      { icon:'📋', label:'复制自己的 ID', action: () => navigator.clipboard.writeText(id).then(()=>{}) },
     ]},
   ]);
   positionCtxMenu(e, menu);
@@ -6062,4 +6745,177 @@ async function uploadPrint(inputId) {
     statusEl.style.color = '#f87171';
     btn.disabled = false;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Friend Log & Change Detection Logic
+// ═══════════════════════════════════════════════════════════════
+
+async function inviteSelf(locationId) {
+  if (!locationId || locationId === 'private' || locationId === 'offline') {
+    friendLogMsg('❌ 无法发送邀请 (私有或离线)', 'error');
+    return;
+  }
+  try {
+    friendLogMsg(`📩 正在发送邀请到 ${locationId}...`, 'info');
+    const r = await apiCall(`/api/vrc/invite/myself/to/${locationId}`, { method: 'POST' });
+    if (r.ok) {
+      friendLogMsg('✅ 邀请已发送，请在游戏内查收', 'success');
+    } else {
+      const err = await r.json();
+      throw new Error(err.error?.message || '发送失败');
+    }
+  } catch(e) {
+    friendLogMsg(`❌ 邀请失败: ${e.message}`, 'error');
+  }
+}
+
+async function renderModerationLog() {
+  const container = document.getElementById('modLogList');
+  if (!container) return;
+  try {
+    const logs = await idb.getAllLogs('mod_logs');
+    if (!logs || !logs.length) {
+      container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无管理记录</div>';
+      return;
+    }
+    // Sort by timestamp descending
+    logs.sort((a,b) => b.timestamp - a.timestamp);
+    container.innerHTML = logs.map(log => {
+      const date = new Date(log.timestamp).toLocaleString();
+      let icon = '🛡️', color = 'var(--text-secondary)';
+      if (log.type === 'block') { icon = '🚫'; color = '#ef4444'; }
+      if (log.type === 'mute')  { icon = '🔇'; color = '#f59e0b'; }
+      if (log.type === 'avatar') { icon = log.action === 'show' ? '👁️' : '👓'; color = '#10b981'; }
+      const actionText = {
+        block: '屏蔽', unblock: '解除屏蔽',
+        mute: '静音', unmute: '解除静音',
+        show: '开启模型显示', hide: '关闭模型显示'
+      }[log.action] || log.action;
+      return `
+        <div class="glass-card" style="padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:12px;">
+          <div style="font-size:1.5em;">${icon}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong style="color:var(--text-primary);font-size:0.95em;">${escHtml(log.displayName)}</strong>
+              <span style="font-size:0.75em;color:rgba(255,255,255,0.3);">${date}</span>
+            </div>
+            <div style="font-size:0.85em;color:${color};margin-top:2px;">${actionText}</div>
+            <div style="font-size:0.7em;color:rgba(255,255,255,0.2);margin-top:2px;">ID: ${log.userId}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    container.innerHTML = `<div style="color:var(--text-danger);text-align:center;padding:20px;">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function clearModerationLog() {
+  if (!confirm('确定要清空所有管理记录吗？此操作不可撤销。')) return;
+  await idb.clearLogs('mod_logs');
+  renderModerationLog();
+}
+
+async function logModerationAction(userId, displayName, type, action) {
+  try {
+    const log = {
+      userId,
+      displayName,
+      type, // 'block', 'mute', 'avatar'
+      action, // 'block', 'unblock', 'mute', 'unmute', 'show', 'hide'
+      timestamp: Date.now()
+    };
+    await idb.addLog('mod_logs', log);
+  } catch(e) { console.error('logModerationAction error:', e); }
+}
+
+async function fetchMyModerations() {
+  try {
+    const r = await apiCall('/api/vrc/auth/user/playermoderations');
+    if (r.ok) {
+      myModerations = await r.json();
+      // Auto-refresh current profile UI if open
+      const modal = document.getElementById('friendProfileModal');
+      if (currentFriendProfile && modal && !modal.classList.contains('hidden')) {
+        _renderFriendProfileUI(currentFriendProfile, modal);
+      }
+    }
+  } catch(e) { console.error('fetchMyModerations error:', e); }
+}
+
+async function openEditProfileModal() {
+  const u = myProfileData;
+  if (!u) {
+    alert('正在加载个人资料，请稍后再试');
+    return;
+  }
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.style.zIndex = '2000';
+  modal.innerHTML = `
+    <div class="modal-content glass" style="max-width:500px;padding:24px;width:90%;border:1px solid var(--border);border-radius:16px;">
+      <h3 style="margin-bottom:20px;display:flex;align-items:center;gap:10px;font-size:1.1em;">
+        <span>✏️</span> 编辑个人资料
+      </h3>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-size:0.85em;color:var(--text-secondary);">在线状态 (Status)</label>
+          <select id="editStatus" class="glass-input" style="width:100%;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);outline:none;">
+            <option value="active" ${u.status === 'active' ? 'selected' : ''} style="background:var(--bg-card);color:var(--text-primary);">Online (🟢 Active)</option>
+            <option value="join me" ${u.status === 'join me' ? 'selected' : ''} style="background:var(--bg-card);color:var(--text-primary);">Join Me (🔵 Join)</option>
+            <option value="ask me" ${u.status === 'ask me' ? 'selected' : ''} style="background:var(--bg-card);color:var(--text-primary);">Ask Me (🟡 Ask)</option>
+            <option value="busy" ${u.status === 'busy' ? 'selected' : ''} style="background:var(--bg-card);color:var(--text-primary);">Busy (🔴 Busy)</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-size:0.85em;color:var(--text-secondary);">社交状态文字 (Status Description)</label>
+          <input type="text" id="editStatusDesc" class="glass-input" style="width:100%;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);" value="${escHtml(u.statusDescription || '')}" placeholder="我在忙...">
+        </div>
+        <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-size:0.85em;color:var(--text-secondary);">人称代词 (Pronouns)</label>
+          <input type="text" id="editPronouns" class="glass-input" style="width:100%;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);" value="${escHtml(u.pronouns || '')}" placeholder="He/Him, She/Her...">
+        </div>
+        <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-size:0.85em;color:var(--text-secondary);">个人简介 (Bio)</label>
+          <textarea id="editBio" class="glass-input" style="width:100%;height:140px;resize:none;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);font-family:inherit;font-size:0.9em;line-height:1.5;">${escHtml(u.bio || '').replace(/\\n/g, '\n')}</textarea>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:10px;">
+          <button class="btn btn-primary" style="flex:1;padding:12px;" id="btnUpdateProfile">保存修改</button>
+          <button class="btn btn-secondary" style="flex:1;padding:12px;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        </div>
+      </div>
+    </div>`;
+  
+  document.body.appendChild(modal);
+  
+  document.getElementById('btnUpdateProfile').onclick = async () => {
+    const btn = document.getElementById('btnUpdateProfile');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    try {
+      const payload = {
+        status: document.getElementById('editStatus').value,
+        statusDescription: document.getElementById('editStatusDesc').value,
+        pronouns: document.getElementById('editPronouns').value,
+        bio: document.getElementById('editBio').value
+      };
+      // VRChat users PUT endpoint
+      const r = await apiCall(`/api/vrc/users/${u.id}`, { method: 'PUT', json: payload });
+      if (r.ok) {
+        alert('✅ 资料已更新');
+        modal.remove();
+        fetchMyProfile(true);
+      } else {
+        const err = await r.json();
+        alert('❌ 更新失败: ' + (err.error?.message || r.status));
+        btn.disabled = false;
+        btn.textContent = '保存修改';
+      }
+    } catch(e) {
+      alert('❌ 发生错误: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '保存修改';
+    }
+  };
 }
