@@ -3195,9 +3195,10 @@ async function vrcdbFetch(cat, query) {
 async function avtrdbLoadMore() {
   const grid = document.getElementById("avtrdbGrid");
   const currentCount = grid.querySelectorAll('.avatar-card').length;
-  // Set a new target: current + 500 more unique cards
   window._avtrdbLoadMoreTarget = currentCount + SEARCH_TARGET;
-  avtrdbPage++;
+  // avtrdbFetch manages page advancement internally (startPage + PAGES_PER_BATCH)
+  // Just call it with append flag; it will use avtrdbPage which was left at batch end
+  avtrdbPage++; // advance to next batch start
   await avtrdbFetch(true);
 }
 
@@ -3356,8 +3357,8 @@ async function avtrdbFetch(append, _signal) {
       return fetch(`/api/proxy?url=${encodeURIComponent(url)}`, { signal })
         .then(r => r.json())
         .then(data => {
-          // page 0 is authoritative for has_more (later pages might be empty)
-          if (pageNum === avtrdbPage) {
+          // Only startPage (the first page we requested) is authoritative for has_more
+          if (pageNum === startPage) {
             hasMoreGlobal = data.has_more || false;
             _avtrdbHasMore = hasMoreGlobal;
           }
@@ -3375,12 +3376,12 @@ async function avtrdbFetch(append, _signal) {
     };
 
     // ── AvtrDB: fetch 5 pages in parallel ────────────────────────────────────
-    // Each call covers pages [avtrdbPage … avtrdbPage+4]
     const PAGES_PER_BATCH = 5;
     const startPage = avtrdbPage;
     const avtrdbPromises = Array.from({ length: PAGES_PER_BATCH }, (_, i) => fetchAvtrdbPage(startPage + i));
-    // Advance global page pointer so the next Load More starts from the right offset
-    avtrdbPage = startPage + PAGES_PER_BATCH - 1; // avtrdbLoadMore will do avtrdbPage++ again
+    // Leave avtrdbPage at the position AFTER this batch so Load More advance is correct
+    avtrdbPage = startPage + PAGES_PER_BATCH - 1;
+    // has_more from startPage is authoritative (fetchAvtrdbPage captures startPage via closure)
 
     // ── Sources 2-5: Community DBs (first search only) ───────────────────────
     const communityPromises = [];
@@ -4539,20 +4540,21 @@ function openFriendProfile(el) {
   const modal = document.getElementById('friendProfileModal');
   if (!modal) return;
 
-  // If this is a LimitedUser (missing tags = from mutuals/search), fetch full profile first
-  if (!f.tags && f.id) {
-    _renderFriendProfileUI(f, modal); // render what we have immediately
+  // Always render immediately with what we have, then upgrade with full profile
+  _renderFriendProfileUI(f, modal);
+
+  // Fetch full profile if date_joined or tags are missing (friends list returns LimitedUser)
+  if (f.id && (!f.date_joined || !f.tags)) {
     apiCall('/api/vrc/users/' + f.id).then(r => r.ok ? r.json() : null).then(full => {
       if (full && full.id) {
-        currentFriendProfile = full;
-        _renderFriendProfileUI(full, modal);
+        // Merge: keep existing data, overlay the richer API response
+        currentFriendProfile = Object.assign({}, f, full);
+        _renderFriendProfileUI(currentFriendProfile, modal);
       }
     }).catch(() => {});
-    return;
   }
-
-  _renderFriendProfileUI(f, modal);
 }
+
 
 function _renderFriendProfileUI(f, modal) {
   // Show modal
@@ -6647,10 +6649,13 @@ async function blockUser(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'block'}});
     if (r.ok) {
-      alert(`✅ 已成功屏蔽 ${name}`);
+      // Optimistic update — immediately reflect in menu on next open
+      myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'block'));
+      myModerations.push({ moderated: userId, type: 'block' });
+      logMsg(`✅ 已屏蔽 ${name}`, 'success');
       logModerationAction(userId, name, 'block', 'block');
-      fetchMyModerations();
-    } else alert(`❌ 屏蔽失败: ${r.status}`);
+      fetchMyModerations(); // background sync
+    } else logMsg(`❌ 屏蔽失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6658,10 +6663,11 @@ async function unblockUser(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type:'block'}});
     if (r.ok) {
-      alert(`✅ 已解除对 ${name} 的屏蔽`);
+      myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'block'));
+      logMsg(`✅ 已解除屏蔽 ${name}`, 'success');
       logModerationAction(userId, name, 'block', 'unblock');
       fetchMyModerations();
-    } else alert(`❌ 解除失败: ${r.status}`);
+    } else logMsg(`❌ 解除失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6670,10 +6676,12 @@ async function muteUser(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'mute'}});
     if (r.ok) {
-      alert(`✅ 已成功静音 ${name}`);
+      myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'mute'));
+      myModerations.push({ moderated: userId, type: 'mute' });
+      logMsg(`✅ 已静音 ${name}`, 'success');
       logModerationAction(userId, name, 'mute', 'mute');
       fetchMyModerations();
-    } else alert(`❌ 静音失败: ${r.status}`);
+    } else logMsg(`❌ 静音失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6681,10 +6689,11 @@ async function unmuteUser(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type:'mute'}});
     if (r.ok) {
-      alert(`✅ 已解除对 ${name} 的静音`);
+      myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'mute'));
+      logMsg(`✅ 已解除静音 ${name}`, 'success');
       logModerationAction(userId, name, 'mute', 'unmute');
       fetchMyModerations();
-    } else alert(`❌ 解除失败: ${r.status}`);
+    } else logMsg(`❌ 解除失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6692,10 +6701,13 @@ async function showAvatarUser(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'showAvatar'}});
     if (r.ok) {
-      alert(`✅ 已展示 ${name} 的模型`);
+      // Remove conflicting hideAvatar, add showAvatar
+      myModerations = myModerations.filter(m => !(m.moderated === userId && (m.type === 'showAvatar' || m.type === 'hideAvatar')));
+      myModerations.push({ moderated: userId, type: 'showAvatar' });
+      logMsg(`✅ 已强制显示 ${name} 的模型`, 'success');
       logModerationAction(userId, name, 'avatar', 'show');
       fetchMyModerations();
-    } else alert(`❌ 操作失败: ${r.status}`);
+    } else logMsg(`❌ 操作失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6703,10 +6715,13 @@ async function hideAvatarUser(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'hideAvatar'}});
     if (r.ok) {
-      alert(`✅ 已隐藏 ${name} 的模型`);
+      // Remove conflicting showAvatar, add hideAvatar
+      myModerations = myModerations.filter(m => !(m.moderated === userId && (m.type === 'showAvatar' || m.type === 'hideAvatar')));
+      myModerations.push({ moderated: userId, type: 'hideAvatar' });
+      logMsg(`✅ 已隐藏 ${name} 的模型`, 'success');
       logModerationAction(userId, name, 'avatar', 'hide');
       fetchMyModerations();
-    } else alert(`❌ 操作失败: ${r.status}`);
+    } else logMsg(`❌ 操作失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6714,10 +6729,12 @@ async function disableAvatarInteraction(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'interactOff'}});
     if (r.ok) {
-      alert(`✅ 已关闭 ${name} 的模型互动`);
+      myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'interactOff'));
+      myModerations.push({ moderated: userId, type: 'interactOff' });
+      logMsg(`✅ 已关闭 ${name} 的模型互动`, 'success');
       logModerationAction(userId, name, 'avatar', 'disableInteraction');
       fetchMyModerations();
-    } else alert(`❌ 操作失败: ${r.status}`);
+    } else logMsg(`❌ 操作失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6725,11 +6742,13 @@ async function resetAvatarModeration(userId, name, type) {
   try {
     const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type}});
     if (r.ok) {
-      const typeText = { showAvatar:'显示设置', hideAvatar:'隐藏设置', interactOff:'互动设置' }[type] || type;
-      alert(`✅ 已重置 ${name} 的 ${typeText}`);
+      // Remove the specific moderation entry
+      myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === type));
+      const typeText = { showAvatar:'强制显示', hideAvatar:'隐藏', interactOff:'关闭互动' }[type] || type;
+      logMsg(`✅ 已重置 ${name} 的${typeText}设置`, 'success');
       logModerationAction(userId, name, 'avatar', 'reset_' + type);
       fetchMyModerations();
-    } else alert(`❌ 重置失败: ${r.status}`);
+    } else logMsg(`❌ 重置失败: ${r.status}`, 'error');
   } catch(e) { alert('发生错误: ' + e.message); }
 }
 
@@ -6750,28 +6769,104 @@ function showSelfContextMenu(e) {
   const u = myProfileData;
   if (!u) return;
   const id = u.id || '';
-  const name = u.displayName || '';
+  const curStatus = u.status || 'active';
+  const statusDots = { active: '🟢', 'join me': '🔵', 'ask me': '🟡', busy: '🔴' };
+
   const menu = buildCtxMenu([
     { items: [
-      { icon:'🔄', label:'刷新我的资料', action: () => { myProfileData=null; fetchMyProfile(); }},
+      { icon:'🔄', label:'刷新我的资料', action: () => {
+        myProfileData = null;
+        fetchMyProfile(true).then(() => logMsg('✅ 资料已刷新', 'success'));
+      }},
       { icon:'🔗', label:'打开 VRChat 主页', action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
-      { icon:'📋', label:'复制 ID', action: () => navigator.clipboard.writeText(id).then(()=>{}) },
+      { icon:'📋', label:'复制我的 ID', action: () => navigator.clipboard.writeText(id).then(() => logMsg('✅ ID 已复制', 'info')) },
+    ]},
+    { label:'快速切换状态', items: [
+      { icon: curStatus === 'active'  ? '✅' : statusDots['active'],  label:'Online (Active)',        action: () => quickSetStatus('active') },
+      { icon: curStatus === 'join me' ? '✅' : statusDots['join me'], label:'Join Me',                action: () => quickSetStatus('join me') },
+      { icon: curStatus === 'ask me'  ? '✅' : statusDots['ask me'],  label:'Ask Me',                 action: () => quickSetStatus('ask me') },
+      { icon: curStatus === 'busy'    ? '✅' : statusDots['busy'],    label:'Busy (勿扰)',             action: () => quickSetStatus('busy') },
     ]},
     { label:'模型信息', items: [
-      { icon:'🧑', label:'显示模型信息', action: () => {
-        const avId = myProfileData && myProfileData.currentAvatarId;
-        if (avId) window.open(`https://vrchat.com/home/avatar/${avId}`, '_blank');
-        else alert('模型 ID 不可用');
+      { icon:'🧑', label:'显示当前模型信息', action: () => {
+        const avId = u.currentAvatarId || u.currentAvatar;
+        if (!avId) { alert('模型 ID 不可用'); return; }
+        openAvtrdbDetail({ vrc_id: avId, name: u.currentAvatarName || avId,
+          image_url: u.currentAvatarThumbnailImageUrl || '' });
       }},
-      { icon:'👤', label:'显示备用模型信息', action: () => alert('请在游戏内查看备用模型') },
+      { icon:'👤', label:'显示备用模型信息', action: () => showFallbackAvatarInfo() },
+      { icon:'🖼️', label:'前往我的模型库', action: () => switchTab('download') },
     ]},
     { label:'个人账号', items: [
-      { icon:'✏️', label:'修改个人资料 (Bio/状态)', action: () => openEditProfileModal() },
-      { icon:'📋', label:'复制自己的 ID', action: () => navigator.clipboard.writeText(id).then(()=>{}) },
+      { icon:'✏️', label:'编辑 Bio / 状态文字', action: () => openEditProfileModal() },
+      { icon:'🔒', label:'切换模型克隆权限', action: () => toggleAvatarCopying() },
     ]},
   ]);
   positionCtxMenu(e, menu);
 }
+
+async function quickSetStatus(newStatus) {
+  const u = myProfileData;
+  if (!u || !u.id) return;
+  const labels = { active: 'Online', 'join me': 'Join Me', 'ask me': 'Ask Me', busy: 'Busy' };
+  try {
+    const r = await apiCall(`/api/vrc/users/${u.id}`, { method: 'PUT', json: { status: newStatus } });
+    if (r.ok) {
+      myProfileData.status = newStatus;
+      logMsg(`✅ 状态已切换为 ${labels[newStatus] || newStatus}`, 'success');
+      fetchMyProfile(true);
+    } else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 切换失败: ${err.error?.message || r.status}`);
+    }
+  } catch(ex) { alert('失败: ' + ex.message); }
+}
+
+async function showFallbackAvatarInfo() {
+  const u = myProfileData;
+  if (!u) return;
+  const fallbackId = u.fallbackAvatar;
+  if (!fallbackId) {
+    alert('未设置备用模型\n\n需要在游戏内将一个 PC+Quest 双端、Good 评级以上的模型设置为 Fallback Avatar。');
+    return;
+  }
+  try {
+    const r = await apiCall(`/api/vrc/avatars/${fallbackId}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const av = await r.json();
+    openAvtrdbDetail({
+      vrc_id: av.id,
+      name: av.name || fallbackId,
+      image_url: av.thumbnailImageUrl || av.imageUrl || '',
+      author: { name: av.authorName || 'Unknown', id: av.authorId },
+      description: av.description || '',
+      unityPackages: av.unityPackages || [],
+      performance: av.performance || {},
+      created_at: av.created_at || av.createdAt,
+      updated_at: av.updated_at || av.updatedAt,
+    });
+  } catch(ex) { alert('无法加载备用模型信息: ' + ex.message); }
+}
+
+async function toggleAvatarCopying() {
+  const u = myProfileData;
+  if (!u || !u.id) return;
+  const newVal = !u.allowAvatarCopying;
+  if (!confirm(`确认将「允许克隆模型」设置为 ${newVal ? '✅ 允许' : '🔒 不允许'}？`)) return;
+  try {
+    const r = await apiCall(`/api/vrc/users/${u.id}`, { method: 'PUT', json: { allowAvatarCopying: newVal } });
+    if (r.ok) {
+      myProfileData.allowAvatarCopying = newVal;
+      logMsg(`✅ 模型克隆权限已设置为 ${newVal ? '允许' : '不允许'}`, 'success');
+      fetchMyProfile(true);
+    } else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 失败: ${err.error?.message || r.status}`);
+    }
+  } catch(ex) { alert('失败: ' + ex.message); }
+}
+
+
 
 // ═══════════════════════════════════════════════════════════
 // GALLERY ONLY (VRC+ 相册, no prints)
