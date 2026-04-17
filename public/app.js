@@ -56,44 +56,17 @@ const avatarLookupQueue = {
 };
 
 async function fetchOfficialAvatarData(id) {
-  // First-wins race: resolve as soon as ANY source returns valid data
-  return new Promise((resolve, reject) => {
-    let resolved = false;
-    let pending = 3;
-
-    const tryResolve = (data) => {
-      if (resolved) return;
-      if (data) { resolved = true; resolve(data); }
-      else if (--pending === 0) resolve(null); // all failed
-    };
-    const tryReject = (e) => {
-      if (resolved) return;
-      resolved = true;
-      reject(e);
-    };
-
-    apiCall(`/api/proxy?url=${encodeURIComponent(`https://api.avatarrecovery.com/Avatar/vrcx?search=${id}`)}`)
-      .then(async r => {
-        if (!r.ok) { if (r.status === 429) tryReject(new Error('429')); else tryResolve(null); return; }
-        const data = await r.json();
-        tryResolve(Array.isArray(data) ? data.find(x => x.id === id) : data);
-      }).catch(() => { if (--pending <= 0 && !resolved) resolve(null); });
-
-    apiCall(`/api/proxy?url=${encodeURIComponent(`https://api.avtrdb.com/v3/avatar/search/vrcx?search=${id}`)}`)
-      .then(async r => {
-        if (!r.ok) { if (r.status === 429) tryReject(new Error('429')); else tryResolve(null); return; }
-        const data = await r.json();
-        const found = data.avatars?.[0] || (Array.isArray(data) ? data[0] : data);
-        tryResolve(found?.vrc_id === id ? found : null);
-      }).catch(() => { if (--pending <= 0 && !resolved) resolve(null); });
-
-    apiCall(`/api/vrc/avatars/${id}`)
-      .then(async r => {
-        if (!r.ok) { tryResolve(null); return; }
-        tryResolve(await r.json());
-      }).catch(() => { if (--pending <= 0 && !resolved) resolve(null); });
-  });
+  // Only use official VRChat API for per-ID verification.
+  // Third-party per-ID endpoints (AvtrDB v3, AvatarRecovery) cause 429/500 storms — removed.
+  try {
+    const r = await apiCall(`/api/vrc/avatars/${id}`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
 }
+
 
 // Global Avatar Platform Cache (sessionStorage-backed, survives tab switches)
 const avatarPlatCache = {
@@ -3332,12 +3305,30 @@ async function avtrdbFetch(append) {
     stats.textContent = `已显示 ${totalRendered} 个结果（${platLabel}）${hasMoreGlobal ? " · 还有更多" : ""}`;
   };
 
-  try {
-    // ── Source 1: AvtrDB (primary, full metadata) ─────────────────────────
-    let avtrdbUrl = `https://api.avtrdb.com/v2/avatar/search?query=${encodeURIComponent(avtrdbCurrentQuery)}&page_size=50&page=${avtrdbPage}`;
-    if (requiredPlats.length > 0) avtrdbUrl += `&compatibility=${requiredPlats[0]}`;
+  // Loading spinner — shown until 50 cards rendered
+  if (!append) {
+    grid.innerHTML = `<div id="avtrdb-loading-spinner" style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;gap:16px;color:rgba(255,255,255,0.5);">
+      <div style="width:48px;height:48px;border:3px solid rgba(255,255,255,0.15);border-top-color:rgba(255,255,255,0.7);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+      <div style="font-size:0.85em;">正在从 5 个数据库搜索...</div>
+    </div>`;
+  }
 
-    const avtrdbPromise = fetch(avtrdbUrl)
+  const SPINNER_THRESHOLD = 50; // hide spinner after this many cards
+  let spinnerHidden = false;
+  const maybeHideSpinner = () => {
+    if (spinnerHidden) return;
+    const spinner = document.getElementById('avtrdb-loading-spinner');
+    if (!spinner) { spinnerHidden = true; return; }
+    if (totalRendered >= SPINNER_THRESHOLD) { spinner.remove(); spinnerHidden = true; }
+  };
+
+  try {
+    // ── Source 1: AvtrDB (primary, full metadata) — via proxy to avoid CORS ─
+    let avtrdbApiUrl = `https://api.avtrdb.com/v2/avatar/search?query=${encodeURIComponent(avtrdbCurrentQuery)}&page_size=100&page=${avtrdbPage}`;
+    if (requiredPlats.length > 0) avtrdbApiUrl += `&compatibility=${requiredPlats[0]}`;
+    const avtrdbProxyUrl = `/api/proxy?url=${encodeURIComponent(avtrdbApiUrl)}`;
+
+    const avtrdbPromise = fetch(avtrdbProxyUrl)
       .then(r => r.json())
       .then(data => {
         hasMoreGlobal = data.has_more || false;
@@ -3349,11 +3340,13 @@ async function avtrdbFetch(append) {
           performance: av.performance || {}
         }));
         updateStats();
+        maybeHideSpinner();
         loadMoreBtn.style.display = hasMoreGlobal ? "inline-block" : "none";
       })
       .catch(() => {});
 
-    // ── Sources 2-5: Community DBs (first page only) ──────────
+    // ── Sources 2-5: Community DBs (first page only, max 100 each) ─────────
+    const communityPromises = [];
     if (avtrdbPage === 0) {
       const dbSources = [
         { name: 'vrcdb', url: `/api/proxy?url=${encodeURIComponent(`https://vrcx.vrcdb.com/avatars/Avatar/VRCX?search=${encodeURIComponent(avtrdbCurrentQuery)}`)}` },
@@ -3363,39 +3356,45 @@ async function avtrdbFetch(append) {
       ];
 
       dbSources.forEach(db => {
-        fetch(db.url)
+        const p = fetch(db.url)
           .then(r => r.json())
           .then(data => {
-            (data || []).forEach(av => {
-              // Priority source normalization: cute.bet has deep metadata
+            const list = (Array.isArray(data) ? data : data?.avatars || []).slice(0, 100);
+            list.forEach(av => {
               if (db.name === 'cute.bet') {
-                 renderCard({
-                    ...av,
-                    vrc_id: av.id,
-                    image_url: av.imageUrl || av.thumbnailImageUrl || "",
-                    author: { name: av.authorName || "Unknown", id: av.authorId },
-                    unityPackages: av.unityPackages || []
-                 });
+                renderCard({
+                  ...av,
+                  vrc_id: av.id,
+                  image_url: av.imageUrl || av.thumbnailImageUrl || "",
+                  author: { name: av.authorName || "Unknown", id: av.authorId },
+                  unityPackages: av.unityPackages || []
+                });
               } else {
-                 renderCard({
-                    vrc_id: av.id,
-                    name: av.name || av.avatarName || "未知模型",
-                    author: { name: av.authorName || "Unknown", id: av.authorId },
-                    image_url: av.imageUrl || av.thumbnailImageUrl || "",
-                    performance: av.performance || {},
-                    compatibility: av.compatibility || (av.imageUrl ? ["pc"] : []),
-                    description: av.description || ""
-                 });
+                renderCard({
+                  vrc_id: av.id,
+                  name: av.name || av.avatarName || "未知模型",
+                  author: { name: av.authorName || "Unknown", id: av.authorId },
+                  image_url: av.imageUrl || av.thumbnailImageUrl || "",
+                  performance: av.performance || {},
+                  compatibility: av.compatibility || (av.imageUrl ? ["pc"] : []),
+                  description: av.description || ""
+                });
               }
             });
             updateStats();
+            maybeHideSpinner();
           })
           .catch(() => {});
+        communityPromises.push(p);
       });
     }
 
-    // Wait for AvtrDB (primary source) to finish before possibly showing empty state
-    await avtrdbPromise;
+    // Wait for ALL sources to settle before deciding if truly empty
+    await Promise.allSettled([avtrdbPromise, ...communityPromises]);
+
+    // Hide spinner regardless (in case < 50 results)
+    document.getElementById('avtrdb-loading-spinner')?.remove();
+    spinnerHidden = true;
 
     if (totalRendered === 0 && !append) {
       stats.textContent = "未找到符合条件的模型 / No matching avatars found";
@@ -3409,6 +3408,7 @@ async function avtrdbFetch(append) {
     if (!append) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:#ef4444;">搜索失败: ${escHtml(e.message)}</div>`;
   }
 }
+
 
 
 function displayAvatarDetail(av) {
@@ -3509,7 +3509,50 @@ function displayAvatarDetail(av) {
   document.body.style.overflow = "hidden";
 }
 
-function openAvtrdbDetail(av) { displayAvatarDetail(av); }
+async function openAvtrdbDetail(av) {
+  displayAvatarDetail(av); // Show immediately with available data
+
+  const id = av.vrc_id || av.id;
+  if (!id) return;
+
+  // If dates are missing, fetch from sources that reliably carry them
+  if (!av.created_at && !av.createdAt) {
+    // Try cute.bet first (returns updated_at reliably, sometimes created_at)
+    const cuteUrl = `/api/proxy?url=${encodeURIComponent(`https://avtr.cute.bet/search?search=${id}`)}`;
+    // Also try AvtrDB v2 single-id search (carries created_at)
+    const avtrUrl = `/api/proxy?url=${encodeURIComponent(`https://api.avtrdb.com/v2/avatar/search?query=${id}&page_size=1`)}`;
+
+    const tryPatch = (data) => {
+      if (!data) return;
+      const created = data.created_at || data.createdAt;
+      const updated = data.updated_at || data.updatedAt;
+      if (created || updated) {
+        if (created && !av.created_at) av.created_at = created;
+        if (updated && !av.updated_at) av.updated_at = updated;
+        // Re-render dates in the open modal
+        const fmt = d => d ? new Date(d).toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "-";
+        const elC = document.getElementById("avtrdbDetailCreated");
+        const elU = document.getElementById("avtrdbDetailUpdated");
+        if (elC) elC.textContent = fmt(av.created_at || av.createdAt);
+        if (elU) elU.textContent = fmt(av.updated_at || av.updatedAt);
+      }
+    };
+
+    // Fire both in parallel, patch as soon as either returns
+    fetch(cuteUrl).then(r => r.json()).then(data => {
+      const list = Array.isArray(data) ? data : (data?.avatars || []);
+      const match = list.find(x => x.id === id) || (list.length === 1 ? list[0] : null) || (list.length > 0 ? list[0] : null);
+      tryPatch(match);
+    }).catch(() => {});
+
+    fetch(avtrUrl).then(r => r.json()).then(data => {
+      const list = data?.avatars || [];
+      const match = list.find(x => x.vrc_id === id);
+      tryPatch(match);
+    }).catch(() => {});
+  }
+}
+
 function openLocalDetail(id) { 
   const av = visibleAvatars.find(a => a.id === id);
   if (av) displayAvatarDetail(av); 
