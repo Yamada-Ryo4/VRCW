@@ -92,39 +92,74 @@ async function fetchOfficialAvatarData(id) {
   return null;
 }
 
-// Global Avatar Metadata/Platform Queue
+// Global Avatar Platform Cache (sessionStorage-backed, survives tab switches)
+const avatarPlatCache = {
+  _prefix: 'vrc_plat_',
+  get(id) {
+    try { 
+      const v = sessionStorage.getItem(this._prefix + id);
+      return v ? JSON.parse(v) : null;
+    } catch { return null; }
+  },
+  set(id, data) {
+    try { sessionStorage.setItem(this._prefix + id, JSON.stringify(data)); } catch {}
+  },
+  has(id) { return !!sessionStorage.getItem(this._prefix + id); }
+};
+
+// Global Avatar Metadata/Platform Queue — 10 concurrent, 100ms gap, with cache
 const avatarMetadataQueue = {
   pending: [],
   active: 0,
-  max: 1, // Be conservative with official API
+  max: 10, // 10 concurrent requests
   paused: false,
-  processed: new Set(),
+  callbacks: new Map(), // id -> [callbacks]
   add(id, onUpdated) {
-    if (this.processed.has(id) || this.pending.some(p => p.id === id)) return;
-    this.pending.push({ id, onUpdated });
+    if (!id) return;
+
+    // CACHE HIT: Serve immediately from session cache
+    const cached = avatarPlatCache.get(id);
+    if (cached) {
+      if (onUpdated) setTimeout(() => onUpdated(cached), 0);
+      return;
+    }
+
+    // Track callbacks per id (multiple cards may request same id)
+    if (!this.callbacks.has(id)) {
+      this.callbacks.set(id, []);
+    }
+    if (onUpdated) this.callbacks.get(id).push(onUpdated);
+
+    // Avoid duplicate queue entries
+    if (this.pending.some(p => p.id === id)) return;
+    this.pending.push({ id });
     this.next();
   },
   async next() {
     if (this.paused || this.active >= this.max || !this.pending.length) return;
     this.active++;
-    const { id, onUpdated } = this.pending.shift();
+    const { id } = this.pending.shift();
+    // Kick off next slot immediately (parallel!)
+    this.next();
     try {
       const data = await fetchOfficialAvatarData(id);
       if (data) {
-        this.processed.add(id);
-        if (onUpdated) onUpdated(data);
-        // Dispatch global event for other components
+        avatarPlatCache.set(id, data);
+        const cbs = this.callbacks.get(id) || [];
+        this.callbacks.delete(id);
+        cbs.forEach(cb => { try { cb(data); } catch {} });
         window.dispatchEvent(new CustomEvent('vrc_avatar_updated', { detail: { id, data } }));
       }
     } catch (e) {
-      if (e.message.includes('429')) {
+      if (e.message?.includes('429')) {
         this.paused = true;
-        this.pending.unshift({ id, onUpdated });
-        setTimeout(() => { this.paused = false; this.next(); }, 5000);
+        this.pending.unshift({ id });
+        setTimeout(() => { this.paused = false; this.next(); }, 8000);
       }
     } finally {
       this.active--;
-      setTimeout(() => this.next(), 2000); // 2s gap to be safe
+      setTimeout(() => this.next(), 100); // 100ms gap per slot
+
     }
   }
 };
@@ -133,6 +168,7 @@ async function performSingleAvatarRecovery(id) {
   const data = await fetchOfficialAvatarData(id);
   return data ? (data.name || data.displayName) : null;
 }
+
 
 // ── Unified Platform/Performance Helper ──
 function getAvatarPlatforms(av) {
