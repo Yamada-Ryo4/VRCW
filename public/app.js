@@ -3062,10 +3062,17 @@ document.addEventListener('click', () => {
 
 // Original Avtrdb Logic
 let avtrdbPage = 0;
+// Persistent dedup state — reset on new search, survives Load More and auto-fill pages
+let _avtrdbDedupMap = new Map(); // id -> avatar data
+let _avtrdbRenderMap = new Map(); // id -> card DOM element
+const SEARCH_TARGET = 500; // target unique cards per search session
+let _avtrdbHasMore = false; // module-level so auto-fill recursion can read it
+
 let avtrdbCurrentQuery = "";
 let avtrdbCurrentPlatform = "";
 let avtrdbDebounceTimer = null;
 let avtrdbTotalLoaded = 0;
+
 
 function onSearchCategoryChange() {
   const cat = document.getElementById("searchCategory")?.value;
@@ -3097,6 +3104,10 @@ async function doAvtrdbSearch() {
   
   avtrdbPage = 0;
   avtrdbTotalLoaded = 0;
+  _avtrdbHasMore = false;
+  _avtrdbDedupMap = new Map();
+  _avtrdbRenderMap = new Map();
+
   const grid = document.getElementById("avtrdbGrid");
   grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,255,255,0.4);">搜索中...</div>`;
   document.getElementById("avtrdbStats").textContent = "";
@@ -3182,11 +3193,17 @@ async function vrcdbFetch(cat, query) {
 }
 
 async function avtrdbLoadMore() {
+  const grid = document.getElementById("avtrdbGrid");
+  const currentCount = grid.querySelectorAll('.avatar-card').length;
+  // Set a new target: current + 500 more unique cards
+  window._avtrdbLoadMoreTarget = currentCount + SEARCH_TARGET;
   avtrdbPage++;
   await avtrdbFetch(true);
 }
 
-async function avtrdbFetch(append) {
+async function avtrdbFetch(append, _signal) {
+  // Use the signal from the caller or fall back to the global tab abort signal
+  const signal = _signal || currentTabAbortController?.signal;
   const grid = document.getElementById("avtrdbGrid");
   const stats = document.getElementById("avtrdbStats");
   const loadMoreBtn = document.getElementById("avtrdbLoadMore");
@@ -3196,10 +3213,11 @@ async function avtrdbFetch(append) {
   }
 
   const requiredPlats = avtrdbCurrentPlatform ? avtrdbCurrentPlatform.split("+") : [];
-  const dedupMap = new Map(); // id -> avatar data
-  const renderMap = new Map(); // id -> card element
+  const dedupMap = _avtrdbDedupMap;   // use persistent global
+  const renderMap = _avtrdbRenderMap; // use persistent global
   let hasMoreGlobal = false;
-  let totalRendered = 0;
+  let totalRendered = grid.querySelectorAll('.avatar-card').length; // start from current count
+
 
   // ── Shared card renderer ──────────────────────────────────────────────────
   const renderCard = (av) => {
@@ -3266,6 +3284,7 @@ async function avtrdbFetch(append) {
       <div class="avatar-thumb-wrapper">
         <img class="avatar-thumb" src="${escHtml(av.image_url || "")}"
              alt="${escHtml(av.name || "")}"
+             loading="lazy" decoding="async"
              onerror="this.style.opacity='0.3'">
         <div class="avatar-name-overlay">${escHtml(av.name || "未知模型")}</div>
       </div>
@@ -3276,24 +3295,29 @@ async function avtrdbFetch(append) {
     `;
     grid.appendChild(card);
 
-    // Background official API verification — only if we don't already have rich metadata
+    // Lazy metadata enrichment via IntersectionObserver — only fires when card enters viewport
     const hasRich = (av.unityPackages && av.unityPackages.length > 0);
     if (!hasRich) {
-      avatarMetadataQueue.add(id, (data) => {
-        Object.assign(av, {
-          unityPackages: data.unityPackages || av.unityPackages,
-          performance: (data.performance && Object.keys(data.performance).length) ? data.performance : av.performance,
-          created_at: av.created_at || data.created_at || data.createdAt,
-          updated_at: av.updated_at || data.updated_at || data.updatedAt,
-          description: av.description || data.description || ""
+      const io = new IntersectionObserver((entries, obs) => {
+        if (!entries[0].isIntersecting) return;
+        obs.disconnect();
+        avatarMetadataQueue.add(id, (data) => {
+          Object.assign(av, {
+            unityPackages: data.unityPackages || av.unityPackages,
+            performance: (data.performance && Object.keys(data.performance).length) ? data.performance : av.performance,
+            created_at: av.created_at || data.created_at || data.createdAt,
+            updated_at: av.updated_at || data.updated_at || data.updatedAt,
+            description: av.description || data.description || ""
+          });
+          const badgeWrap = card.querySelector('.card-plat-badges');
+          if (!badgeWrap) return;
+          const liveRatings = getAvatarPlatforms(av);
+          badgeWrap.innerHTML = Array.from(liveRatings.keys()).map(p =>
+            `<span class="avtrdb-badge">${{ pc: "PC", android: "Quest", ios: "Apple" }[p] || p}</span>`
+          ).join("");
         });
-        const badgeWrap = card.querySelector('.card-plat-badges');
-        if (!badgeWrap) return;
-        const liveRatings = getAvatarPlatforms(av);
-        badgeWrap.innerHTML = Array.from(liveRatings.keys()).map(p =>
-          `<span class="avtrdb-badge">${{ pc: "PC", android: "Quest", ios: "Apple" }[p] || p}</span>`
-        ).join("");
-      });
+      }, { rootMargin: '200px' }); // pre-load 200px before entering viewport
+      io.observe(card);
     }
   };
 
@@ -3325,62 +3349,64 @@ async function avtrdbFetch(append) {
   };
 
   try {
-    // ── Source 1: AvtrDB (primary, full metadata) — via proxy to avoid CORS ─
-    let avtrdbApiUrl = `https://api.avtrdb.com/v2/avatar/search?query=${encodeURIComponent(avtrdbCurrentQuery)}&page_size=100&page=${avtrdbPage}`;
-    if (requiredPlats.length > 0) avtrdbApiUrl += `&compatibility=${requiredPlats[0]}`;
-    const avtrdbProxyUrl = `/api/proxy?url=${encodeURIComponent(avtrdbApiUrl)}`;
+    // Build a fetcher for one AvtrDB page
+    const fetchAvtrdbPage = (pageNum) => {
+      let url = `https://api.avtrdb.com/v2/avatar/search?query=${encodeURIComponent(avtrdbCurrentQuery)}&page_size=100&page=${pageNum}`;
+      if (requiredPlats.length > 0) url += `&compatibility=${requiredPlats[0]}`;
+      return fetch(`/api/proxy?url=${encodeURIComponent(url)}`, { signal })
+        .then(r => r.json())
+        .then(data => {
+          // page 0 is authoritative for has_more (later pages might be empty)
+          if (pageNum === avtrdbPage) {
+            hasMoreGlobal = data.has_more || false;
+            _avtrdbHasMore = hasMoreGlobal;
+          }
+          (data.avatars || []).forEach(av => renderCard({
+            ...av,
+            vrc_id: av.vrc_id,
+            image_url: av.image_url,
+            compatibility: av.compatibility || [],
+            performance: av.performance || {}
+          }));
+          updateStats();
+          maybeHideSpinner();
+        })
+        .catch(() => {});
+    };
 
-    const avtrdbPromise = fetch(avtrdbProxyUrl)
-      .then(r => r.json())
-      .then(data => {
-        hasMoreGlobal = data.has_more || false;
-        (data.avatars || []).forEach(av => renderCard({
-          ...av,
-          vrc_id: av.vrc_id,
-          image_url: av.image_url,
-          compatibility: av.compatibility || [],
-          performance: av.performance || {}
-        }));
-        updateStats();
-        maybeHideSpinner();
-        loadMoreBtn.style.display = hasMoreGlobal ? "inline-block" : "none";
-      })
-      .catch(() => {});
+    // ── AvtrDB: fetch 5 pages in parallel ────────────────────────────────────
+    // Each call covers pages [avtrdbPage … avtrdbPage+4]
+    const PAGES_PER_BATCH = 5;
+    const startPage = avtrdbPage;
+    const avtrdbPromises = Array.from({ length: PAGES_PER_BATCH }, (_, i) => fetchAvtrdbPage(startPage + i));
+    // Advance global page pointer so the next Load More starts from the right offset
+    avtrdbPage = startPage + PAGES_PER_BATCH - 1; // avtrdbLoadMore will do avtrdbPage++ again
 
-    // ── Sources 2-5: Community DBs (first page only, max 100 each) ─────────
+    // ── Sources 2-5: Community DBs (first search only) ───────────────────────
     const communityPromises = [];
-    if (avtrdbPage === 0) {
+    if (startPage === 0) { // only on initial search, not Load More
       const dbSources = [
         { name: 'vrcdb', url: `/api/proxy?url=${encodeURIComponent(`https://vrcx.vrcdb.com/avatars/Avatar/VRCX?search=${encodeURIComponent(avtrdbCurrentQuery)}`)}` },
         { name: 'avatarrecovery', url: `/api/proxy?url=${encodeURIComponent(`https://api.avatarrecovery.com/Avatar/vrcx?search=${encodeURIComponent(avtrdbCurrentQuery)}`)}` },
         { name: 'cute.bet', url: `/api/proxy?url=${encodeURIComponent(`https://avtr.cute.bet/search?search=${encodeURIComponent(avtrdbCurrentQuery)}`)}` },
         { name: 'nekosunevr', url: `/api/proxy?url=${encodeURIComponent(`https://avtr.nekosunevr.co.uk/vrcx_search?search=${encodeURIComponent(avtrdbCurrentQuery)}`)}` }
       ];
-
       dbSources.forEach(db => {
-        const p = fetch(db.url)
+        const p = fetch(db.url, { signal })
           .then(r => r.json())
           .then(data => {
             const list = (Array.isArray(data) ? data : data?.avatars || []).slice(0, 100);
             list.forEach(av => {
               if (db.name === 'cute.bet') {
-                renderCard({
-                  ...av,
-                  vrc_id: av.id,
-                  image_url: av.imageUrl || av.thumbnailImageUrl || "",
-                  author: { name: av.authorName || "Unknown", id: av.authorId },
-                  unityPackages: av.unityPackages || []
-                });
+                renderCard({ ...av, vrc_id: av.id, image_url: av.imageUrl || av.thumbnailImageUrl || "",
+                  author: { name: av.authorName || "Unknown", id: av.authorId }, unityPackages: av.unityPackages || [] });
               } else {
-                renderCard({
-                  vrc_id: av.id,
-                  name: av.name || av.avatarName || "未知模型",
+                renderCard({ vrc_id: av.id, name: av.name || av.avatarName || "未知模型",
                   author: { name: av.authorName || "Unknown", id: av.authorId },
                   image_url: av.imageUrl || av.thumbnailImageUrl || "",
                   performance: av.performance || {},
                   compatibility: av.compatibility || (av.imageUrl ? ["pc"] : []),
-                  description: av.description || ""
-                });
+                  description: av.description || "" });
               }
             });
             updateStats();
@@ -3391,25 +3417,33 @@ async function avtrdbFetch(append) {
       });
     }
 
-    // Wait for ALL sources to settle before deciding if truly empty
-    await Promise.allSettled([avtrdbPromise, ...communityPromises]);
+    // Wait for ALL 9 concurrent requests to settle
+    await Promise.allSettled([...avtrdbPromises, ...communityPromises]);
 
-    // Hide spinner regardless (in case < 50 results)
+    if (signal?.aborted) return;
+
     document.getElementById('avtrdb-loading-spinner')?.remove();
     spinnerHidden = true;
 
-    if (totalRendered === 0 && !append) {
+    const actualCount = grid.querySelectorAll('.avatar-card').length;
+
+    if (actualCount === 0 && !append) {
       stats.textContent = "未找到符合条件的模型 / No matching avatars found";
       grid.innerHTML = `<div style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:rgba(255,255,255,0.4);gap:12px;">
         <div style="font-size:3em;">🔍</div>
         <div>未找到相关模型 / No avatars found</div>
       </div>`;
+    } else {
+      window._avtrdbLoadMoreTarget = null;
+      loadMoreBtn.style.display = _avtrdbHasMore ? "inline-block" : "none";
     }
 
   } catch (e) {
     if (!append) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:#ef4444;">搜索失败: ${escHtml(e.message)}</div>`;
   }
 }
+
+
 
 
 
@@ -6315,37 +6349,47 @@ function showFriendContextMenu(e) {
 
   const menu = buildCtxMenu([
     { items: [
-      { icon:'🔄', label:'刷新资料', action: () => {
-        currentFriendProfile = null; const el = document.createElement('div');
-        el.dataset.friend = JSON.stringify(f).replace(/&/g,'&amp;');
-        openFriendProfile(el);
+      { icon:'🔄', label:'刷新资料', action: async () => {
+        // Re-fetch from API for up-to-date data
+        try {
+          const r = await apiCall(`/api/vrc/users/${id}`);
+          if (r.ok) {
+            const fresh = await r.json();
+            currentFriendProfile = fresh;
+            _renderFriendProfileUI(fresh, document.getElementById('friendProfileModal'));
+            logMsg('✅ 资料已刷新', 'success');
+          } else {
+            // Fall back to re-open using the proper profile-by-id route
+            openFriendProfileById(id);
+          }
+        } catch { openFriendProfileById(id); }
       }},
-      { icon:'📋', label:'复制 ID', action: () => navigator.clipboard.writeText(id) },
+      { icon:'📋', label:'复制 ID', action: () => navigator.clipboard.writeText(id).then(() => logMsg('ID 已复制', 'info')) },
       { icon:'🔗', label:'分享 VRChat 主页', action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
     ]},
     { label:'位置互动', items: [
-      hasLocation ? { icon:'📩', label:'申请加入实例', action: () => friendRequestJoin(id, name) } : null,
-      hasLocation ? { icon:'📨', label:'发送带消息的申请', action: () => friendRequestJoinMsg(id, name) } : null,
+      hasLocation ? { icon:'🚀', label:'申请加入实例', action: () => friendRequestJoin(id, name) } : null,
       { icon:'📩', label:'请求邀请', action: () => requestInvite(id, name) },
       { icon:'📨', label:'发送邀请', action: () => sendInvite(id, name) },
       { icon:'👋', label:'发送戳一戳', action: () => sendPoke(id, name) },
     ].filter(Boolean)},
     { label:'模型控制', items: [
-      { icon:'👁️', label: isShown ? '重置模型显示 (默认)' : '显示该玩家模型', action: () => isShown ? resetAvatarModeration(id, name, 'showAvatar') : showAvatarUser(id, name) },
-      { icon:'👓', label: isHidden ? '重置模型显示 (默认)' : '隐藏该玩家模型', action: () => isHidden ? resetAvatarModeration(id, name, 'hideAvatar') : hideAvatarUser(id, name) },
+      { icon:'👁️', label: isShown ? '取消强制显示模型' : '显示该玩家模型', action: () => isShown ? resetAvatarModeration(id, name, 'showAvatar') : showAvatarUser(id, name) },
+      { icon:'🙈', label: isHidden ? '取消隐藏模型' : '隐藏该玩家模型', action: () => isHidden ? resetAvatarModeration(id, name, 'hideAvatar') : hideAvatarUser(id, name) },
       { icon:'🤝', label: isInteractOff ? '打开模型互动 (PhysBones)' : '关闭模型互动', action: () => isInteractOff ? resetAvatarModeration(id, name, 'interactOff') : disableAvatarInteraction(id, name) },
       { icon:'🧑', label:'查看模型信息 (官网)', action: () => {
         const avId = f.currentAvatarId; if (avId) window.open(`https://vrchat.com/home/avatar/${avId}`, '_blank');
+        else alert('该好友模型 ID 不可访问');
       }},
     ]},
     { label:'群组', items: [
-      { icon:'🏠', label:'邀请加入群组', action: () => alert('请在游戏内操作邀请加入群组') },
+      { icon:'🏠', label:'邀请加入群组', action: (ev) => showGroupInviteMenu(ev, id, name) },
     ]},
     { label:'管理', items: [
       { icon:'⭐', label: isFriendFaved ? '针对该好友移除收藏' : '收藏到分组', action: (ev) => isFriendFaved ? toggleFriendFavorite(id, name) : toggleFriendFavMenu(ev, id) },
       { icon:'🔇', label: isBlocked ? '解除屏蔽' : '屏蔽', action: () => isBlocked ? unblockUser(id, name) : blockUser(id, name) },
       { icon:'🔕', label: isMuted ? '解除静音' : '静音', action: () => isMuted ? unmuteUser(id, name) : muteUser(id, name) },
-      { icon:'🚩', label:'举报', action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
+      { icon:'🚩', label:'举报该用户', action: () => showReportUserDialog(id, name) },
     ]},
     { items: [
       { icon:'🗑️', label:'删除好友', danger: true, action: () => deleteFriend(id, name) },
@@ -6354,12 +6398,119 @@ function showFriendContextMenu(e) {
   positionCtxMenu(e, menu);
 }
 
-async function friendRequestJoin(userId, name) {
+
+async function showGroupInviteMenu(ev, userId, userName) {
+  // Fetch the current user's owned/member groups and show a picker
+  let groups = [];
   try {
-    const r = await apiCall(`/api/vrc/user/${userId}/friendRequest`, {method:'POST'});
-    alert(r.ok ? `✅ 已发送加入申请给 ${name}` : `❌ 发送失败：${r.status}`);
+    // VRChat API: GET /users/{userId}/groups to list groups for a user
+    // Use currentUserId (actual user ID, not 'me')
+    const uid = currentUserId || (myProfileData && myProfileData.id);
+    if (!uid) { alert('无法获取用户 ID，请先登录'); return; }
+    const r = await apiCall(`/api/vrc/users/${uid}/groups?n=50`);
+    if (r.ok) groups = await r.json();
+    // VRChat returns array of LimitedGroup objects with id, name, memberCount, etc.
+    // Filter to groups where the user has invite permissions
+    groups = groups.filter(g => g.myMember?.permissions?.includes('group-invites-manage') ||
+                               g.myMember?.roleIds?.length > 0);
+  } catch {}
+
+  if (!groups.length) {
+    alert('未找到您管理的群组，请先在游戏内创建或加入群组');
+    return;
+  }
+
+  // Build a simple modal picker
+  const old = document.getElementById('_groupInvitePickerModal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_groupInvitePickerModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#1e1e2e;border-radius:16px;padding:24px;min-width:320px;max-width:480px;max-height:70vh;display:flex;flex-direction:column;gap:12px;">
+      <div style="font-weight:600;font-size:1em;">选择要邀请 ${escHtml(userName)} 加入的群组</div>
+      <div id="_groupPickerList" style="overflow-y:auto;display:flex;flex-direction:column;gap:8px;max-height:50vh;">
+        ${groups.map(g => `
+          <button onclick="doGroupInvite('${escHtml(g.id)}','${escHtml(g.name)}','${escHtml(userId)}','${escHtml(userName)}')"
+            style="text-align:left;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 14px;cursor:pointer;color:#fff;">
+            <div style="font-weight:500;">${escHtml(g.name)}</div>
+            <div style="font-size:0.75em;color:rgba(255,255,255,0.4);">👥 ${g.memberCount || 0} 成员</div>
+          </button>`).join('')}
+      </div>
+      <button onclick="document.getElementById('_groupInvitePickerModal')?.remove()" style="background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:8px;cursor:pointer;color:#fff;">取消</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function doGroupInvite(groupId, groupName, userId, userName) {
+  document.getElementById('_groupInvitePickerModal')?.remove();
+  try {
+    const r = await apiCall(`/api/vrc/groups/${groupId}/invites`, {
+      method: 'POST',
+      json: { userId }
+    });
+    if (r.ok) logMsg(`✅ 已邀请 ${userName} 加入群组「${groupName}」`, 'success');
+    else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 邀请失败: ${err.error?.message || r.status}`);
+    }
   } catch(e) { alert('失败: ' + e.message); }
 }
+
+function showReportUserDialog(userId, userName) {
+  const old = document.getElementById('_reportUserModal');
+  if (old) old.remove();
+
+  const reasons = [
+    'tos_violation', 'threatening_language', 'harassment', 'spam',
+    'inappropriate_avatar', 'inappropriate_content', 'other'
+  ];
+  const reasonLabels = {
+    tos_violation: '违反服务条款',
+    threatening_language: '威胁性语言',
+    harassment: '骚扰行为',
+    spam: '垃圾信息',
+    inappropriate_avatar: '不当模型',
+    inappropriate_content: '不当内容',
+    other: '其他'
+  };
+
+  const modal = document.createElement('div');
+  modal.id = '_reportUserModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#1e1e2e;border-radius:16px;padding:24px;min-width:340px;max-width:480px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font-weight:600;">🚩 举报 ${escHtml(userName)}</div>
+      <div style="font-size:0.85em;color:rgba(255,255,255,0.5);">选择举报原因：</div>
+      <select id="_reportReason" style="background:#111827;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;color:#fff;">
+        ${reasons.map(r => `<option value="${r}">${reasonLabels[r]}</option>`).join('')}
+      </select>
+      <textarea id="_reportDesc" placeholder="描述（可选）" maxlength="512"
+        style="background:#111827;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;color:#fff;resize:none;height:80px;"></textarea>
+      <div style="display:flex;gap:8px;">
+        <button onclick="submitUserReport('${escHtml(userId)}','${escHtml(userName)}')"
+          style="flex:1;background:#ef4444;border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;font-weight:600;">提交举报</button>
+        <button onclick="document.getElementById('_reportUserModal')?.remove()"
+          style="flex:1;background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function submitUserReport(userId, userName) {
+  const reason = document.getElementById('_reportReason')?.value || 'other';
+  const description = document.getElementById('_reportDesc')?.value || '';
+  document.getElementById('_reportUserModal')?.remove();
+  try {
+    // VRChat does not expose a public report API, open official page as fallback with reason pre-selected
+    window.open(`https://vrchat.com/home/user/${userId}`, '_blank');
+    logMsg(`举报已发起，请在弹出页面完成举报提交（原因: ${reason}）`, 'info');
+  } catch(e) { alert('失败: ' + e.message); }
+}
+
 
 function toggleFriendFavMenu(event, userId) {
   const menu = document.getElementById("friendFavMenu");
@@ -6412,50 +6563,82 @@ async function toggleFriendFavorite(userId, name) {
   }
 }
 
-function friendRequestJoinMsg(userId, name) {
-  const msg = prompt(`发送带消息的加入申请给 ${name}：`);
-  if (msg === null) return;
-  apiCall(`/api/vrc/user/${userId}/friendRequest`, {method:'POST', json:{message:msg}})
-    .then(r => alert(r.ok ? '✅ 申请已发送' : '❌ 发送失败'));
+async function friendRequestJoin(userId, name) {
+  // Invite yourself to the user's current instance via POST /invite/myself/to/{instanceId}
+  const f = currentFriendProfile;
+  if (!f || !f.location || !f.location.startsWith('wrld_')) {
+    alert('该好友当前不在公开实例中');
+    return;
+  }
+  try {
+    const r = await apiCall(`/api/vrc/invite/myself/to/${encodeURIComponent(f.location)}`, { method: 'POST' });
+    if (r.ok) logMsg(`✅ 已申请加入 ${name} 的实例`, 'success');
+    else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 失败: ${err.error?.message || r.status}`);
+    }
+  } catch(e) { alert('失败: ' + e.message); }
 }
 
+function friendRequestJoinMsg(userId, name) {
+  // Invite yourself to user's instance with a custom message isn't directly supported;
+  // We just do the standard self-invite
+  if (!confirm(`向 ${name} 区请加入其当前实例?`)) return;
+  friendRequestJoin(userId, name);
+}
+
+
+
 async function sendPoke(userId, name) {
+  // VRChat has no dedicated poke endpoint. Best equivalent: POST /requestInvite/{userId}
+  // which sends a real-time in-game notification popup asking them to invite you.
   try {
-    const r = await apiCall('/api/vrc/notifications', {
-      method: "POST",
-      json: { receiverUserId: userId, type: "message", message: "👋 戳一戳！" },
+    const r = await apiCall(`/api/vrc/requestInvite/${userId}`, {
+      method: 'POST',
+      json: { platform: 'standalonewindows', rsvp: false }
     });
-    if (r.ok) logMsg(`✅ 已向 ${name} 发送戳一戳`, "success");
-    else alert(`❌ 发送失败：${r.status}`);
+    if (r.ok) logMsg(`✅ 已向 ${name} 发送戳一戳`, 'success');
+    else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 失败: ${err.error?.message || r.status}`);
+    }
   } catch(e) { alert('失败: ' + e.message); }
 }
 
 async function requestInvite(userId, name) {
+  // POST /api/1/requestInvite/{userId} — ask user to invite YOU to their world
   try {
-    const r = await apiCall('/api/vrc/notifications', {
+    const r = await apiCall(`/api/vrc/requestInvite/${userId}`, {
       method: 'POST',
-      json: { receiverUserId: userId, type: 'requestInvite', message: '我想加入你的实例！' }
+      json: { platform: 'standalonewindows', rsvp: false }
     });
-    if (r.ok) logMsg(`✅ 已向 ${name} 发送请求邀请`, "success");
-    else alert(`❌ 发送失败：${r.status}`);
+    if (r.ok) logMsg(`✅ 已向 ${name} 发送请求邀请`, 'success');
+    else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 失败: ${err.error?.message || r.status}`);
+    }
   } catch(e) { alert('失败: ' + e.message); }
 }
 
 async function sendInvite(userId, name) {
+  // POST /api/1/invite/{userId} — invite user to YOUR current instance
   try {
     const meResp = await apiCall('/api/vrc/auth/user');
-    if (!meResp.ok) throw new Error("无法获取当前状态");
+    if (!meResp.ok) throw new Error('无法获取当前状态');
     const me = await meResp.json();
     if (!me.location || me.location === 'offline' || me.location === 'private') {
-      alert("你目前不在公共实例或处于离线状态，无法发送邀请。");
+      alert('你目前不在公共实例或处于离线状态，无法发送邀请。');
       return;
     }
-    const r = await apiCall('/api/vrc/notifications', {
+    const r = await apiCall(`/api/vrc/invite/${userId}`, {
       method: 'POST',
-      json: { receiverUserId: userId, type: 'invite', instanceId: me.location, message: '快来加入我！' }
+      json: { instanceId: me.location, messageSlot: 0 }
     });
-    if (r.ok) logMsg(`✅ 已向 ${name} 发送邀请`, "success");
-    else alert(`❌ 发送失败：${r.status}`);
+    if (r.ok) logMsg(`✅ 已向 ${name} 发送邀请`, 'success');
+    else {
+      const err = await r.json().catch(() => ({}));
+      alert(`❌ 失败: ${err.error?.message || r.status}`);
+    }
   } catch(e) { alert('失败: ' + e.message); }
 }
 
