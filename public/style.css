@@ -32,6 +32,12 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
+  /* Prevent the whole page from being drag-scrolled when an inner scroll
+     container (avatar grid, friend list, world grid ...) hits its top/bottom
+     edge. Without this, the touch/scroll event bubbles up and yanks the
+     entire UI. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* Match html element so the brief flash before body's CSS applies isn't white
@@ -39,6 +45,16 @@ body {
 html {
   background: var(--bg-primary);
   color-scheme: dark;
+}
+
+/* ── Scroll containment (global) ──────────────────────────────────────────
+   Stop scroll/overscroll from chaining to ancestor containers. Without this,
+   scrolling an inner list (avatar grid, friend list, world grid) to its
+   top/bottom edge lets the gesture bubble up and drag the entire page — the
+   "whole UI moves when I'm just scrolling models" bug. `contain` keeps the
+   scroll action inside the element that actually has a scrollbar. */
+* {
+  overscroll-behavior: contain;
 }
 
 /* ── Scrollbars (global) ──────────────────────────────────────────────────
@@ -496,6 +512,8 @@ html::-webkit-scrollbar, body::-webkit-scrollbar {
   width: 100%;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
   align-content: start;
 }
 
@@ -1448,12 +1466,12 @@ select.input-field {
   display: flex;
   width: 100%;
   position: relative;
-}
-
-.download-panel.active {
-  display: flex;
-  width: 100%;
-  position: relative;
+  /* min-height:0 is critical for flex children — without it the default
+     min-height:auto prevents the panel from shrinking below its content
+     size, which pushes body taller than the viewport and re-enables
+     whole-page scroll (the "entire UI gets dragged" bug). */
+  min-height: 0;
+  overflow: hidden;
 }
 
 .upload-area {
@@ -2160,7 +2178,7 @@ select.input-field {
 .main-content {
   display: flex;
   flex: 1;
-  height: 100vh;
+  min-height: 0;
   overflow: hidden;
 }
 
