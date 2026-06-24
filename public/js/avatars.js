@@ -442,6 +442,7 @@ async function fetchAvatars(forceRefresh = false) {
       });
     }
   } catch (e) {
+    if (isAbortError(e)) return; // tab switch — not a real error
     logMsg("Error: " + e.message, "error");
   }
 }
@@ -970,8 +971,14 @@ function _showCleanupModal(opts) {
   `;
   document.body.appendChild(modal);
   // Stack above any open modal and lock background scroll (released in closeModal).
+  // Set dataset.scrollLocked so the global Esc handler (core.js) routes through
+  // our closeModal → unlockBodyScroll, instead of force-removing the modal and
+  // leaking the scroll lock (BUG-4 class).
   modal.style.zIndex = modalZTop();
-  lockBodyScroll();
+  if (!modal.dataset.scrollLocked) {
+    lockBodyScroll();
+    modal.dataset.scrollLocked = '1';
+  }
 
   const state = { running: false, cancelled: false };
   const closeModal = () => {

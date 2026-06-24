@@ -215,33 +215,6 @@ function sparkMD5ArrayBuffer(uint8) {
   return btoa(String.fromCharCode(...result));
 }
 
-// ── Gzip Compress ──
-async function gzipCompress(data) {
-  if (typeof CompressionStream !== "undefined") {
-    const cs = new CompressionStream("gzip");
-    const writer = cs.writable.getWriter();
-    writer.write(data);
-    writer.close();
-    const chunks = [];
-    const reader = cs.readable.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    let totalLen = chunks.reduce((s, c) => s + c.length, 0);
-    let result = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const chunk of chunks) {
-      result.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return result;
-  }
-  // Fallback: return as-is (no compression)
-  return data instanceof Uint8Array ? data : new Uint8Array(data);
-}
-
 // ── Rsync Signature (BLAKE2 format) ──
 async function computeRsyncSignature(fileData) {
   const blockSize = 2048;
@@ -694,7 +667,9 @@ async function startUpload() {
 
         // Get avatar info to find file ID
         const rAv = await apiCall(`/api/vrc/avatars/${selAvatarId}`);
+        if (!rAv.ok) throw new Error(`获取模型信息失败 (HTTP ${rAv.status})，可能无权修改此模型`);
         const avData = await rAv.json();
+        if (!avData || !avData.unityPackages) throw new Error(`模型信息格式异常，无法读取 unityPackages`);
         for (const pkg of avData.unityPackages || []) {
           if (["standalonewindows", "pc"].includes(pkg.platform)) {
             const m = (pkg.assetUrl || "").match(/file\/(file_[a-f0-9-]+)\//);
@@ -898,6 +873,25 @@ async function startUpload() {
           "File not ready after 5 minutes. It may still be processing — wait and try Update mode.",
         );
 
+      // 7b. Update mode: explicitly point the avatar at the new file version.
+      // VRChat *usually* auto-promotes the latest version, but some edge cases
+      // leave the avatar on the old version — this PUT guarantees the new
+      // version is live. Harmless if VRChat already promoted it. (F11)
+      if (!isNew && selAvatarId && fileId && versionId) {
+        setProgress(97, "Updating avatar to new version...");
+        const rUpd = await apiCall(`/api/vrc/avatars/${selAvatarId}`, {
+          method: "PUT",
+          json: {
+            assetUrl: `https://api.vrchat.cloud/api/1/file/${fileId}/${versionId}/file`,
+          },
+        });
+        if (!rUpd.ok) {
+          logMsg(`Warning: avatar record update returned HTTP ${rUpd.status} — the new version uploaded but may need manual activation.`, "error");
+        } else {
+          logMsg("Avatar record updated to new version.", "success");
+        }
+      }
+
       // 8. Create avatar
       if (isNew && fileId) {
         setProgress(98, "Creating avatar record...");
@@ -962,6 +956,7 @@ async function startUpload() {
       }
       setUploadStatus(t("uploadOk"), "success");
     } catch (e) {
+      if (isAbortError(e)) { setUploadStatus(t("uploadCancelled") || "已取消", "info"); return; }
       if (statusEl) statusEl.textContent = "✗";
       if (itemEl) {
         itemEl.classList.remove("uploading");

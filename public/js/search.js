@@ -18,6 +18,10 @@ let _avtrdbBgDriverRunning = false;
 let _avtrdbBgDriverAbortEpoch = 0; // bumped on every new search to stop a stale driver
 let _avtrdbBgDriverFailedPage = -1; // page that failed twice → driver stopped
 let _searchAbortController = null;
+// How many sources (avtrdb + community DBs) still have an in-flight request
+// for the current search. When it hits 0 with zero results, we swap the
+// spinner for an error message instead of leaving it spinning forever (F5).
+let _avtrdbPendingSources = 0;
 
 function _newSearchSignal() {
   if (_searchAbortController) {
@@ -536,6 +540,35 @@ function _updateAvtrdbStats() {
   stats.textContent = `已显示 ${rendered} / 已索引 ${indexed}（${platLabel} · ${fieldLabel} · ${sortLabel}）${suffix}`;
 }
 
+// Called when one search source (avtrdb or a community DB) finishes — success
+// or fail. When all sources are done: (1) if we have a non-arrival sort mode,
+// apply a final re-sort so relevance/newest/name actually takes effect (F4 —
+// streamed cards were previously never sorted, leaving the default 'relevance'
+// chip highlighted but ignored); (2) if zero results, swap the spinner for an
+// error/empty message so it doesn't spin forever (F5).
+function _avtrdbSourceDone(signal) {
+  if (signal?.aborted) return;
+  if (_avtrdbPendingSources > 0) _avtrdbPendingSources--;
+  if (_avtrdbPendingSources > 0) return;
+  // All sources resolved.
+  if (_avtrdbDedupMap.size > 0) {
+    // Apply the user's chosen sort mode now that all results are in. During
+    // streaming we keep arrival order to avoid cards jumping around; this
+    // final pass makes relevance/newest/name actually mean something.
+    if (avtrdbSortMode && avtrdbSortMode !== 'arrival') {
+      _rerenderAvtrdbGrid();
+    }
+  } else {
+    // Nothing collected — show an error instead of a stuck spinner (F5).
+    const grid = document.getElementById('avtrdbGrid');
+    const spinner = document.getElementById('avtrdb-loading-spinner');
+    if (grid && spinner) {
+      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:40px;">未找到匹配的模型，或所有数据源暂时不可用，请稍后重试。</div>`;
+    }
+    _updateAvtrdbStats();
+  }
+}
+
 // Background avtrdb pagination driver. Auto-flips pages from avtrdbPage onward
 // until has_more=false. Each page flushes to the grid as it arrives. A single
 // page is retried up to 10 times with exponential backoff (300ms, 600ms, 1.2s,
@@ -799,7 +832,24 @@ function _recycleCard(card) {
 
 function _refreshAvtrdbCard(av) {
   if (!av?.vrc_id) return;
-  _avtrdbRenderMap.delete(av.vrc_id);
+  // Find the already-rendered card in the DOM and rebuild it with the merged
+  // (richer) data. Previously this only deleted the renderMap entry, leaving
+  // the stale card visible until a full grid rerender — so merged tags /
+  // descriptions / images never showed up on the live card (F7).
+  const oldCard = _avtrdbRenderMap.get(av.vrc_id);
+  if (oldCard && oldCard.isConnected) {
+    const newCard = _buildAvtrdbCard(av);
+    // Preserve any lazy-load state the recycler set up.
+    oldCard.replaceWith(newCard);
+    _avtrdbRenderMap.set(av.vrc_id, newCard);
+    // Re-attach observers so images still lazy-load on the rebuilt card.
+    try {
+      _ensureRecycler().observe(newCard);
+      if (typeof _ensureAvtrdbMetaObserver === 'function') _ensureAvtrdbMetaObserver().observe(newCard);
+    } catch (_) {}
+  } else {
+    _avtrdbRenderMap.delete(av.vrc_id);
+  }
 }
 
 function _avtrdbTextMatchesField(av, q, field) {
@@ -872,7 +922,7 @@ function _appendAvtrdbRenderBatch(count = AVTRDB_RENDER_BATCH) {
       card = _buildAvtrdbCard(av);
     } else {
       recycler.observe(card);
-      if (typeof _ensureMetaObserver === 'function') _ensureMetaObserver().observe(card);
+      if (typeof _ensureAvtrdbMetaObserver === 'function') _ensureAvtrdbMetaObserver().observe(card);
     }
     frag.appendChild(card);
   }
@@ -939,7 +989,10 @@ function _rerenderAvtrdbGrid(opts = {}) {
   _avtrdbRenderItems = items;
   _avtrdbRenderedCount = 0;
   if (_avtrdbRenderObserver) { _avtrdbRenderObserver.disconnect(); _avtrdbRenderObserver = null; }
-  // Do NOT disconnect _avtrdbRecycler or _avtrdbMetaObserver so reused cards can just be re-observed
+  // Clear the render map so _appendAvtrdbRenderBatch doesn't re-attach
+  // detached cards from the previous render (which could be recycled
+  // skeletons that never get restored, leaving blank cards).
+  _avtrdbRenderMap = new Map();
   grid.innerHTML = '';
   _appendAvtrdbRenderBatch(Math.max(AVTRDB_RENDER_BATCH, previousRendered));
 
@@ -994,13 +1047,23 @@ async function avtrdbFetch(append, _signal) {
       }));
       _flushStreamedCards();
       avtrdbPage = 1;
-      if (_avtrdbHasMore) _avtrdbBackgroundDriver(signal);
+      if (_avtrdbHasMore) {
+        // fire-and-forget, but never let an uncaught rejection kill the page
+        // promise or leave stats stuck on "background fetching...".
+        _avtrdbBackgroundDriver(signal).catch(e => {
+          _avtrdbBgDriverRunning = false;
+          _avtrdbBgDriverFailedPage = avtrdbPage;
+          _updateAvtrdbStats();
+        });
+      }
     })
-    .catch(() => {});
+    .then(() => { _avtrdbSourceDone(signal); })
+    .catch(() => { _avtrdbSourceDone(signal); });
 
   // Community DBs — each returns its full set in one HTTP call. Fire all four
   // in parallel; each flushes independently as soon as it resolves.
   const dbSources = _communityDbSources(avtrdbCurrentQuery, false);
+  if (!append) _avtrdbPendingSources = 1 + dbSources.length; // avtrdb + community DBs
   dbSources.forEach(db => {
     fetchJsonWithTimeout(db.url, { signal, timeoutMs: 14000 })
       .then(data => {
@@ -1020,8 +1083,9 @@ async function avtrdbFetch(append, _signal) {
           }
         });
         _flushStreamedCards();
+        _avtrdbSourceDone(signal);
       })
-      .catch(() => {});
+      .catch(() => { _avtrdbSourceDone(signal); });
   });
 
   // Don't await — sources flush themselves. After ~15s, if still no results,
@@ -1459,7 +1523,9 @@ async function addToFavorite(avtrId, groupName, btn) {
         || (_currentDetailAvatar && ((_currentDetailAvatar.id || _currentDetailAvatar.vrc_id) === avtrId) ? _currentDetailAvatar : null)
         || { id: avtrId };
       await upsertAvatarIntoFavoriteCache(groupName, knownAvatar);
-      // INSTANT UI: flip the unified card-fav-quick toggle from ☆ → <i class="fa-solid fa-star"></i> const card = document.getElementById("card-" + avtrId);
+      // INSTANT UI: flip the unified card-fav-quick toggle from ☆ to ★ on the
+      // currently-rendered card so the user sees the favorite land immediately.
+      const card = document.getElementById("card-" + avtrId);
       if (card) {
         const fq = card.querySelector('.card-fav-quick');
         if (fq) {

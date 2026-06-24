@@ -218,7 +218,11 @@ async function fetchWorlds(category, forceRefresh = false) {
       const favType = _worldFavTypeForGroup(groupName);
       const onlineWorldIds = [];
       let favoriteListFailed = false;
-      
+      // Clear the previous category's id map so stale entries from another
+      // favorite group don't leak into this one (F9: cross-category accumulation
+      // caused wrong favId lookups on DELETE and stale gold-star badges).
+      worldFavoriteIdMap = new Map();
+
       let offset = 0;
       while (true) {
         if (seq !== currentWorldFetchSeq) return;
@@ -506,16 +510,14 @@ async function quickWorldFav(worldId, event) {
     btn.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> ';
     try {
       const favId = worldFavoriteIdMap.get(worldId);
-      // Look up which group this world is in by scanning loaded `allWorlds`
-      // (cached in the current category). We need this to decrement
-      // worldFavGroupCounts — without it the sidebar "x/100" stays wrong
-      // until a full re-sync.
-      const cur = allWorlds.find(w => w.id === worldId);
-      const removedGroup = cur && Array.isArray(cur.favorites)
-        ? (cur.favorites[0]?.tags?.[0] || null)
-        : (currentWorldCategory && currentWorldCategory.startsWith('fav_')
-            ? currentWorldCategory.replace(/^fav_/, '')
-            : null);
+      // Determine which favorite group this world belongs to. The old code tried
+      // cur.favorites[0]?.tags?.[0] but the /worlds/<id> response has no
+      // favorites array, so it almost always fell through. The reliable signal
+      // is the currently-viewed category (fav_<groupName>) since this map is
+      // rebuilt per-category.
+      const removedGroup = (currentWorldCategory && currentWorldCategory.startsWith('fav_'))
+        ? currentWorldCategory.replace(/^fav_/, '')
+        : null;
       const r = await apiCall(`/api/vrc/favorites/${favId}`, { method: 'DELETE' });
       if (r.ok) {
         worldFavoriteIdMap.delete(worldId);
@@ -901,6 +903,10 @@ async function openWorldDetail(worldId, worldObj = null) {
       favBtn.className  = isFaved ? 'btn btn-warning' : 'btn btn-secondary';
     }
   } catch(e) {
+    // apiCall converts abort into a Response with status 499 rather than
+    // throwing AbortError, so isAbortError(e) never fires here. The 499 check
+    // below handles the real "user switched tab mid-fetch" path.
+    if (e && e.status === 499) return;
     if (isAbortError(e)) return;
     if (!isUiTokenCurrent(detailToken)) return;
     document.getElementById('worldDetailName').textContent = '加载失败';
@@ -945,9 +951,14 @@ async function deleteCurrentWorld() {
       if (typeof filterWorlds === 'function') filterWorlds();
     }
     // Invalidate the IDB cache for this category so it isn't resurrected from
-    // the 60s TTL on the next reload.
+    // the 60s TTL on the next reload. Delete the basics payload entirely (not
+    // just age=0) so a cold load doesn't briefly show the deleted world before
+    // the API refresh lands.
     if (currentWorldCategory) {
-      try { await idb.set('world_basics_age_' + currentWorldCategory, 0); } catch(_) {}
+      try {
+        await idb.set('world_basics_age_' + currentWorldCategory, 0);
+        await idb.del('world_basics_' + currentWorldCategory);
+      } catch(_) {}
     }
   } catch(e) {
     showToast('删除失败: ' + e.message, 'error');
@@ -1034,8 +1045,13 @@ async function showCacheClearModal() {
 
   document.body.appendChild(modal);
   // Stack above any open modal and lock background scroll.
+  // Set dataset.scrollLocked so the global Esc handler routes through our
+  // close() → unlockBodyScroll instead of force-removing and leaking the lock.
   modal.style.zIndex = modalZTop();
-  lockBodyScroll();
+  if (!modal.dataset.scrollLocked) {
+    lockBodyScroll();
+    modal.dataset.scrollLocked = '1';
+  }
   const close = () => { modal.remove(); unlockBodyScroll(); };
   document.getElementById('cccClose').onclick = close;
   document.getElementById('cccCancel').onclick = close;
@@ -1137,7 +1153,7 @@ async function joinWorldInstance() {
 
     // 2. Invite self
     if (statusEl) statusEl.textContent = '正在发送邀请...';
-    const r2 = await apiCall(`/api/vrc/invite/myself/to/${location}`, { method: 'POST', noAbort: true });
+    const r2 = await apiCall(`/api/vrc/invite/myself/to/${encodeURIComponent(location)}`, { method: 'POST', noAbort: true });
     if (!r2.ok) throw new Error('邀请失败 HTTP ' + r2.status);
 
     if (statusEl) { statusEl.innerHTML = '<i class="fa-solid fa-check"></i> 邀请已发送，请在游戏内查收'; statusEl.style.color = 'var(--success)'; }
@@ -1244,13 +1260,12 @@ async function toggleWorldFavorite() {
   try {
     if (isFaved) {
       const favId = worldFavoriteIdMap.get(w.id);
-      // Track which group we're removing from so the counter stays in sync.
-      // Read it from the world object (when listed) or fall back to the
-      // currently viewed favorite category.
-      const removedGroup = (w.favorites && w.favorites[0]?.tags?.[0])
-        || (currentWorldCategory && currentWorldCategory.startsWith('fav_')
-            ? currentWorldCategory.replace(/^fav_/, '')
-            : null);
+      // Use the current category to determine the group (reliable — the id map
+      // is rebuilt per-category). The old cur.favorites[0]?.tags?.[0] inference
+      // never worked because the world detail object has no favorites array.
+      const removedGroup = (currentWorldCategory && currentWorldCategory.startsWith('fav_'))
+        ? currentWorldCategory.replace(/^fav_/, '')
+        : null;
       const r = await apiCall(`/api/vrc/favorites/${favId}`, {method:'DELETE'});
       if (!r.ok) throw new Error('取消收藏失败 HTTP ' + r.status);
       try { await r.json(); } catch(_) {} // Consume if JSON, ignore if not

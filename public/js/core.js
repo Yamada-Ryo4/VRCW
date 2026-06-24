@@ -452,6 +452,15 @@ const idb = {
       req.onerror = () => reject(req.error);
     });
   },
+  async del(key) {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction("cache", "readwrite");
+      const req = tx.objectStore("cache").delete(key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  },
   async keys() {
     await this.init();
     return new Promise((resolve, reject) => {
