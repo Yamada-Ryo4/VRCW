@@ -743,7 +743,7 @@ function switchTab(tab) {
 }
 
 function switchSettingsPage(page) {
-  ['cache', 'join', 'dating', 'about'].forEach(p => {
+  ['cache', 'join', 'about'].forEach(p => {
     const el = document.getElementById('setPage' + p.charAt(0).toUpperCase() + p.slice(1));
     if (el) el.style.display = p === page ? '' : 'none';
     const btn = document.getElementById('setCat' + p.charAt(0).toUpperCase() + p.slice(1));
@@ -751,135 +751,11 @@ function switchSettingsPage(page) {
   });
   if (page === 'cache') loadCacheStats();
   if (page === 'join') loadJoinPrefs();
-  if (page === 'dating') loadDatingSettings();
 }
 
 // ── Join Preferences (localStorage) ──
 const PREF_TYPE   = 'vrcw_default_instance_type';
 const PREF_REGION = 'vrcw_default_region';
-
-// ── Dating System Logic ──
-let datingAgeVerified = false;
-
-async function initDatingSettings() {
-  if (!window.myProfileData) return;
-  const vrcId = window.myProfileData.id;
-  
-  // 1. Fetch D1 setting
-  try {
-    const res = await apiCall(`/api/dating/settings?vrc_id=${vrcId}`);
-    if (res.ok) {
-      const data = await res.json();
-      datingAgeVerified = data.age_verified === 1;
-    }
-  } catch(e) {}
-
-  const navItem = document.getElementById('navItemDating');
-  const navIcon = document.getElementById('navIconDating');
-  const toggle = document.getElementById('settingEnableDating');
-  
-  const isVrc18init = window.myProfileData?.ageVerificationStatus === '18+'
-                   || window.myProfileData?.ageVerified === true;
-
-  if (datingAgeVerified || isVrc18init) {
-    // Already verified (either via DB or VRChat 18+)
-    if (navItem) navItem.style.display = 'flex';
-    if (navIcon) navIcon.style.display = 'flex';
-    if (toggle) toggle.checked = true;
-  } else {
-    // Not verified
-    if (navItem) navItem.style.display = 'none';
-    if (navIcon) navIcon.style.display = 'none';
-    if (toggle) toggle.checked = false;
-  }
-}
-
-function loadDatingSettings() {
-  const toggle = document.getElementById('settingEnableDating');
-  const prompt = document.getElementById('datingAgePrompt');
-  const isVrc18 = window.myProfileData?.ageVerificationStatus === '18+'
-                || window.myProfileData?.ageVerified === true;
-
-  if (toggle) toggle.checked = datingAgeVerified || isVrc18;
-  if (prompt) prompt.style.display = 'none';
-
-  // If VRC 18+ certified, show a note
-  const noteEl = document.getElementById('datingVrcVerifiedNote');
-  if (noteEl) noteEl.style.display = isVrc18 ? 'block' : 'none';
-}
-
-function toggleDatingFeature() {
-  const toggle = document.getElementById('settingEnableDating');
-  const prompt = document.getElementById('datingAgePrompt');
-  const navItem = document.getElementById('navItemDating');
-  const navIcon = document.getElementById('navIconDating');
-
-  if (toggle.checked) {
-    const isVrc18toggle = window.myProfileData?.ageVerificationStatus === '18+'
-                       || window.myProfileData?.ageVerified === true;
-    if (datingAgeVerified || isVrc18toggle) {
-      // Allow turning on without prompt if already verified
-      if (navItem) navItem.style.display = 'flex';
-      if (navIcon) navIcon.style.display = 'flex';
-      prompt.style.display = 'none';
-      saveDatingSettings(true, null);
-    } else {
-      // Require DOB input
-      prompt.style.display = 'block';
-    }
-  } else {
-    prompt.style.display = 'none';
-    if (navItem) navItem.style.display = 'none';
-    if (navIcon) navIcon.style.display = 'none';
-    // If they manually turn it off, we might want to un-verify them or just hide it.
-    // For now, let's just let them hide it. We won't clear their age_verified.
-  }
-}
-
-async function verifyDatingAge() {
-  const dob = document.getElementById('datingDobInput').value;
-  if (!dob) return alert('请输入您的出生日期');
-  
-  const birthDate = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-  }
-  
-  if (age < 18) {
-    alert('抱歉，此系统包含成人交互选项，仅限年满18岁的用户开启。');
-    document.getElementById('settingEnableDating').checked = false;
-    document.getElementById('datingAgePrompt').style.display = 'none';
-    return;
-  }
-  
-  datingAgeVerified = true;
-  document.getElementById('datingAgePrompt').style.display = 'none';
-  
-  const navItem = document.getElementById('navItemDating');
-  const navIcon = document.getElementById('navIconDating');
-  if (navItem) navItem.style.display = 'flex';
-  if (navIcon) navIcon.style.display = 'flex';
-  
-  await saveDatingSettings(true, dob);
-  alert('验证成功！E了吗交友功能已在左侧导航栏解锁。');
-}
-
-async function saveDatingSettings(verified, dob) {
-  if (!window.myProfileData) return;
-  try {
-    await apiCall('/api/dating/settings', {
-      method: 'POST',
-      json: {
-        vrc_id: window.myProfileData.id,
-        age_verified: verified,
-        dob: dob
-      }
-    });
-  } catch(e) {}
-}
 
 const INSTANCE_TYPE_LABELS = {
   hidden:     'Friends+ (好友加)',
