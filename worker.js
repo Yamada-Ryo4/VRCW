@@ -1013,13 +1013,26 @@ export default {
             }
 
             if (bestMatch) {
-                // Optimistic lock: only match if target is STILL waiting
+                // Optimistic lock: only match if target is STILL waiting.
+                // AND status = "waiting" prevents two simultaneous /join requests
+                // from both claiming the same waiting user.
                 const grab = await executeD1Query(env, 'UPDATE match_pool SET status = "matched", matched_with = ? WHERE vrc_id = ? AND status = "waiting"', [myId, bestMatch], 'run');
                 
-                // Cloudflare D1 returns { success: true, meta: { changes: 1 } }
-                // If changes === 0, someone else grabbed them in the exact same millisecond.
-                if (grab && grab.meta && grab.meta.changes === 0) {
-                    // Fallback to waiting pool, let client poll again
+                // D1 direct returns { meta: { changes: N } }.
+                // D1 proxy may or may not include meta; fall back to a SELECT verify
+                // if changes info is unavailable (fail-safe rather than fail-crash).
+                let grabbed = true;
+                if (grab && grab.meta && typeof grab.meta.changes === 'number') {
+                    grabbed = grab.meta.changes > 0;
+                } else {
+                    // Proxy path: verify by reading back
+                    const verify = await executeD1Query(env, 'SELECT matched_with FROM match_pool WHERE vrc_id = ? AND status = "matched"', [bestMatch], 'first');
+                    grabbed = !!(verify && verify.matched_with === myId);
+                }
+
+                if (!grabbed) {
+                    // Target was grabbed by someone else in the same millisecond.
+                    // Put ourselves back into waiting pool; client will poll again.
                     await executeD1Query(env, 'INSERT INTO match_pool (vrc_id, status, matched_with) VALUES (?, "waiting", NULL) ON CONFLICT(vrc_id) DO UPDATE SET status="waiting", matched_with=NULL', [myId], 'run');
                     return jsonResp({ success: true, matched: false, mode: 'public' });
                 }
