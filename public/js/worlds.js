@@ -12,6 +12,9 @@
 
 let allWorlds           = [];
 let currentWorldDetail  = null;
+// Temp map used during online fav-group fetch to stamp favoriteId (the
+// favorites-record ID) onto each world object so it survives IDB caching.
+let _pendingFavIdMap    = new Map();
 
 async function initWorldsTab() {
   worldsLoaded = true;
@@ -132,7 +135,8 @@ function _worldBasicForWorldsCache(w) {
         authorId: w.authorId,
         occupants: w.occupants,
         releaseStatus: w.releaseStatus,
-        isInvalid: !!w.isInvalid
+        isInvalid: !!w.isInvalid,
+        favoriteId: w.favoriteId || null   // needed to rebuild worldFavoriteIdMap from IDB cache
     };
 }
 
@@ -177,7 +181,14 @@ async function fetchWorlds(category, forceRefresh = false) {
 
       // Favorite groups are IDB-first: startup/background index sync updates
       // stale favorite caches only when their remote ID index changes.
-      if (!forceRefresh && category.startsWith('fav_')) return;
+      // IMPORTANT: rebuild worldFavoriteIdMap from cached favoriteId field BEFORE
+      // returning, otherwise cleanupInvalidWorlds() can't find favIds and all
+      // DELETE calls fail silently (BUG: every item falls into the else-fail branch).
+      if (!forceRefresh && category.startsWith('fav_')) {
+        worldFavoriteIdMap = new Map();
+        cachedBasics.forEach(w => { if (w.id && w.favoriteId) worldFavoriteIdMap.set(w.id, w.favoriteId); });
+        return;
+      }
       // If cache is still fresh, skip API refresh entirely — saves 87+ requests
       if (cacheIsFresh && !forceRefresh) return;
     } else {
@@ -236,7 +247,13 @@ async function fetchWorlds(category, forceRefresh = false) {
         if (!favs || !favs.length || seq !== currentWorldFetchSeq) break;
         
         const worldIds = favs.map(f => {
-            if (f.favoriteId) worldFavoriteIdMap.set(f.favoriteId, f.id);
+            if (f.favoriteId) {
+                worldFavoriteIdMap.set(f.favoriteId, f.id);
+                // Also store a temporary lookup so we can stamp favoriteId
+                // onto the world object when it arrives from the API.
+                // This makes _worldBasicForWorldsCache persist it to IDB.
+                _pendingFavIdMap.set(f.favoriteId, f.id);
+            }
             return f.favoriteId;
         }).filter(Boolean);
         onlineWorldIds.push(...worldIds);
@@ -275,8 +292,13 @@ async function fetchWorlds(category, forceRefresh = false) {
           const chunk = onlineWorldIds.slice(i, i + CONCURRENCY);
           const results = await Promise.allSettled(chunk.map(wid =>
               apiCall(`/api/vrc/worlds/${wid}`).then(async res => {
-                  if (res.status === 404 || res.status === 403) return { id: wid, name: '失效世界 (Invalid World)', isInvalid: true };
-                  return res.ok ? res.json() : { id: wid, name: '加载失败', isInvalid: true };
+                  let w;
+                  if (res.status === 404 || res.status === 403) w = { id: wid, name: '失效世界 (Invalid World)', isInvalid: true };
+                  else w = res.ok ? await res.json() : { id: wid, name: '加载失败', isInvalid: true };
+                  // Stamp the favorites-record ID so _worldBasicForWorldsCache
+                  // can persist it to IDB and cleanupInvalidWorlds can find it.
+                  if (_pendingFavIdMap.has(wid)) w.favoriteId = _pendingFavIdMap.get(wid);
+                  return w;
               })
           ));
           const freshBatch = results.filter(r => r.status === 'fulfilled').map(r => r.value);
