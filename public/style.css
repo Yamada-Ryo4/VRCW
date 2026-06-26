@@ -53,9 +53,7 @@ html {
    top/bottom edge lets the gesture bubble up and drag the entire page — the
    "whole UI moves when I'm just scrolling models" bug. `contain` keeps the
    scroll action inside the element that actually has a scrollbar. */
-* {
-  overscroll-behavior: contain;
-}
+/* global overscroll containment removed: caused touch freeze on mobile (requires tap to release) */
 
 /* ── Scrollbars (global) ──────────────────────────────────────────────────
    Replaces the chunky native white Windows scrollbars with a polished, dark,
@@ -3284,4 +3282,10 @@ select.input-field {
   background: rgba(255, 255, 255, 0.1);
   padding: 2px 8px;
   border-radius: 99px;
+}
+
+
+/* Prevent nested scrolling containers from dragging the entire app body */
+.sidebar, .avatar-grid, .upload-panel, .ctx-menu, .modal-content, .world-detail-body {
+  overscroll-behavior: contain;
 }
