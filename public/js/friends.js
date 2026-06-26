@@ -857,7 +857,7 @@ function renderFriendList(list) {
     if (!nameEl || !loc) return;
     try {
       const txt = await getLocationDisplay(loc);
-      nameEl.textContent = txt;
+      nameEl.innerHTML = txt; // getLocationDisplay returns HTML (FA icons in type label)
       // Also make the header clickable to open world detail
       div.style.cursor = 'pointer';
       div.onclick = (e) => { openWorldDetail(loc.split(':')[0]); e.stopPropagation(); };
@@ -926,7 +926,7 @@ function resolveWorldNames() {
       const fData = parseAttrJson(friendCard.dataset.friend);
       if (fData.location && fData.location.startsWith('wrld_')) {
         const txt = await getLocationDisplay(fData.location);
-        el.textContent = txt;
+        el.innerHTML = txt; // getLocationDisplay returns HTML (FA icons in type label)
       }
     } catch(e) {}
   });
