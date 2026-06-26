@@ -709,3 +709,32 @@ async function sendFriendRequest(userId, name) {
 
 VRCW.registerModule('friendProfile', { openFriendProfile, getFriendProfileActionState, _renderFriendProfileUI, closeFriendProfile, switchFriendProfileTab, deleteFriend, sendFriendRequest });
 renderAppVersionInfo();
+
+
+// --- Avatar Integration ---
+async function openCurrentAvatarDetail() {
+    const f = window.currentFriendProfile;
+    if (!f || !f.currentAvatar) {
+        showToast('无法获取此用户的当前模型 ID，用户可能已离线或隐藏了模型信息。', 'error');
+        return;
+    }
+    
+    const avtrId = f.currentAvatar;
+    
+    try {
+        const resp = await apiCall('/api/vrc/avatars/' + avtrId);
+        if (!resp.ok) {
+            if (resp.status === 404 || resp.status === 403) throw new Error('此模型为私有模型，或已被作者删除。');
+            throw new Error('HTTP ' + resp.status);
+        }
+        const av = await resp.json();
+        
+        if (typeof displayAvatarDetail === 'function') {
+            displayAvatarDetail(av);
+        } else {
+            showToast('组件未加载，请稍后再试', 'error');
+        }
+    } catch (e) {
+        showToast('获取模型失败: ' + e.message, 'error');
+    }
+}

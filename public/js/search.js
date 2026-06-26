@@ -1216,6 +1216,48 @@ function displayAvatarDetail(av, opts = {}) {
   const switchBtn = document.getElementById("avtrdbDetailSwitchBtn");
   if (switchBtn) switchBtn.onclick = () => switchAvatar(id);
 
+  // 5b. Copy ID / Copy Link buttons — injected dynamically so they always reflect
+  //     the current avatar's id regardless of which card/tab opened the modal.
+  const favStatus = document.getElementById("avtrdbFavStatus");
+  if (favStatus) {
+    // Remove old copy buttons if any (from a previous open)
+    const oldCopyRow = document.getElementById("avtrdbCopyRow");
+    if (oldCopyRow) oldCopyRow.remove();
+
+    const copyRow = document.createElement("div");
+    copyRow.id = "avtrdbCopyRow";
+    copyRow.style.cssText = "display:flex;gap:8px;margin-top:6px;";
+
+    const copyIdBtn = document.createElement("button");
+    copyIdBtn.className = "btn btn-secondary";
+    copyIdBtn.style.cssText = "flex:1;font-size:0.82em;";
+    copyIdBtn.innerHTML = '<i class="fa-solid fa-copy"></i> 复制 ID';
+    copyIdBtn.onclick = () => {
+      navigator.clipboard.writeText(id).then(() => {
+        showToast("模型 ID 已复制", "success");
+        copyIdBtn.innerHTML = '<i class="fa-solid fa-check"></i> 已复制';
+        setTimeout(() => { copyIdBtn.innerHTML = '<i class="fa-solid fa-copy"></i> 复制 ID'; }, 2000);
+      }).catch(() => showToast("复制失败，请手动复制", "error"));
+    };
+
+    const copyLinkBtn = document.createElement("button");
+    copyLinkBtn.className = "btn btn-secondary";
+    copyLinkBtn.style.cssText = "flex:1;font-size:0.82em;";
+    copyLinkBtn.innerHTML = '<i class="fa-solid fa-link"></i> 复制链接';
+    copyLinkBtn.onclick = () => {
+      const url = `https://vrchat.com/home/avatar/${id}`;
+      navigator.clipboard.writeText(url).then(() => {
+        showToast("VRChat 模型链接已复制", "success");
+        copyLinkBtn.innerHTML = '<i class="fa-solid fa-check"></i> 已复制';
+        setTimeout(() => { copyLinkBtn.innerHTML = '<i class="fa-solid fa-link"></i> 复制链接'; }, 2000);
+      }).catch(() => showToast("复制失败，请手动复制", "error"));
+    };
+
+    copyRow.appendChild(copyIdBtn);
+    copyRow.appendChild(copyLinkBtn);
+    favStatus.parentNode.insertBefore(copyRow, favStatus);
+  }
+
   // 6. Owner-only actions: edit + delete inside the detail modal.
   // Per-card edit/delete were removed; the detail modal is now the single
   // place these live, matching how worlds work (worldDetailDeleteBtn).
