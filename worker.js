@@ -1274,10 +1274,10 @@ export default {
                 (SELECT score FROM ratings r WHERE r.session_id = h.session_id AND r.rater_id = h.user_id) as my_rating,
                 (SELECT score FROM ratings r WHERE r.session_id = h.session_id AND r.rater_id = h.matched_with) as their_rating
                 FROM match_history h
-                JOIN profiles p ON h.matched_with = p.vrc_id
+                LEFT JOIN profiles p ON h.matched_with = p.vrc_id
                 WHERE h.user_id = ?
                 ORDER BY h.created_at DESC
-                LIMIT 50
+                LIMIT 500
             `, [identity.id], 'all');
             return jsonResp({ success: true, list: list.results });
         }
@@ -1288,7 +1288,7 @@ export default {
             const list = await executeD1Query(env, `
                 SELECT f.friend_id as id, p.display_name, p.photo_url, p.bio, p.pref_gender, p.pref_time, p.pref_voice, p.favorite_world_id, f.created_at
                 FROM e_friends f
-                JOIN profiles p ON f.friend_id = p.vrc_id
+                LEFT JOIN profiles p ON f.friend_id = p.vrc_id
                 WHERE f.user_id = ?
                 ORDER BY f.created_at DESC
             `, [identity.id], 'all');
