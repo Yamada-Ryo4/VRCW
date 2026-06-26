@@ -179,6 +179,29 @@ function _renderFriendProfileUI(f, modal) {
   if (f.bio) { bioSection.style.display=''; document.getElementById('fpBio').textContent=(f.bio||'').replace(/\\n/g, String.fromCharCode(10)); }
   else bioSection.style.display='none';
 
+  // bioLinks — array of URL strings the user set on their VRChat profile page
+  const linksSection = document.getElementById('fpLinksSection');
+  const linksContainer = document.getElementById('fpLinks');
+  const bioLinks = Array.isArray(f.bioLinks) ? f.bioLinks.filter(l => l && l.trim()) : [];
+  if (bioLinks.length > 0) {
+    linksSection.style.display = '';
+    linksContainer.innerHTML = bioLinks.map(link => {
+      const safeLink = escHtml(link);
+      const safeHref = /^https?:\/\//i.test(link) ? safeLink : 'https://' + safeLink;
+      let icon = 'fa-solid fa-link';
+      if (/twitter\.com|x\.com/i.test(link))        icon = 'fa-brands fa-x-twitter';
+      else if (/twitch\.tv/i.test(link))             icon = 'fa-brands fa-twitch';
+      else if (/youtube\.com|youtu\.be/i.test(link)) icon = 'fa-brands fa-youtube';
+      else if (/discord\.gg|discord\.com/i.test(link)) icon = 'fa-brands fa-discord';
+      else if (/patreon\.com/i.test(link))           icon = 'fa-brands fa-patreon';
+      else if (/github\.com/i.test(link))            icon = 'fa-brands fa-github';
+      else if (/instagram\.com/i.test(link))         icon = 'fa-brands fa-instagram';
+      return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);font-size:0.78em;text-decoration:none;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;" title="${safeLink}"><i class="${icon}" style="flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;">${safeLink.replace(/^https?:\/\//i,'')}</span></a>`;
+    }).join('');
+  } else {
+    linksSection.style.display = 'none';
+  }
+
   // Load Groups Summary (Represented & Showcased)
   _loadFriendProfileGroups(f.id, isFriend);
 
