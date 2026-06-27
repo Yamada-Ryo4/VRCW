@@ -365,6 +365,7 @@ async function openDetail(vrcId) {
         : `<button class="btn btn-danger" onclick="toggleBan('${p.vrc_id}', false)">封禁</button>`}
       <button class="btn" onclick="editField('${p.vrc_id}', 'age_verified', ${p.age_verified ? 0 : 1})">${p.age_verified ? '取消18+验证' : '设为18+已验证'}</button>
       <button class="btn btn-danger" onclick="deleteUser('${p.vrc_id}')">删除所有数据</button>
+      <button class="btn" onclick="syncFromVrc('${p.vrc_id}')">🔄 从VRC同步信息</button>
     `;
 
     document.getElementById('detailOverlay').style.display = 'flex';
@@ -413,6 +414,26 @@ async function deleteUser(vrcId) {
     await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}`, { method: 'DELETE' });
     showToast('已删除', 'success'); closeDetail(); await loadUsers(currentPage); await loadStats();
   } catch (e) { showToast('删除失败: ' + e.message, 'error'); }
+}
+
+// ── Sync from VRChat ──
+async function syncFromVrc(vrcId) {
+  // Read admin's own VRC auth from main app localStorage
+  const vrcAuth = localStorage.getItem('vrc_auth') || '';
+  if (!vrcAuth) {
+    showToast('请先在 VRCW 主站登录 VRChat，再回来同步', 'error');
+    return;
+  }
+  try {
+    const d = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/sync-vrc`, {
+      method: 'POST',
+      headers: { 'X-VRC-Auth': vrcAuth }
+    });
+    showToast(`已同步: ${d.display_name || '(无名)'} | 18+: ${d.age_verified ? '是' : '否'}`, 'success');
+    closeDetail();
+    await loadUsers(currentPage);
+    await loadStats();
+  } catch (e) { showToast('同步失败: ' + e.message, 'error'); }
 }
 
 // ── Match pool tab ──

@@ -1712,6 +1712,26 @@ export default {
                 return jsonResp({ success: true });
             }
 
+            // POST /api/admin/users/:id/sync-vrc — fetch user info from VRChat
+            // and update display_name + photo_url + age_verified in D1.
+            // Uses the admin's own X-VRC-Auth to look up the target user.
+            if (path.startsWith('/api/admin/users/') && path.endsWith('/sync-vrc') && request.method === 'POST') {
+                const targetId = path.split('/')[4];
+                const vrcAuth = request.headers.get('X-VRC-Auth');
+                if (!vrcAuth) return jsonResp({ error: "Admin VRC auth required (X-VRC-Auth header)" }, 400);
+                const { resp: vrcResp } = await vrcFetch('/users/' + targetId, { method: 'GET' }, vrcAuth);
+                if (!vrcResp.ok) return jsonResp({ error: "VRChat lookup failed: " + vrcResp.status }, 502);
+                const vu = await vrcResp.json();
+                const displayName = vu.displayName || null;
+                const photoUrl = vu.currentAvatarThumbnailImageUrl || vu.profilePicThumbnailImageUrl || null;
+                const age18 = vu.ageVerificationStatus === "18+" || vu.ageVerified === true;
+                // Upsert into profiles
+                await executeD1Query(env,
+                    'INSERT INTO profiles (vrc_id, display_name, photo_url, age_verified) VALUES (?, ?, ?, ?) ON CONFLICT(vrc_id) DO UPDATE SET display_name = COALESCE(excluded.display_name, profiles.display_name), photo_url = COALESCE(excluded.photo_url, profiles.photo_url), age_verified = CASE WHEN excluded.age_verified = 1 THEN 1 ELSE profiles.age_verified END',
+                    [targetId, displayName, photoUrl, age18 ? 1 : 0], 'run');
+                return jsonResp({ success: true, display_name: displayName, photo_url: photoUrl, age_verified: age18 ? 1 : 0 });
+            }
+
             // GET /api/admin/banned — list banned users
             if (path === '/api/admin/banned' && request.method === 'GET') {
                 const rows = await executeD1Query(env, 'SELECT * FROM banned_users ORDER BY banned_at DESC', [], 'all');
