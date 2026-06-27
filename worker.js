@@ -16,10 +16,30 @@ const CORS_HEADERS = {
 };
 
 function calculateDatingGradientScore(wanted, actual, type) {
-    if (wanted === actual || wanted === '不限' || wanted === '不限 / 皆可' || wanted === '全时段' || wanted === '未知' || wanted === '随缘') {
+    // Normalize legacy wildcard values
+    const isWildcard = (v) => !v || v === '不限' || v === '不限 / 皆可' || v === '全时段' || v === '全天' || v === '未知' || v === '随缘';
+
+    // ── Time: overlap-based scoring ──
+    // Data format: comma-separated 2-hour slots like "18:00--20:00,22:00--24:00"
+    // or a wildcard ("不限"/"全天"/etc.) meaning "any time".
+    // Score = 15 * (overlap_count / max(wanted_slots, actual_slots))
+    // If either side is wildcard → full 15 (matches anyone).
+    if (type === 'time') {
+        if (isWildcard(wanted) || isWildcard(actual)) return 15;
+        const wSlots = String(wanted).split(',').map(s => s.trim()).filter(Boolean);
+        const aSlots = String(actual).split(',').map(s => s.trim()).filter(Boolean);
+        if (wSlots.length === 0 || aSlots.length === 0) return 15; // empty → treat as wildcard
+        const wSet = new Set(wSlots);
+        let overlap = 0;
+        for (const s of aSlots) { if (wSet.has(s)) overlap++; }
+        if (overlap === 0) return 0;
+        return Math.round(15 * (overlap / Math.max(wSlots.length, aSlots.length)));
+    }
+
+    // ── Non-time types: exact-match or wildcard ──
+    if (wanted === actual || isWildcard(wanted)) {
         if (type === 'voice') return 30;
         if (type === 'model') return 30;
-        if (type === 'time') return 15;
         if (type === 'inc') return 15;
         if (type === 'gender') return 10;
         return 0;
