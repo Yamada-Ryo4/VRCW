@@ -101,7 +101,7 @@
     <table class="user-table">
       <thead>
         <tr>
-          <th>用户</th><th>VRC ID</th><th>地区</th><th>18+</th><th>状态</th><th>更新时间</th>
+          <th>用户</th><th>VRC ID</th><th>地区</th><th>18+验证</th><th>状态</th><th>更新时间</th>
         </tr>
       </thead>
       <tbody id="userTbody"></tbody>
@@ -255,7 +255,7 @@ function renderUsers(users) {
       <td><img src="${u.photo_url || ''}" class="avatar-sm" onerror="this.style.display='none'">${escHtml(u.display_name || '(无名)')}</td>
       <td style="font-family:monospace;font-size:0.78rem;">${escHtml(u.vrc_id || '')}</td>
       <td>${escHtml(u.default_region || '-')}</td>
-      <td>${u.age_verified ? '<span class="badge badge-verified">已验证</span>' : '—'}</td>
+      <td>${u.age_verified ? (u.dob ? `<span class="badge badge-verified" title="DOB: ${escHtml(u.dob)}">DOB验证</span>` : '<span class="badge badge-verified">VRC验证</span>') : '—'}</td>
       <td>${u.is_banned ? '<span class="badge badge-banned">已封禁</span>' : ''}</td>
       <td style="color:var(--text-muted);font-size:0.78rem;">${u.updated_at ? new Date(u.updated_at + 'Z').toLocaleString('zh-CN') : '-'}</td>
     </tr>

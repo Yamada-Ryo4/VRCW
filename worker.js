@@ -744,6 +744,28 @@ export default {
             const respBody = await resp.arrayBuffer();
             const cookies = mergeCookies(auth, setCookies);
 
+            // ── Auto-sync VRChat 18+ status to D1 ──
+            // When the client fetches /auth/user (on login / page load), if VRChat
+            // says this user is 18+, write age_verified=1 to their dating profile
+            // so the admin panel reflects their real status — even if they never
+            // went through the DOB flow. This runs fire-and-forget so it doesn't
+            // slow down the response.
+            if (vrcPath === '/auth/user' && resp.status === 200 && env.DB) {
+                try {
+                    const userJson = JSON.parse(new TextDecoder().decode(respBody));
+                    if (userJson && userJson.id) {
+                        const age18 = userJson.ageVerificationStatus === "18+" || userJson.ageVerified === true;
+                        if (age18) {
+                            // Fire-and-forget: don't await, don't block the response
+                            ctx.waitUntil(executeD1Query(env,
+                                'INSERT INTO profiles (vrc_id, age_verified) VALUES (?, 1) ON CONFLICT(vrc_id) DO UPDATE SET age_verified = CASE WHEN age_verified = 1 THEN 1 ELSE 1 END',
+                                [userJson.id], 'run'
+                            ).catch(() => {}));
+                        }
+                    }
+                } catch (_) {}
+            }
+
             return new Response(respBody, {
                 status: resp.status,
                 headers: {
@@ -1555,10 +1577,10 @@ export default {
 
                 let query, params;
                 if (search) {
-                    query = `SELECT vrc_id, display_name, photo_url, bio, age_verified, default_region, updated_at FROM profiles WHERE display_name LIKE ? OR vrc_id LIKE ? ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
+                    query = `SELECT vrc_id, display_name, photo_url, bio, age_verified, dob, default_region, updated_at FROM profiles WHERE display_name LIKE ? OR vrc_id LIKE ? ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
                     params = [`%${search}%`, `%${search}%`, pageSize, offset];
                 } else {
-                    query = `SELECT vrc_id, display_name, photo_url, bio, age_verified, default_region, updated_at FROM profiles ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
+                    query = `SELECT vrc_id, display_name, photo_url, bio, age_verified, dob, default_region, updated_at FROM profiles ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
                     params = [pageSize, offset];
                 }
                 const rows = await executeD1Query(env, query, params, 'all');
