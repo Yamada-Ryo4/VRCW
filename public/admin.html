@@ -93,7 +93,7 @@
 
   <div class="content">
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="搜索用户名或 VRC ID..." onkeydown="if(event.key==='Enter')loadUsers(1)">
+      <input type="text" id="searchInput" placeholder="搜索昵称或 usr_ ID（不保存登录邮箱）..." onkeydown="if(event.key==='Enter')loadUsers(1)">
       <button onclick="loadUsers(1)">搜索</button>
     </div>
     <table class="user-table">
@@ -165,7 +165,21 @@ async function adminFetch(path, opts = {}) {
     opts.body = JSON.stringify(opts.json);
     delete opts.json;
   }
-  return fetch(path, opts);
+  const r = await fetch(path, opts);
+  let data = null;
+  try { data = await r.json(); } catch (_) { data = {}; }
+  if (!r.ok) {
+    const msg = data.error || ('HTTP ' + r.status);
+    if (r.status === 403 || r.status === 503) {
+      sessionStorage.removeItem('admin_token');
+      ADMIN_TOKEN = '';
+      document.getElementById('adminApp').style.display = 'none';
+      document.getElementById('loginWrap').style.display = 'flex';
+      showLoginError(msg === 'Forbidden' ? '管理密钥错误，请重新登录' : msg);
+    }
+    throw new Error(msg);
+  }
+  return data;
 }
 
 // ── Init ──
@@ -176,8 +190,7 @@ async function initAdmin() {
 
 async function loadStats() {
   try {
-    const r = await adminFetch('/api/admin/stats');
-    const d = await r.json();
+    const d = await adminFetch('/api/admin/stats');
     const cards = [
       { label: '总用户', value: d.totalUsers, color: '#6366f1' },
       { label: '匹配池中', value: d.inPool, color: '#f59e0b' },
@@ -198,8 +211,10 @@ async function loadUsers(page) {
   const q = new URLSearchParams({ page, pageSize: 20 });
   if (search) q.set('search', search);
   try {
-    const r = await adminFetch('/api/admin/users?' + q);
-    const d = await r.json();
+    if (/@/.test(search)) {
+      showToast('VRChat 登录邮箱不会被保存，无法按邮箱搜索；请用昵称或 usr_ ID。', 'error');
+    }
+    const d = await adminFetch('/api/admin/users?' + q);
     renderUsers(d.users || []);
     renderPagination(d.total || 0, d.page || 1, d.pageSize || 20);
   } catch (e) { showToast('加载失败: ' + e.message, 'error'); }
@@ -242,9 +257,7 @@ function renderPagination(total, page, pageSize) {
 // ── User Detail ──
 async function openDetail(vrcId) {
   try {
-    const r = await adminFetch('/api/admin/users/' + encodeURIComponent(vrcId));
-    if (!r.ok) { showToast('加载失败', 'error'); return; }
-    const d = await r.json();
+    const d = await adminFetch('/api/admin/users/' + encodeURIComponent(vrcId));
     currentUserDetail = d;
     const p = d.profile;
     document.getElementById('detailTitle').textContent = p.display_name || p.vrc_id;
@@ -349,13 +362,13 @@ function closeDetail() {
 // ── Actions ──
 async function toggleBan(vrcId, isCurrentlyBanned) {
   if (isCurrentlyBanned) {
-    const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/ban`, { method: 'POST', json: { unban: true } });
-    if (r.ok) { showToast('已解封', 'success'); }
+    await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/ban`, { method: 'POST', json: { unban: true } });
+    showToast('已解封', 'success');
   } else {
     const reason = prompt('封禁原因（可选）：') || '';
     const name = currentUserDetail?.profile?.display_name || '';
-    const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/ban`, { method: 'POST', json: { reason, display_name: name } });
-    if (r.ok) { showToast('已封禁', 'success'); }
+    await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/ban`, { method: 'POST', json: { reason, display_name: name } });
+    showToast('已封禁', 'success');
   }
   closeDetail();
   await loadUsers(currentPage);
@@ -364,23 +377,24 @@ async function toggleBan(vrcId, isCurrentlyBanned) {
 
 async function editField(vrcId, field, value) {
   const body = {}; body[field] = value;
-  const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}`, { method: 'PATCH', json: body });
-  if (r.ok) { showToast('已更新', 'success'); closeDetail(); await loadUsers(currentPage); }
-  else { showToast('更新失败', 'error'); }
+  try {
+    await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}`, { method: 'PATCH', json: body });
+    showToast('已更新', 'success'); closeDetail(); await loadUsers(currentPage);
+  } catch (e) { showToast('更新失败: ' + e.message, 'error'); }
 }
 
 async function deleteUser(vrcId) {
   if (!confirm(`确认删除用户 ${vrcId} 的所有数据？此操作不可逆！`)) return;
-  const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}`, { method: 'DELETE' });
-  if (r.ok) { showToast('已删除', 'success'); closeDetail(); await loadUsers(currentPage); await loadStats(); }
-  else { showToast('删除失败', 'error'); }
+  try {
+    await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}`, { method: 'DELETE' });
+    showToast('已删除', 'success'); closeDetail(); await loadUsers(currentPage); await loadStats();
+  } catch (e) { showToast('删除失败: ' + e.message, 'error'); }
 }
 
 // ── Banned list tab ──
 async function loadBannedTab() {
   try {
-    const r = await adminFetch('/api/admin/banned');
-    const d = await r.json();
+    const d = await adminFetch('/api/admin/banned');
     const banned = d.banned || [];
     const tbody = document.getElementById('userTbody');
     if (banned.length === 0) {
