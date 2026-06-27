@@ -312,7 +312,31 @@ function renderMyProfile(u) {
           `).join('')}
         </div>`;
       }).catch(() => {
-        el.textContent = '加载群组失败';
+        // First attempt failed — retry once after 1.5 s before showing error
+        setTimeout(() => {
+          apiCall('/api/vrc/users/' + u.id + '/groups').then(r => r.ok ? r.json() : []).then(groups => {
+            const filtered = groups.filter(g => g.isRepresenting);
+            if (!filtered.length) {
+              el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">暂无佩戴群组 (No represented group)</div>';
+              return;
+            }
+            filtered.sort((a, b) => (b.isRepresenting ? 1 : 0) - (a.isRepresenting ? 1 : 0));
+            el.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+              ${filtered.map(g => `
+                <div class="group-pill" onclick="openGroupDetail('${escJsAttr(g.groupId)}')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-glass);border:1px solid var(--border);border-radius:99px;font-size:0.85em;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='var(--bg-glass)'">
+                  <img src="${proxyImg(g.iconUrl || g.bannerUrl || '')}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">
+                  <div style="display:flex;flex-direction:column;line-height:1.1;max-width:120px;">
+                    <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
+                    <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
+                  </div>
+                  ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">佩戴</span>' : ''}
+                </div>
+              `).join('')}
+            </div>`;
+          }).catch(() => {
+            el.textContent = '加载群组失败';
+          });
+        }, 1500);
       });
     }
   }
@@ -610,10 +634,18 @@ setInterval(() => {
   apiCall('/api/vrc/auth/user/notifications')
     .then(r => {
       if (r.status === 401) {
-        // Token rejected. Drop it so subsequent calls don't keep using a
-        // dead session — auth.js will redirect to login on next user action.
+        // Token rejected — clear session and redirect to login immediately.
+        // Previously we only cleared vrcAuth and left the UI in a broken state
+        // where the main app was visible but every API call returned 401.
         vrcAuth = '';
         try { localStorage.removeItem('vrc_auth'); } catch (_) {}
+        // Force back to login page
+        const mainApp = document.getElementById('mainApp');
+        const loginPage = document.getElementById('loginPage');
+        if (mainApp) mainApp.classList.add('hidden');
+        if (loginPage) loginPage.classList.remove('hidden');
+        const errEl = document.getElementById('login-error');
+        if (errEl) { errEl.textContent = 'Session expired, please login again'; errEl.style.display = 'block'; }
         return null;
       }
       return r.ok ? r.json() : null;

@@ -7,6 +7,23 @@
  */
 // ── Mobile Sidebar Toggle ──
 window.toggleSidebar = function (forceState) {
+  // If dating panel is active, delegate to the dating iframe
+  const datingPanel = document.getElementById('datingPanel');
+  if (datingPanel && datingPanel.classList.contains('active')) {
+    const iframe = document.getElementById('datingIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'toggleSidebar', forceState }, '*');
+      // Also toggle btn icon
+      const btn = document.getElementById('mobileSidebarBtn');
+      if (btn) {
+        const isOpening = forceState !== undefined ? forceState : btn.dataset.datingOpen !== 'true';
+        btn.dataset.datingOpen = isOpening ? 'true' : 'false';
+        btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
+        btn.classList.toggle('active', isOpening);
+      }
+    }
+    return;
+  }
 
   const activePanel = document.querySelector(".download-panel.active") || document.querySelector(".upload-panel.active");
   if (!activePanel) return;
@@ -305,6 +322,15 @@ function doLogout() {
   document.getElementById("loginPage").classList.remove("hidden");
   document.getElementById("mainApp").classList.add("hidden");
 
+  // Reset the dating iframe to purge any cached session state from the previous
+  // user — without this, switching accounts would show the old user's dating
+  // profile/matches until the page was manually refreshed (user isolation bug).
+  try {
+    const datingIframe = document.getElementById('datingIframe');
+    if (datingIframe) {
+      datingIframe.src = datingIframe.src; // force reload → clears iframe JS state
+    }
+  } catch (e) { /* best-effort */ }
 
   // Focus username so re-login is one keystroke away
   requestAnimationFrame(() => document.getElementById('username')?.focus());
@@ -315,12 +341,24 @@ function showMainApp() {
   document.getElementById("mainApp").classList.remove("hidden");
 
   // 1. Initial User Fetch (sets currentUserId — used by isOwner checks etc.)
+  // IMPORTANT: also validates the restored token. If VRChat returns 401 here
+  // it means the token saved in localStorage is invalid/expired (e.g. user
+  // cancelled 2FA mid-way and the half-baked token was persisted). In that
+  // case we force-logout back to the login page instead of showing a broken UI.
   apiCall("/api/vrc/auth/user").then(async (r) => {
     if (r.ok) {
       const user = await r.json();
       currentUserId = user.id || "";
       window.myProfileData = user;
-
+      if (typeof initDatingSettings === 'function') initDatingSettings();
+    } else if (r.status === 401) {
+      // Token is invalid — clear it and show login page
+      vrcAuth = "";
+      try { localStorage.removeItem("vrc_auth"); } catch (_) {}
+      document.getElementById("mainApp").classList.add("hidden");
+      document.getElementById("loginPage").classList.remove("hidden");
+      const errEl = document.getElementById("login-error");
+      if (errEl) { errEl.textContent = "Session expired, please login again"; errEl.style.display = "block"; }
     }
   }).catch(() => {});
 
