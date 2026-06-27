@@ -1717,7 +1717,8 @@ export default {
             // Uses the admin's own X-VRC-Auth to look up the target user.
             if (path.startsWith('/api/admin/users/') && path.endsWith('/sync-vrc') && request.method === 'POST') {
                 const targetId = path.split('/')[4];
-                const vrcAuth = request.headers.get('X-VRC-Auth');
+                // getAuth decodes the base64 X-VRC-Auth header into raw cookie string
+                const vrcAuth = getAuth(request);
                 if (!vrcAuth) return jsonResp({ error: "Admin VRC auth required (X-VRC-Auth header)" }, 400);
                 const { resp: vrcResp } = await vrcFetch('/users/' + targetId, { method: 'GET' }, vrcAuth);
                 if (!vrcResp.ok) return jsonResp({ error: "VRChat lookup failed: " + vrcResp.status }, 502);
