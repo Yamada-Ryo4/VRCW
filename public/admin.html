@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VRCW Admin</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+<style>
+  :root { --bg:#0a0a0f; --bg-card:#15151f; --border:rgba(255,255,255,0.08); --text:#e4e4e7; --text-muted:#9ca3af; --primary:#6366f1; --danger:#ef4444; --success:#22c55e; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+  .login-wrap { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  .login-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:32px; width:360px; max-width:90vw; }
+  .login-card h1 { text-align:center; font-size:1.4rem; margin-bottom:8px; }
+  .login-card p { text-align:center; color:var(--text-muted); font-size:0.82rem; margin-bottom:20px; }
+  .login-card input { width:100%; padding:10px 14px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.9rem; margin-bottom:12px; }
+  .login-card button { width:100%; padding:10px; background:var(--primary); color:#fff; border:none; border-radius:8px; font-size:0.9rem; cursor:pointer; font-weight:600; }
+  .login-card button:hover { opacity:0.9; }
+  #adminApp { display:none; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; background:var(--bg-card); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+  .topbar h1 { font-size:1.1rem; }
+  .topbar .actions { display:flex; gap:8px; align-items:center; }
+  .stats-row { display:flex; gap:12px; padding:20px 24px; flex-wrap:wrap; }
+  .stat-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:16px 20px; min-width:140px; flex:1; }
+  .stat-card .label { font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; }
+  .stat-card .value { font-size:1.8rem; font-weight:700; margin-top:4px; }
+  .content { padding:0 24px 40px; }
+  .search-bar { display:flex; gap:10px; margin-bottom:16px; }
+  .search-bar input { flex:1; padding:8px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.85rem; }
+  .search-bar button { padding:8px 18px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:0.85rem; }
+  .user-table { width:100%; border-collapse:collapse; background:var(--bg-card); border-radius:10px; overflow:hidden; }
+  .user-table th { text-align:left; padding:10px 14px; background:rgba(255,255,255,0.03); font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; }
+  .user-table td { padding:10px 14px; border-top:1px solid var(--border); font-size:0.82rem; }
+  .user-table tr:hover { background:rgba(255,255,255,0.02); cursor:pointer; }
+  .avatar-sm { width:28px; height:28px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:8px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.68rem; font-weight:600; }
+  .badge-banned { background:rgba(239,68,68,0.15); color:var(--danger); border:1px solid rgba(239,68,68,0.3); }
+  .badge-verified { background:rgba(34,197,94,0.15); color:var(--success); border:1px solid rgba(34,197,94,0.3); }
+  .pagination { display:flex; gap:8px; justify-content:center; margin-top:16px; }
+  .pagination button { padding:6px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; font-size:0.82rem; }
+  .pagination button:disabled { opacity:0.4; cursor:default; }
+  .pagination button.active { background:var(--primary); border-color:var(--primary); }
+  /* Modal */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:200; }
+  .modal { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; width:560px; max-width:92vw; max-height:86vh; overflow-y:auto; }
+  .modal-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+  .modal-header h2 { font-size:1rem; }
+  .modal-body { padding:20px; }
+  .detail-row { display:flex; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03); font-size:0.82rem; }
+  .detail-row .key { width:120px; color:var(--text-muted); flex-shrink:0; }
+  .detail-row .val { flex:1; word-break:break-all; }
+  .detail-section { margin-bottom:16px; }
+  .detail-section h3 { font-size:0.82rem; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em; }
+  .action-bar { display:flex; gap:8px; padding:16px 20px; border-top:1px solid var(--border); flex-wrap:wrap; }
+  .btn { padding:8px 16px; border:1px solid var(--border); border-radius:8px; cursor:pointer; font-size:0.82rem; font-weight:500; background:var(--bg); color:var(--text); }
+  .btn-danger { border-color:rgba(239,68,68,0.4); color:var(--danger); }
+  .btn-success { border-color:rgba(34,197,94,0.4); color:var(--success); }
+  .btn-primary { background:var(--primary); border-color:var(--primary); color:#fff; }
+  .toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:8px; font-size:0.85rem; z-index:300; opacity:0; transition:opacity 0.3s; }
+  .toast.show { opacity:1; }
+  .toast-success { background:var(--success); color:#fff; }
+  .toast-error { background:var(--danger); color:#fff; }
+  .edit-input { width:100%; padding:6px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:0.82rem; }
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-card">
+    <h1>🛡️ VRCW Admin</h1>
+    <p>输入管理密钥以登录后台</p>
+    <input type="password" id="adminTokenInput" placeholder="Admin Token" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">登录</button>
+    <p id="loginErr" style="color:var(--danger);font-size:0.8rem;margin-top:8px;display:none;"></p>
+  </div>
+</div>
+
+<!-- Admin App -->
+<div id="adminApp">
+  <div class="topbar">
+    <h1>🛡️ VRCW Admin</h1>
+    <div class="actions">
+      <button class="btn" onclick="loadBannedTab()">🚫 封禁列表</button>
+      <button class="btn" onclick="logoutAdmin()">退出</button>
+    </div>
+  </div>
+
+  <div class="stats-row" id="statsRow"></div>
+
+  <div class="content">
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="搜索用户名或 VRC ID..." onkeydown="if(event.key==='Enter')loadUsers(1)">
+      <button onclick="loadUsers(1)">搜索</button>
+    </div>
+    <table class="user-table">
+      <thead>
+        <tr>
+          <th>用户</th><th>VRC ID</th><th>地区</th><th>18+</th><th>状态</th><th>更新时间</th>
+        </tr>
+      </thead>
+      <tbody id="userTbody"></tbody>
+    </table>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<!-- User Detail Modal -->
+<div class="modal-overlay" id="detailOverlay" style="display:none;" onclick="if(event.target===this)closeDetail()">
+  <div class="modal" id="detailModal">
+    <div class="modal-header">
+      <h2 id="detailTitle">用户详情</h2>
+      <button class="btn" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="action-bar" id="actionBar"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let ADMIN_TOKEN = sessionStorage.getItem('admin_token') || '';
+let currentPage = 1;
+let currentUserDetail = null;
+
+// ── Login ──
+async function doLogin() {
+  const token = document.getElementById('adminTokenInput').value.trim();
+  if (!token) return;
+  ADMIN_TOKEN = token;
+  try {
+    const r = await fetch('/api/admin/stats', { headers: { 'X-Admin-Token': token } });
+    if (r.ok) {
+      sessionStorage.setItem('admin_token', token);
+      document.getElementById('loginWrap').style.display = 'none';
+      document.getElementById('adminApp').style.display = 'block';
+      initAdmin();
+    } else {
+      showLoginError('Token 无效');
+      ADMIN_TOKEN = '';
+    }
+  } catch (e) {
+    showLoginError('网络错误: ' + e.message);
+  }
+}
+function showLoginError(msg) {
+  const el = document.getElementById('loginErr');
+  el.textContent = msg; el.style.display = 'block';
+}
+function logoutAdmin() {
+  sessionStorage.removeItem('admin_token');
+  ADMIN_TOKEN = '';
+  location.reload();
+}
+
+async function adminFetch(path, opts = {}) {
+  opts.headers = opts.headers || {};
+  opts.headers['X-Admin-Token'] = ADMIN_TOKEN;
+  if (opts.json) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.json);
+    delete opts.json;
+  }
+  return fetch(path, opts);
+}
+
+// ── Init ──
+async function initAdmin() {
+  await loadStats();
+  await loadUsers(1);
+}
+
+async function loadStats() {
+  try {
+    const r = await adminFetch('/api/admin/stats');
+    const d = await r.json();
+    const cards = [
+      { label: '总用户', value: d.totalUsers, color: '#6366f1' },
+      { label: '匹配池中', value: d.inPool, color: '#f59e0b' },
+      { label: '已封禁', value: d.banned, color: '#ef4444' },
+      { label: '总匹配数', value: d.totalMatches, color: '#22c55e' },
+      { label: '今日注册', value: d.todayNew, color: '#a855f7' },
+    ];
+    document.getElementById('statsRow').innerHTML = cards.map(c =>
+      `<div class="stat-card"><div class="label">${c.label}</div><div class="value" style="color:${c.color}">${c.value}</div></div>`
+    ).join('');
+  } catch (e) { console.error(e); }
+}
+
+// ── User List ──
+async function loadUsers(page) {
+  currentPage = page;
+  const search = document.getElementById('searchInput').value.trim();
+  const q = new URLSearchParams({ page, pageSize: 20 });
+  if (search) q.set('search', search);
+  try {
+    const r = await adminFetch('/api/admin/users?' + q);
+    const d = await r.json();
+    renderUsers(d.users || []);
+    renderPagination(d.total || 0, d.page || 1, d.pageSize || 20);
+  } catch (e) { showToast('加载失败: ' + e.message, 'error'); }
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById('userTbody');
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">无数据</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr onclick="openDetail('${u.vrc_id}')">
+      <td><img src="${u.photo_url || ''}" class="avatar-sm" onerror="this.style.display='none'">${escHtml(u.display_name || '(无名)')}</td>
+      <td style="font-family:monospace;font-size:0.78rem;">${escHtml(u.vrc_id || '')}</td>
+      <td>${escHtml(u.default_region || '-')}</td>
+      <td>${u.age_verified ? '<span class="badge badge-verified">已验证</span>' : '—'}</td>
+      <td>${u.is_banned ? '<span class="badge badge-banned">已封禁</span>' : ''}</td>
+      <td style="color:var(--text-muted);font-size:0.78rem;">${u.updated_at ? new Date(u.updated_at + 'Z').toLocaleString('zh-CN') : '-'}</td>
+    </tr>
+  `).join('');
+}
+
+function renderPagination(total, page, pageSize) {
+  const pages = Math.ceil(total / pageSize);
+  if (pages <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
+  let html = '';
+  html += `<button ${page <= 1 ? 'disabled' : ''} onclick="loadUsers(${page - 1})">‹</button>`;
+  for (let i = 1; i <= pages; i++) {
+    if (i === 1 || i === pages || (i >= page - 2 && i <= page + 2)) {
+      html += `<button class="${i === page ? 'active' : ''}" onclick="loadUsers(${i})">${i}</button>`;
+    } else if (i === page - 3 || i === page + 3) {
+      html += `<button disabled>…</button>`;
+    }
+  }
+  html += `<button ${page >= pages ? 'disabled' : ''} onclick="loadUsers(${page + 1})">›</button>`;
+  document.getElementById('pagination').innerHTML = html;
+}
+
+// ── User Detail ──
+async function openDetail(vrcId) {
+  try {
+    const r = await adminFetch('/api/admin/users/' + encodeURIComponent(vrcId));
+    if (!r.ok) { showToast('加载失败', 'error'); return; }
+    const d = await r.json();
+    currentUserDetail = d;
+    const p = d.profile;
+    document.getElementById('detailTitle').textContent = p.display_name || p.vrc_id;
+
+    let html = '';
+    // Profile
+    html += section('基本信息', [
+      ['VRC ID', p.vrc_id],
+      ['昵称', p.display_name],
+      ['头像', `<img src="${p.photo_url || ''}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'">`],
+      ['简介', escHtml(p.bio || '')],
+      ['生日', p.dob || '-'],
+      ['18+', p.age_verified ? '✅ 已验证' : '❌ 未验证'],
+      ['地区', p.default_region || '-'],
+      ['默认世界', p.default_world_id || '-'],
+      ['更新时间', p.updated_at ? new Date(p.updated_at + 'Z').toLocaleString('zh-CN') : '-'],
+    ]);
+
+    // Preferences
+    html += section('交友偏好', [
+      ['自选时间', p.pref_time], ['自选倾向', p.pref_inclination],
+      ['自选声线', p.pref_voice], ['自选模型', p.pref_model], ['自选性别', p.pref_gender],
+      ['目标时间', p.target_time], ['目标倾向', p.target_inclination],
+      ['目标声线', p.target_voice], ['目标模型', p.target_model], ['目标性别', p.target_gender],
+    ]);
+
+    // Match pool
+    if (d.pool) html += section('匹配池状态', [
+      ['状态', d.pool.status], ['匹配对象', d.pool.matched_with || '-'],
+    ]);
+
+    // History
+    if (d.history && d.history.length) {
+      html += `<div class="detail-section"><h3>匹配历史 (${d.history.length})</h3>`;
+      d.history.slice(0, 10).forEach(h => {
+        html += `<div class="detail-row"><span class="key">${h.matched_with}</span><span class="val">${h.created_at ? new Date(h.created_at + 'Z').toLocaleString('zh-CN') : '-'}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    // Ratings
+    if (d.ratingsGiven && d.ratingsGiven.length) {
+      html += `<div class="detail-section"><h3>给出的评价 (${d.ratingsGiven.length})</h3>`;
+      d.ratingsGiven.slice(0, 10).forEach(r => {
+        html += `<div class="detail-row"><span class="key">→ ${r.ratee_id}</span><span class="val">${r.score}分 ${r.comment ? '· ' + escHtml(r.comment) : ''}</span></div>`;
+      });
+      html += '</div>';
+    }
+    if (d.ratingsReceived && d.ratingsReceived.length) {
+      html += `<div class="detail-section"><h3>收到的评价 (${d.ratingsReceived.length})</h3>`;
+      d.ratingsReceived.slice(0, 10).forEach(r => {
+        html += `<div class="detail-row"><span class="key">← ${r.rater_id}</span><span class="val">${r.score}分 ${r.comment ? '· ' + escHtml(r.comment) : ''}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    // E-friends
+    if (d.eFriends && d.eFriends.length) {
+      html += `<div class="detail-section"><h3>E 友 (${d.eFriends.length})</h3>`;
+      d.eFriends.slice(0, 10).forEach(f => {
+        html += `<div class="detail-row"><span class="key">${f.friend_id}</span><span class="val">${f.created_at ? new Date(f.created_at + 'Z').toLocaleString('zh-CN') : '-'}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    // Ban info
+    if (d.banned) {
+      html += `<div class="detail-section"><h3 style="color:var(--danger);">封禁信息</h3>`;
+      html += `<div class="detail-row"><span class="key">原因</span><span class="val">${escHtml(d.banned.reason || '(无)')}</span></div>`;
+      html += `<div class="detail-row"><span class="key">时间</span><span class="val">${d.banned.banned_at ? new Date(d.banned.banned_at + 'Z').toLocaleString('zh-CN') : '-'}</span></div>`;
+      html += '</div>';
+    }
+
+    document.getElementById('detailBody').innerHTML = html;
+
+    // Actions
+    const isBanned = !!d.banned;
+    document.getElementById('actionBar').innerHTML = `
+      ${isBanned
+        ? `<button class="btn btn-success" onclick="toggleBan('${p.vrc_id}', true)">解封</button>`
+        : `<button class="btn btn-danger" onclick="toggleBan('${p.vrc_id}', false)">封禁</button>`}
+      <button class="btn" onclick="editField('${p.vrc_id}', 'age_verified', ${p.age_verified ? 0 : 1})">${p.age_verified ? '取消18+验证' : '设为18+已验证'}</button>
+      <button class="btn btn-danger" onclick="deleteUser('${p.vrc_id}')">删除所有数据</button>
+    `;
+
+    document.getElementById('detailOverlay').style.display = 'flex';
+  } catch (e) { showToast('加载失败: ' + e.message, 'error'); }
+}
+
+function section(title, rows) {
+  let html = `<div class="detail-section"><h3>${title}</h3>`;
+  rows.forEach(([k, v]) => {
+    html += `<div class="detail-row"><span class="key">${k}</span><span class="val">${v === 0 ? '0' : (v || '—')}</span></div>`;
+  });
+  return html + '</div>';
+}
+
+function closeDetail() {
+  document.getElementById('detailOverlay').style.display = 'none';
+}
+
+// ── Actions ──
+async function toggleBan(vrcId, isCurrentlyBanned) {
+  if (isCurrentlyBanned) {
+    const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/ban`, { method: 'POST', json: { unban: true } });
+    if (r.ok) { showToast('已解封', 'success'); }
+  } else {
+    const reason = prompt('封禁原因（可选）：') || '';
+    const name = currentUserDetail?.profile?.display_name || '';
+    const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/ban`, { method: 'POST', json: { reason, display_name: name } });
+    if (r.ok) { showToast('已封禁', 'success'); }
+  }
+  closeDetail();
+  await loadUsers(currentPage);
+  await loadStats();
+}
+
+async function editField(vrcId, field, value) {
+  const body = {}; body[field] = value;
+  const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}`, { method: 'PATCH', json: body });
+  if (r.ok) { showToast('已更新', 'success'); closeDetail(); await loadUsers(currentPage); }
+  else { showToast('更新失败', 'error'); }
+}
+
+async function deleteUser(vrcId) {
+  if (!confirm(`确认删除用户 ${vrcId} 的所有数据？此操作不可逆！`)) return;
+  const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}`, { method: 'DELETE' });
+  if (r.ok) { showToast('已删除', 'success'); closeDetail(); await loadUsers(currentPage); await loadStats(); }
+  else { showToast('删除失败', 'error'); }
+}
+
+// ── Banned list tab ──
+async function loadBannedTab() {
+  try {
+    const r = await adminFetch('/api/admin/banned');
+    const d = await r.json();
+    const banned = d.banned || [];
+    const tbody = document.getElementById('userTbody');
+    if (banned.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">无封禁用户</td></tr>';
+      return;
+    }
+    tbody.innerHTML = banned.map(b => `
+      <tr onclick="openDetail('${b.vrc_id}')">
+        <td>${escHtml(b.display_name_snapshot || '(无名)')}</td>
+        <td style="font-family:monospace;font-size:0.78rem;">${escHtml(b.vrc_id)}</td>
+        <td colspan="2">${escHtml(b.reason || '(无原因)')}</td>
+        <td><span class="badge badge-banned">已封禁</span></td>
+        <td style="color:var(--text-muted);font-size:0.78rem;">${b.banned_at ? new Date(b.banned_at + 'Z').toLocaleString('zh-CN') : '-'}</td>
+      </tr>
+    `).join('');
+    document.getElementById('pagination').innerHTML = '';
+  } catch (e) { showToast('加载失败: ' + e.message, 'error'); }
+}
+
+// ── Utils ──
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show toast-' + (type || 'success');
+  setTimeout(() => { t.className = 'toast'; }, 2500);
+}
+
+// Auto-login if token in session
+if (ADMIN_TOKEN) {
+  fetch('/api/admin/stats', { headers: { 'X-Admin-Token': ADMIN_TOKEN } })
+    .then(r => { if (r.ok) { document.getElementById('loginWrap').style.display = 'none'; document.getElementById('adminApp').style.display = 'block'; initAdmin(); } else { sessionStorage.removeItem('admin_token'); ADMIN_TOKEN = ''; } })
+    .catch(() => {});
+}
+</script>
+</body>
+</html>
