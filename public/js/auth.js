@@ -47,6 +47,21 @@ window.toggleSidebar = function (forceState) {
   if (btn) btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
 };
 
+// Listen for sidebar state changes posted back from the dating iframe.
+// When the user closes the sidebar by tapping the overlay (inside the iframe),
+// the iframe calls toggleSidebar(false) directly, bypassing the parent wrapper,
+// so the parent's mobileSidebarBtn icon would get out of sync. This listener
+// keeps the icon correct in that scenario.
+window.addEventListener('message', (e) => {
+  if (!e.data || e.data.type !== 'sidebarStateChanged') return;
+  const btn = document.getElementById('mobileSidebarBtn');
+  if (!btn) return;
+  const isOpen = !!e.data.isOpen;
+  btn.dataset.datingOpen = isOpen ? 'true' : 'false';
+  btn.innerHTML = isOpen ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
+  btn.classList.toggle('active', isOpen);
+});
+
 // ── Login & Account Management ──
 let lastAttemptUser = "";
 
