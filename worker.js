@@ -1647,7 +1647,8 @@ export default {
 
             // GET /api/admin/users/:id — full user data
             if (path.startsWith('/api/admin/users/') && request.method === 'GET') {
-                const targetId = path.split('/').pop();
+                const targetId = path.split('/')[4];
+                if (!targetId || path.split('/').length > 5) return jsonResp({ error: "Not found" }, 404);
                 const profile = await executeD1Query(env, 'SELECT * FROM profiles WHERE vrc_id = ?', [targetId], 'first');
                 if (!profile) return jsonResp({ error: "User not found" }, 404);
                 const poolRow = await executeD1Query(env, 'SELECT * FROM match_pool WHERE vrc_id = ?', [targetId], 'first');
@@ -1662,7 +1663,8 @@ export default {
 
             // DELETE /api/admin/users/:id — delete all user data
             if (path.startsWith('/api/admin/users/') && request.method === 'DELETE') {
-                const targetId = path.split('/').pop();
+                const targetId = path.split('/')[4];
+                if (!targetId || path.split('/').length > 5) return jsonResp({ error: "Not found" }, 404);
                 await executeD1Query(env, 'DELETE FROM profiles WHERE vrc_id = ?', [targetId], 'run');
                 await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ? OR matched_with = ?', [targetId, targetId], 'run');
                 await executeD1Query(env, 'DELETE FROM match_history WHERE user_id = ? OR matched_with = ?', [targetId, targetId], 'run');
@@ -1706,7 +1708,8 @@ export default {
 
             // PATCH /api/admin/users/:id — edit fields
             if (path.startsWith('/api/admin/users/') && request.method === 'PATCH') {
-                const targetId = path.split('/').pop();
+                const targetId = path.split('/')[4];
+                if (!targetId || path.split('/').length > 5) return jsonResp({ error: "Not found" }, 404);
                 const exists = await executeD1Query(env, 'SELECT vrc_id FROM profiles WHERE vrc_id = ?', [targetId], 'first');
                 if (!exists) return jsonResp({ error: "User not found" }, 404);
                 const body = await request.json().catch(() => ({}));

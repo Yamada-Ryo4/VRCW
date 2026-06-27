@@ -309,35 +309,35 @@ async function openDetail(vrcId) {
     let html = '';
     // Profile
     html += section('基本信息', [
-      ['VRC ID', p.vrc_id],
-      ['昵称', p.display_name],
-      ['头像', `<img src="${p.photo_url || ''}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'">`],
+      ['VRC ID', escHtml(p.vrc_id)],
+      ['昵称', escHtml(p.display_name)],
+      ['头像', `<img src="${escHtml(p.photo_url || '')}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'">`],
       ['简介', escHtml(p.bio || '')],
-      ['生日', p.dob || '-'],
+      ['生日', escHtml(p.dob || '-')],
       ['18+', p.age_verified ? '✅ 已验证' : '❌ 未验证'],
-      ['地区', p.default_region || '-'],
-      ['默认世界', p.default_world_id || '-'],
+      ['地区', escHtml(p.default_region || '-')],
+      ['默认世界', escHtml(p.default_world_id || '-')],
       ['更新时间', p.updated_at ? new Date(p.updated_at + 'Z').toLocaleString('zh-CN') : '-'],
     ]);
 
     // Preferences
     html += section('交友偏好', [
-      ['自选时间', p.pref_time], ['自选倾向', p.pref_inclination],
-      ['自选声线', p.pref_voice], ['自选模型', p.pref_model], ['自选性别', p.pref_gender],
-      ['目标时间', p.target_time], ['目标倾向', p.target_inclination],
-      ['目标声线', p.target_voice], ['目标模型', p.target_model], ['目标性别', p.target_gender],
+      ['自选时间', escHtml(p.pref_time)], ['自选倾向', escHtml(p.pref_inclination)],
+      ['自选声线', escHtml(p.pref_voice)], ['自选模型', escHtml(p.pref_model)], ['自选性别', escHtml(p.pref_gender)],
+      ['目标时间', escHtml(p.target_time)], ['目标倾向', escHtml(p.target_inclination)],
+      ['目标声线', escHtml(p.target_voice)], ['目标模型', escHtml(p.target_model)], ['目标性别', escHtml(p.target_gender)],
     ]);
 
     // Match pool
     if (d.pool) html += section('匹配池状态', [
-      ['状态', d.pool.status], ['匹配对象', d.pool.matched_with || '-'],
+      ['状态', escHtml(d.pool.status)], ['匹配对象', escHtml(d.pool.matched_with || '-')],
     ]);
 
     // History
     if (d.history && d.history.length) {
       html += `<div class="detail-section"><h3>匹配历史 (${d.history.length})</h3>`;
       d.history.slice(0, 10).forEach(h => {
-        html += `<div class="detail-row"><span class="key">${h.matched_with}</span><span class="val">${h.created_at ? new Date(h.created_at + 'Z').toLocaleString('zh-CN') : '-'}</span></div>`;
+        html += `<div class="detail-row"><span class="key">${escHtml(h.matched_with)}</span><span class="val">${h.created_at ? new Date(h.created_at + 'Z').toLocaleString('zh-CN') : '-'}</span></div>`;
       });
       html += '</div>';
     }
@@ -346,14 +346,14 @@ async function openDetail(vrcId) {
     if (d.ratingsGiven && d.ratingsGiven.length) {
       html += `<div class="detail-section"><h3>给出的评价 (${d.ratingsGiven.length})</h3>`;
       d.ratingsGiven.slice(0, 10).forEach(r => {
-        html += `<div class="detail-row"><span class="key">→ ${r.ratee_id}</span><span class="val">${r.score}分 ${r.comment ? '· ' + escHtml(r.comment) : ''}</span></div>`;
+        html += `<div class="detail-row"><span class="key">→ ${escHtml(r.ratee_id)}</span><span class="val">${r.score}分 ${r.comment ? '· ' + escHtml(r.comment) : ''}</span></div>`;
       });
       html += '</div>';
     }
     if (d.ratingsReceived && d.ratingsReceived.length) {
       html += `<div class="detail-section"><h3>收到的评价 (${d.ratingsReceived.length})</h3>`;
       d.ratingsReceived.slice(0, 10).forEach(r => {
-        html += `<div class="detail-row"><span class="key">← ${r.rater_id}</span><span class="val">${r.score}分 ${r.comment ? '· ' + escHtml(r.comment) : ''}</span></div>`;
+        html += `<div class="detail-row"><span class="key">← ${escHtml(r.rater_id)}</span><span class="val">${r.score}分 ${r.comment ? '· ' + escHtml(r.comment) : ''}</span></div>`;
       });
       html += '</div>';
     }
@@ -362,7 +362,7 @@ async function openDetail(vrcId) {
     if (d.eFriends && d.eFriends.length) {
       html += `<div class="detail-section"><h3>E 友 (${d.eFriends.length})</h3>`;
       d.eFriends.slice(0, 10).forEach(f => {
-        html += `<div class="detail-row"><span class="key">${f.friend_id}</span><span class="val">${f.created_at ? new Date(f.created_at + 'Z').toLocaleString('zh-CN') : '-'}</span></div>`;
+        html += `<div class="detail-row"><span class="key">${escHtml(f.friend_id)}</span><span class="val">${f.created_at ? new Date(f.created_at + 'Z').toLocaleString('zh-CN') : '-'}</span></div>`;
       });
       html += '</div>';
     }
