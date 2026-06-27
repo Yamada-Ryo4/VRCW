@@ -31,7 +31,7 @@
   .search-bar { display:flex; gap:10px; margin-bottom:16px; }
   .search-bar input { flex:1; padding:8px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.85rem; }
   .search-bar button { padding:8px 18px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:0.85rem; }
-  .user-table { width:100%; border-collapse:collapse; background:var(--bg-card); border-radius:10px; overflow:hidden; }
+  .user-table { width:100%; border-collapse:collapse; background:var(--bg-card); overflow:hidden; }
   .user-table th { text-align:left; padding:10px 14px; background:rgba(255,255,255,0.03); font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; }
   .user-table td { padding:10px 14px; border-top:1px solid var(--border); font-size:0.82rem; }
   .user-table tr:hover { background:rgba(255,255,255,0.02); cursor:pointer; }
@@ -64,6 +64,23 @@
   .toast-success { background:var(--success); color:#fff; }
   .toast-error { background:var(--danger); color:#fff; }
   .edit-input { width:100%; padding:6px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:0.82rem; }
+  .table-responsive { width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; border:1px solid var(--border); }
+  @media (max-width: 600px) {
+    .topbar { flex-direction:column; align-items:flex-start; gap:12px; padding:16px; }
+    .topbar .actions { flex-wrap:wrap; width:100%; }
+    .topbar .actions .btn { flex:1; text-align:center; padding:10px; }
+    .stats-row { padding:16px; gap:8px; }
+    .stat-card { min-width:110px; padding:12px 14px; }
+    .stat-card .value { font-size:1.4rem; }
+    .content { padding:0 16px 40px; }
+    .search-bar { flex-direction:column; }
+    .search-bar button { width:100%; padding:12px; }
+    .modal-body { padding:16px; }
+    .detail-row { flex-direction:column; gap:4px; padding:8px 0; }
+    .detail-row .key { width:100%; font-size:0.75rem; }
+    .action-bar { padding:16px; flex-direction:column; }
+    .action-bar .btn { width:100%; padding:10px; }
+  }
 </style>
 </head>
 <body>
@@ -87,6 +104,7 @@
       <button class="btn" onclick="loadAllUsers()">👥 用户列表</button>
       <button class="btn" onclick="loadMatchPoolTab()">🎯 匹配池</button>
       <button class="btn" onclick="loadBannedTab()">🚫 封禁列表</button>
+      <button class="btn btn-primary" onclick="syncAllFromVrc()">🔄 一键同步全部</button>
       <button class="btn" onclick="logoutAdmin()">退出</button>
     </div>
   </div>
@@ -98,14 +116,16 @@
       <input type="search" id="searchInput" name="vrcw_admin_user_search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="搜索昵称或 usr_ ID（不保存登录邮箱）..." onkeydown="if(event.key==='Enter')loadUsers(1)">
       <button onclick="loadUsers(1)">搜索</button>
     </div>
-    <table class="user-table">
-      <thead>
-        <tr>
-          <th>用户</th><th>VRC ID</th><th>地区</th><th>18+验证</th><th>状态</th><th>更新时间</th>
-        </tr>
-      </thead>
-      <tbody id="userTbody"></tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="user-table">
+        <thead>
+          <tr>
+            <th>用户</th><th>VRC ID</th><th>地区</th><th>18+验证</th><th>状态</th><th>更新时间</th>
+          </tr>
+        </thead>
+        <tbody id="userTbody"></tbody>
+      </table>
+    </div>
     <div class="pagination" id="pagination"></div>
   </div>
 </div>
@@ -434,6 +454,55 @@ async function syncFromVrc(vrcId) {
     await loadUsers(currentPage);
     await loadStats();
   } catch (e) { showToast('同步失败: ' + e.message, 'error'); }
+}
+
+// ── Sync all users from VRChat ──
+async function syncAllFromVrc() {
+  const vrcAuth = localStorage.getItem('vrc_auth') || '';
+  if (!vrcAuth) {
+    showToast('请先在 VRCW 主站登录 VRChat，再回来同步', 'error');
+    return;
+  }
+  if (!confirm('将逐一从 VRChat 拉取所有用户信息并更新数据库。\n这可能需要一些时间，确定继续？')) return;
+
+  // Fetch all user IDs (page by page)
+  let allUsers = [];
+  let page = 1;
+  while (true) {
+    const d = await adminFetch(`/api/admin/users?page=${page}&pageSize=100`);
+    allUsers = allUsers.concat(d.users || []);
+    if (allUsers.length >= (d.total || 0) || (d.users || []).length === 0) break;
+    page++;
+  }
+
+  if (allUsers.length === 0) {
+    showToast('没有用户可同步', 'error');
+    return;
+  }
+
+  let ok = 0, fail = 0;
+  showToast(`开始同步 ${allUsers.length} 个用户...`, 'success');
+
+  for (let i = 0; i < allUsers.length; i++) {
+    const u = allUsers[i];
+    try {
+      await adminFetch(`/api/admin/users/${encodeURIComponent(u.vrc_id)}/sync-vrc`, {
+        method: 'POST',
+        headers: { 'X-VRC-Auth': vrcAuth }
+      });
+      ok++;
+    } catch (e) {
+      fail++;
+    }
+    // Update toast every 5 users
+    if ((i + 1) % 5 === 0 || i === allUsers.length - 1) {
+      showToast(`同步中: ${i + 1}/${allUsers.length} (成功 ${ok}, 失败 ${fail})`, 'success');
+    }
+  }
+
+  showToast(`同步完成: 成功 ${ok}, 失败 ${fail}, 共 ${allUsers.length}`, 'success');
+  await loadUsers(1);
+  await loadStats();
 }
 
 // ── Match pool tab ──
