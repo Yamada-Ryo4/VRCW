@@ -386,9 +386,17 @@ export default {
         // Static Assets binding. We must hand these off BEFORE the API route
         // block, otherwise they'd fall through to the 404 at the end.
         if (!path.startsWith('/api/')) {
-            return env.ASSETS
-                ? env.ASSETS.fetch(request)
-                : new Response("Static assets require env.ASSETS binding", { status: 500 });
+            if (!env.ASSETS) return new Response("Static assets require env.ASSETS binding", { status: 500 });
+            const assetResp = await env.ASSETS.fetch(request);
+            // Admin is an operational console; never let browser/edge cache keep
+            // an old JS bundle around while debugging fixes.
+            if (path === '/admin' || path === '/admin.html') {
+                const headers = new Headers(assetResp.headers);
+                headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+                headers.set('Pragma', 'no-cache');
+                return new Response(assetResp.body, { status: assetResp.status, statusText: assetResp.statusText, headers });
+            }
+            return assetResp;
         }
 
         // ── API Routes ──
@@ -1527,11 +1535,12 @@ export default {
             if (path.startsWith('/api/admin/users/') && request.method === 'DELETE') {
                 const targetId = path.split('/').pop();
                 await executeD1Query(env, 'DELETE FROM profiles WHERE vrc_id = ?', [targetId], 'run');
-                await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ?', [targetId], 'run');
-                await executeD1Query(env, 'DELETE FROM match_history WHERE user_id = ?', [targetId], 'run');
-                await executeD1Query(env, 'DELETE FROM e_friends WHERE user_id = ?', [targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ? OR matched_with = ?', [targetId, targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM match_history WHERE user_id = ? OR matched_with = ?', [targetId, targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM e_friends WHERE user_id = ? OR friend_id = ?', [targetId, targetId], 'run');
                 await executeD1Query(env, 'DELETE FROM ratings WHERE rater_id = ? OR ratee_id = ?', [targetId, targetId], 'run');
                 await executeD1Query(env, 'DELETE FROM blacklist WHERE user_id = ? OR blocked_id = ?', [targetId, targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM banned_users WHERE vrc_id = ?', [targetId], 'run');
                 return jsonResp({ success: true });
             }
 
@@ -1546,8 +1555,9 @@ export default {
                 const reason = body.reason || '';
                 const nameSnap = body.display_name || '';
                 await executeD1Query(env, 'INSERT OR REPLACE INTO banned_users (vrc_id, reason, display_name_snapshot, banned_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)', [targetId, reason, nameSnap], 'run');
-                // Kick from match pool
+                // Kick from match pool and release anyone matched with them.
                 await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ?', [targetId], 'run');
+                await executeD1Query(env, 'UPDATE match_pool SET status = "waiting", matched_with = NULL WHERE matched_with = ?', [targetId], 'run');
                 return jsonResp({ success: true, banned: true });
             }
 

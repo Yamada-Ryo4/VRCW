@@ -73,7 +73,7 @@
   <div class="login-card">
     <h1>🛡️ VRCW Admin</h1>
     <p>输入管理密钥以登录后台</p>
-    <input type="password" id="adminTokenInput" placeholder="Admin Token" onkeydown="if(event.key==='Enter')doLogin()">
+    <input type="password" id="adminTokenInput" name="vrcw_admin_token_field" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Admin Token" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">登录</button>
     <p id="loginErr" style="color:var(--danger);font-size:0.8rem;margin-top:8px;display:none;"></p>
   </div>
@@ -84,6 +84,7 @@
   <div class="topbar">
     <h1>🛡️ VRCW Admin</h1>
     <div class="actions">
+      <button class="btn" onclick="loadAllUsers()">👥 用户列表</button>
       <button class="btn" onclick="loadBannedTab()">🚫 封禁列表</button>
       <button class="btn" onclick="logoutAdmin()">退出</button>
     </div>
@@ -93,7 +94,7 @@
 
   <div class="content">
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="搜索昵称或 usr_ ID（不保存登录邮箱）..." onkeydown="if(event.key==='Enter')loadUsers(1)">
+      <input type="search" id="searchInput" name="vrcw_admin_user_search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="搜索昵称或 usr_ ID（不保存登录邮箱）..." onkeydown="if(event.key==='Enter')loadUsers(1)">
       <button onclick="loadUsers(1)">搜索</button>
     </div>
     <table class="user-table">
@@ -205,15 +206,24 @@ async function loadStats() {
 }
 
 // ── User List ──
+function loadAllUsers() {
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) searchInput.value = '';
+  return loadUsers(1);
+}
+
 async function loadUsers(page) {
   currentPage = page;
-  const search = document.getElementById('searchInput').value.trim();
+  const searchInput = document.getElementById('searchInput');
+  let search = (searchInput?.value || '').trim();
+  if (/@/.test(search)) {
+    showToast('VRChat 登录邮箱不会被保存，已自动清空搜索；请用昵称或 usr_ ID。', 'error');
+    if (searchInput) searchInput.value = '';
+    search = '';
+  }
   const q = new URLSearchParams({ page, pageSize: 20 });
   if (search) q.set('search', search);
   try {
-    if (/@/.test(search)) {
-      showToast('VRChat 登录邮箱不会被保存，无法按邮箱搜索；请用昵称或 usr_ ID。', 'error');
-    }
     const d = await adminFetch('/api/admin/users?' + q);
     renderUsers(d.users || []);
     renderPagination(d.total || 0, d.page || 1, d.pageSize || 20);
