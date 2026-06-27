@@ -15,6 +15,70 @@ const CORS_HEADERS = {
     "Access-Control-Expose-Headers": "X-VRC-Auth",
 };
 
+function calculateDatingGradientScore(wanted, actual, type) {
+    if (wanted === actual || wanted === '不限' || wanted === '不限 / 皆可' || wanted === '全时段' || wanted === '未知' || wanted === '随缘') {
+        if (type === 'voice') return 30;
+        if (type === 'model') return 30;
+        if (type === 'time') return 15;
+        if (type === 'inc') return 15;
+        if (type === 'gender') return 10;
+        return 0;
+    }
+
+    if (type === 'voice') {
+        const groups = [
+            ['萝莉音', '少女音', '夹子音', '少御音', '御姐音'],
+            ['正太音', '少年音', '青年音', '大叔音']
+        ];
+        for (const group of groups) {
+            const wIdx = group.indexOf(wanted);
+            const aIdx = group.indexOf(actual);
+            if (wIdx !== -1 && aIdx !== -1) {
+                const diff = Math.abs(wIdx - aIdx);
+                return Math.max(0, 30 - diff * 3);
+            }
+        }
+        return 0;
+    }
+
+    if (type === 'model') {
+        const groups = [
+            ['萝莉', '少女', '少御', '御姐', '巨乳系'],
+            ['正太', '少年', '成男'],
+            ['机甲', '写实', '福瑞', '小动物']
+        ];
+        for (const group of groups) {
+            const wIdx = group.indexOf(wanted);
+            const aIdx = group.indexOf(actual);
+            if (wIdx !== -1 && aIdx !== -1) {
+                const diff = Math.abs(wIdx - aIdx);
+                return Math.max(0, 30 - diff * 3);
+            }
+        }
+        return 0;
+    }
+
+    return 0;
+}
+
+function calculateDatingPairScores(myProfile, theirProfile) {
+    let score = 0;
+    score += calculateDatingGradientScore(myProfile.target_time, theirProfile.pref_time, 'time');
+    score += calculateDatingGradientScore(myProfile.target_inclination, theirProfile.pref_inclination, 'inc');
+    score += calculateDatingGradientScore(myProfile.target_voice, theirProfile.pref_voice, 'voice');
+    score += calculateDatingGradientScore(myProfile.target_model, theirProfile.pref_model, 'model');
+    score += calculateDatingGradientScore(myProfile.target_gender, theirProfile.pref_gender, 'gender');
+
+    let theirScore = 0;
+    theirScore += calculateDatingGradientScore(theirProfile.target_time, myProfile.pref_time, 'time');
+    theirScore += calculateDatingGradientScore(theirProfile.target_inclination, myProfile.pref_inclination, 'inc');
+    theirScore += calculateDatingGradientScore(theirProfile.target_voice, myProfile.pref_voice, 'voice');
+    theirScore += calculateDatingGradientScore(theirProfile.target_model, myProfile.pref_model, 'model');
+    theirScore += calculateDatingGradientScore(theirProfile.target_gender, myProfile.pref_gender, 'gender');
+
+    return { score, theirScore, totalScore: (score + theirScore) / 2 };
+}
+
 /**
  * SSRF guard — only allow the worker to proxy/fetch known VRChat + community
  * avatar-database hosts. Without this, /api/proxy, /api/image, /api/download and
@@ -935,6 +999,8 @@ export default {
 
             let bestMatch = null;
             let bestScore = -1;
+            let bestMatchScore = 0;
+            let bestMatchTheirScore = 0;
 
             for (const waitingUser of (pool.results || [])) {
                 const theirId = waitingUser.vrc_id;
@@ -944,70 +1010,14 @@ export default {
                 const theirProfile = profileMap.get(theirId);
                 if (!theirProfile) continue;
 
-                function calculateGradientScore(wanted, actual, type) {
-                    if (wanted === actual || wanted === '不限' || wanted === '不限 / 皆可' || wanted === '全时段' || wanted === '未知' || wanted === '随缘') {
-                        if (type === 'voice') return 30;
-                        if (type === 'model') return 30;
-                        if (type === 'time') return 15;
-                        if (type === 'inc') return 15;
-                        if (type === 'gender') return 10;
-                        return 0;
-                    }
-
-                    if (type === 'voice') {
-                        const groups = [
-                            ['萝莉音', '少女音', '夹子音', '少御音', '御姐音'],
-                            ['正太音', '少年音', '青年音', '大叔音']
-                        ];
-                        for (const group of groups) {
-                            const wIdx = group.indexOf(wanted);
-                            const aIdx = group.indexOf(actual);
-                            if (wIdx !== -1 && aIdx !== -1) {
-                                const diff = Math.abs(wIdx - aIdx);
-                                return Math.max(0, 30 - diff * 3);
-                            }
-                        }
-                        return 0;
-                    }
-
-                    if (type === 'model') {
-                        const groups = [
-                            ['萝莉', '少女', '少御', '御姐', '巨乳系'],
-                            ['正太', '少年', '成男'],
-                            ['机甲', '写实', '福瑞', '小动物']
-                        ];
-                        for (const group of groups) {
-                            const wIdx = group.indexOf(wanted);
-                            const aIdx = group.indexOf(actual);
-                            if (wIdx !== -1 && aIdx !== -1) {
-                                const diff = Math.abs(wIdx - aIdx);
-                                return Math.max(0, 30 - diff * 3);
-                            }
-                        }
-                        return 0;
-                    }
-
-                    return 0;
-                }
-
-                let score = 0;
-                score += calculateGradientScore(myProfile.target_time, theirProfile.pref_time, 'time');
-                score += calculateGradientScore(myProfile.target_inclination, theirProfile.pref_inclination, 'inc');
-                score += calculateGradientScore(myProfile.target_voice, theirProfile.pref_voice, 'voice');
-                score += calculateGradientScore(myProfile.target_model, theirProfile.pref_model, 'model');
-                score += calculateGradientScore(myProfile.target_gender, theirProfile.pref_gender, 'gender');
-
-                let theirScore = 0;
-                theirScore += calculateGradientScore(theirProfile.target_time, myProfile.pref_time, 'time');
-                theirScore += calculateGradientScore(theirProfile.target_inclination, myProfile.pref_inclination, 'inc');
-                theirScore += calculateGradientScore(theirProfile.target_voice, myProfile.pref_voice, 'voice');
-                theirScore += calculateGradientScore(theirProfile.target_model, myProfile.pref_model, 'model');
-                theirScore += calculateGradientScore(theirProfile.target_gender, myProfile.pref_gender, 'gender');
+                const { score, theirScore } = calculateDatingPairScores(myProfile, theirProfile);
 
                 if (score >= 60 && theirScore >= 60) {
                     if (score + theirScore > bestScore) {
                         bestScore = score + theirScore;
                         bestMatch = theirId;
+                        bestMatchScore = score;
+                        bestMatchTheirScore = theirScore;
                     }
                 }
             }
@@ -1047,7 +1057,7 @@ export default {
                 await executeD1Query(env, 'INSERT INTO match_history (user_id, matched_with, session_id) VALUES (?, ?, ?)', [myId, bestMatch, sessionId], 'run');
                 await executeD1Query(env, 'INSERT INTO match_history (user_id, matched_with, session_id) VALUES (?, ?, ?)', [bestMatch, myId, sessionId], 'run');
 
-                return jsonResp({ success: true, matched: true, matched_with: bestMatch });
+                return jsonResp({ success: true, matched: true, matched_with: bestMatch, score: bestMatchScore, theirScore: bestMatchTheirScore });
             } else {
                 if (body.mode === 'invisible') {
                     await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ?', [myId], 'run');
@@ -1118,8 +1128,14 @@ export default {
             if (!record) return jsonResp({ waiting: false, matched: false });
 
             if (record.status === 'matched') {
+                const myProfile = await executeD1Query(env, 'SELECT * FROM profiles WHERE vrc_id = ?', [identity.id], 'first');
                 const target = await executeD1Query(env, 'SELECT * FROM profiles WHERE vrc_id = ?', [record.matched_with], 'first');
-                return jsonResp({ waiting: false, matched: true, target: target });
+                // Re-calculate scores so the frontend can display the authoritative
+                // match percentage (avoids the frontend's stale/local recalculation).
+                const { score, theirScore } = (myProfile && target)
+                    ? calculateDatingPairScores(myProfile, target)
+                    : { score: 0, theirScore: 0 };
+                return jsonResp({ waiting: false, matched: true, target, score, theirScore });
             }
             return jsonResp({ waiting: true, matched: false });
         }
