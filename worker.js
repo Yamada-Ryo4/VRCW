@@ -1265,6 +1265,21 @@ export default {
             return jsonResp({ success: true });
         }
 
+        // DELETE /api/dating/delete_account — user self-service data wipe ("跑路")
+        // Removes ALL of the caller's dating data from every table. Irreversible.
+        if (path === '/api/dating/delete_account' && request.method === 'DELETE') {
+            const { identity, response: authResp } = await requireDatingAuth(request, env);
+            if (authResp) return authResp;
+            const myId = identity.id;
+            await executeD1Query(env, 'DELETE FROM profiles WHERE vrc_id = ?', [myId], 'run');
+            await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ? OR matched_with = ?', [myId, myId], 'run');
+            await executeD1Query(env, 'DELETE FROM match_history WHERE user_id = ? OR matched_with = ?', [myId, myId], 'run');
+            await executeD1Query(env, 'DELETE FROM e_friends WHERE user_id = ? OR friend_id = ?', [myId, myId], 'run');
+            await executeD1Query(env, 'DELETE FROM ratings WHERE rater_id = ? OR ratee_id = ?', [myId, myId], 'run');
+            await executeD1Query(env, 'DELETE FROM blacklist WHERE user_id = ? OR blocked_id = ?', [myId, myId], 'run');
+            return jsonResp({ success: true });
+        }
+
         if (path === '/api/dating/block' && request.method === 'POST') {
             const { identity, response: authResp } = await requireDatingAuth(request, env);
             if (authResp) return authResp;
