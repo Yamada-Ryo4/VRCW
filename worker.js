@@ -276,13 +276,51 @@ async function requireDatingAuth(request, env) {
 async function requireAdminAuth(request, env) {
     const token = request.headers.get('X-Admin-Token');
     const secret = env.ADMIN_SECRET;
+    const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+
     if (!secret) {
         // Admin not configured — fail closed.
         return { ok: false, response: jsonResp({ error: "Admin not configured (ADMIN_SECRET missing)" }, 503) };
     }
+
+    // Check existing IP block before token comparison. If the admin_ip_blocks
+    // table hasn't been migrated yet, fail open for rate-limiting only (token
+    // validation below still protects the admin API).
+    try {
+        const block = await executeD1Query(env, 'SELECT fail_count, blocked_until FROM admin_ip_blocks WHERE ip = ?', [ip], 'first');
+        if (block && block.blocked_until) {
+            const until = new Date(String(block.blocked_until).replace(' ', 'T') + 'Z');
+            if (!isNaN(until.getTime()) && until.getTime() > Date.now()) {
+                return { ok: false, response: jsonResp({ error: "IP blocked", blocked_until: block.blocked_until }, 429) };
+            }
+        }
+    } catch (_) {}
+
     if (!token || token !== secret) {
-        return { ok: false, response: jsonResp({ error: "Forbidden" }, 403) };
+        let remaining = null;
+        let blockedUntil = null;
+        try {
+            const row = await executeD1Query(env, 'SELECT fail_count FROM admin_ip_blocks WHERE ip = ?', [ip], 'first');
+            const nextFail = ((row && row.fail_count) ? Number(row.fail_count) : 0) + 1;
+            if (nextFail >= 5) {
+                await executeD1Query(env, `INSERT INTO admin_ip_blocks (ip, fail_count, blocked_until, last_failed_at)
+                    VALUES (?, ?, datetime('now', '+24 hours'), CURRENT_TIMESTAMP)
+                    ON CONFLICT(ip) DO UPDATE SET fail_count=excluded.fail_count, blocked_until=excluded.blocked_until, last_failed_at=CURRENT_TIMESTAMP`, [ip, nextFail], 'run');
+                const b = await executeD1Query(env, 'SELECT blocked_until FROM admin_ip_blocks WHERE ip = ?', [ip], 'first');
+                blockedUntil = b?.blocked_until || null;
+                return { ok: false, response: jsonResp({ error: "IP blocked", blocked_until: blockedUntil }, 429) };
+            } else {
+                await executeD1Query(env, `INSERT INTO admin_ip_blocks (ip, fail_count, blocked_until, last_failed_at)
+                    VALUES (?, ?, NULL, CURRENT_TIMESTAMP)
+                    ON CONFLICT(ip) DO UPDATE SET fail_count=excluded.fail_count, blocked_until=NULL, last_failed_at=CURRENT_TIMESTAMP`, [ip, nextFail], 'run');
+                remaining = Math.max(0, 5 - nextFail);
+            }
+        } catch (_) {}
+        return { ok: false, response: jsonResp({ error: "Forbidden", remaining }, 403) };
     }
+
+    // Successful login clears previous failures for this IP.
+    try { await executeD1Query(env, 'DELETE FROM admin_ip_blocks WHERE ip = ?', [ip], 'run'); } catch (_) {}
     return { ok: true, response: null };
 }
 
@@ -1484,6 +1522,27 @@ export default {
                     totalMatches: totalMatches?.c || 0,
                     todayNew: todayNew?.c || 0
                 });
+            }
+
+            // GET /api/admin/match-pool — list everyone currently in the pool
+            if (path === '/api/admin/match-pool' && request.method === 'GET') {
+                const rows = await executeD1Query(env, `
+                    SELECT m.vrc_id, m.status, m.matched_with, m.created_at,
+                           p.display_name, p.photo_url
+                    FROM match_pool m
+                    LEFT JOIN profiles p ON m.vrc_id = p.vrc_id
+                    ORDER BY m.created_at DESC
+                `, [], 'all');
+                const pool = rows.results || [];
+                // Attach banned status
+                const ids = pool.map(r => r.vrc_id).filter(Boolean);
+                let bannedSet = new Set();
+                if (ids.length > 0) {
+                    const placeholders = ids.map(() => '?').join(',');
+                    const br = await executeD1Query(env, `SELECT vrc_id FROM banned_users WHERE vrc_id IN (${placeholders})`, ids, 'all');
+                    bannedSet = new Set((br.results || []).map(r => r.vrc_id));
+                }
+                return jsonResp({ pool: pool.map(r => ({ ...r, is_banned: bannedSet.has(r.vrc_id) })) });
             }
 
             // GET /api/admin/users?page=1&search=keyword

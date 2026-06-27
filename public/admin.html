@@ -85,6 +85,7 @@
     <h1>🛡️ VRCW Admin</h1>
     <div class="actions">
       <button class="btn" onclick="loadAllUsers()">👥 用户列表</button>
+      <button class="btn" onclick="loadMatchPoolTab()">🎯 匹配池</button>
       <button class="btn" onclick="loadBannedTab()">🚫 封禁列表</button>
       <button class="btn" onclick="logoutAdmin()">退出</button>
     </div>
@@ -141,8 +142,20 @@ async function doLogin() {
       document.getElementById('adminApp').style.display = 'block';
       initAdmin();
     } else {
-      showLoginError('Token 无效');
       ADMIN_TOKEN = '';
+      let msg = 'Token 无效';
+      try {
+        const d = await r.json();
+        if (r.status === 429 && d.blocked_until) {
+          const t = new Date(String(d.blocked_until).replace(' ', 'T') + 'Z');
+          msg = '尝试次数过多，该 IP 已被临时封禁至 ' + (isNaN(t.getTime()) ? d.blocked_until : t.toLocaleString('zh-CN'));
+        } else if (r.status === 403 && typeof d.remaining === 'number') {
+          msg = '管理密钥错误，还剩 ' + d.remaining + ' 次尝试机会';
+        } else if (d.error) {
+          msg = d.error;
+        }
+      } catch (_) {}
+      showLoginError(msg);
     }
   } catch (e) {
     showLoginError('网络错误: ' + e.message);
@@ -194,13 +207,13 @@ async function loadStats() {
     const d = await adminFetch('/api/admin/stats');
     const cards = [
       { label: '总用户', value: d.totalUsers, color: '#6366f1' },
-      { label: '匹配池中', value: d.inPool, color: '#f59e0b' },
-      { label: '已封禁', value: d.banned, color: '#ef4444' },
+      { label: '匹配池中', value: d.inPool, color: '#f59e0b', onClick: 'loadMatchPoolTab()' },
+      { label: '已封禁', value: d.banned, color: '#ef4444', onClick: 'loadBannedTab()' },
       { label: '总匹配数', value: d.totalMatches, color: '#22c55e' },
       { label: '今日注册', value: d.todayNew, color: '#a855f7' },
     ];
     document.getElementById('statsRow').innerHTML = cards.map(c =>
-      `<div class="stat-card"><div class="label">${c.label}</div><div class="value" style="color:${c.color}">${c.value}</div></div>`
+      `<div class="stat-card" ${c.onClick ? `style="cursor:pointer;" onclick="${c.onClick}"` : ''}><div class="label">${c.label}${c.onClick ? ' <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.7em;opacity:0.5;"></i>' : ''}</div><div class="value" style="color:${c.color}">${c.value}</div></div>`
     ).join('');
   } catch (e) { console.error(e); }
 }
@@ -214,6 +227,7 @@ function loadAllUsers() {
 
 async function loadUsers(page) {
   currentPage = page;
+  document.querySelector('.search-bar').style.display = '';
   const searchInput = document.getElementById('searchInput');
   let search = (searchInput?.value || '').trim();
   if (/@/.test(search)) {
@@ -401,8 +415,36 @@ async function deleteUser(vrcId) {
   } catch (e) { showToast('删除失败: ' + e.message, 'error'); }
 }
 
+// ── Match pool tab ──
+async function loadMatchPoolTab() {
+  document.getElementById('searchInput').value = '';
+  document.querySelector('.search-bar').style.display = 'none';
+  try {
+    const d = await adminFetch('/api/admin/match-pool');
+    const pool = d.pool || [];
+    const tbody = document.getElementById('userTbody');
+    if (pool.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">匹配池为空</td></tr>';
+    } else {
+      tbody.innerHTML = pool.map(m => `
+        <tr onclick="openDetail('${escJsAttr(m.vrc_id)}')">
+          <td><img src="${m.photo_url || ''}" class="avatar-sm" onerror="this.style.display='none'">${escHtml(m.display_name || '(无名)')}</td>
+          <td style="font-family:monospace;font-size:0.78rem;">${escHtml(m.vrc_id || '')}</td>
+          <td>${m.status === 'matched' ? '<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);">已匹配</span>' : '<span class="badge badge-verified">等待中</span>'}</td>
+          <td>${m.matched_with ? '<span style="font-family:monospace;font-size:0.72rem;opacity:0.7;">→ ' + escHtml(m.matched_with) + '</span>' : '—'}</td>
+          <td>${m.is_banned ? '<span class="badge badge-banned">已封禁</span>' : ''}</td>
+          <td style="color:var(--text-muted);font-size:0.78rem;">${m.created_at ? new Date(m.created_at + 'Z').toLocaleString('zh-CN') : '-'}</td>
+        </tr>
+      `).join('');
+    }
+    document.getElementById('pagination').innerHTML = '';
+  } catch (e) { showToast('加载失败: ' + e.message, 'error'); }
+}
+
 // ── Banned list tab ──
 async function loadBannedTab() {
+  document.getElementById('searchInput').value = '';
+  document.querySelector('.search-bar').style.display = 'none';
   try {
     const d = await adminFetch('/api/admin/banned');
     const banned = d.banned || [];
@@ -428,6 +470,10 @@ async function loadBannedTab() {
 function escHtml(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function escJsAttr(s) {
+  if (s == null) return '';
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 function showToast(msg, type) {
   const t = document.getElementById('toast');
