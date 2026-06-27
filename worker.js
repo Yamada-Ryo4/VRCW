@@ -1564,6 +1564,8 @@ export default {
             // PATCH /api/admin/users/:id — edit fields
             if (path.startsWith('/api/admin/users/') && request.method === 'PATCH') {
                 const targetId = path.split('/').pop();
+                const exists = await executeD1Query(env, 'SELECT vrc_id FROM profiles WHERE vrc_id = ?', [targetId], 'first');
+                if (!exists) return jsonResp({ error: "User not found" }, 404);
                 const body = await request.json().catch(() => ({}));
                 const allowedFields = ['age_verified', 'display_name', 'bio', 'pref_time', 'pref_inclination', 'pref_voice', 'pref_model', 'pref_gender', 'target_time', 'target_inclination', 'target_voice', 'target_model', 'target_gender', 'match_with_friends', 'default_region', 'default_world_id', 'favorite_world_id'];
                 const updates = [];
