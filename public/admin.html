@@ -383,6 +383,7 @@ async function openDetail(vrcId) {
       ${isBanned
         ? `<button class="btn btn-success" onclick="toggleBan('${p.vrc_id}', true)">解封</button>`
         : `<button class="btn btn-danger" onclick="toggleBan('${p.vrc_id}', false)">封禁</button>`}
+      ${(d.pool && d.pool.status === 'matched') ? `<button class="btn btn-danger" onclick="forceUnmatch('${p.vrc_id}')">解除匹配</button>` : ''}
       <button class="btn" onclick="editField('${p.vrc_id}', 'age_verified', ${p.age_verified ? 0 : 1})">${p.age_verified ? '取消18+验证' : '设为18+已验证'}</button>
       <button class="btn btn-danger" onclick="deleteUser('${p.vrc_id}')">删除所有数据</button>
       <button class="btn" onclick="syncFromVrc('${p.vrc_id}')">🔄 从VRC同步信息</button>
@@ -539,6 +540,8 @@ async function forceUnmatch(vrcId) {
   try {
     const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/unmatch`, { method: 'POST' });
     showToast('已强制解除匹配', 'success');
+    closeDetail();
+    // Refresh both pool and users tab in case we were on either
     await loadMatchPoolTab();
     await loadStats();
   } catch (e) { showToast('解除失败: ' + e.message, 'error'); }
