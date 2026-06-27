@@ -769,17 +769,30 @@ export default {
             // says this user is 18+, write age_verified=1 to their dating profile
             // so the admin panel reflects their real status — even if they never
             // went through the DOB flow. This runs fire-and-forget so it doesn't
-            // slow down the response.
+            // slow down the response. Also sync display_name + photo_url so the
+            // admin list isn't full of "(无名)".
             if (vrcPath === '/auth/user' && resp.status === 200 && env.DB) {
                 try {
                     const userJson = JSON.parse(new TextDecoder().decode(respBody));
                     if (userJson && userJson.id) {
                         const age18 = userJson.ageVerificationStatus === "18+" || userJson.ageVerified === true;
-                        if (age18) {
-                            // Fire-and-forget: don't await, don't block the response
+                        const displayName = userJson.displayName || null;
+                        const photoUrl = userJson.currentAvatarThumbnailImageUrl || userJson.profilePicThumbnailImageUrl || null;
+                        // Only upsert if user already has a dating profile (don't create
+                        // empty rows for non-dating users). If they have a row, update
+                        // display_name + photo_url + age_verified.
+                        const hasRow = await executeD1Query(env, 'SELECT vrc_id FROM profiles WHERE vrc_id = ?', [userJson.id], 'first');
+                        if (hasRow) {
                             ctx.waitUntil(executeD1Query(env,
-                                'INSERT INTO profiles (vrc_id, age_verified) VALUES (?, 1) ON CONFLICT(vrc_id) DO UPDATE SET age_verified = CASE WHEN age_verified = 1 THEN 1 ELSE 1 END',
-                                [userJson.id], 'run'
+                                'UPDATE profiles SET display_name = COALESCE(?, display_name), photo_url = COALESCE(?, photo_url), age_verified = CASE WHEN ? = 1 THEN 1 ELSE age_verified END WHERE vrc_id = ?',
+                                [displayName, photoUrl, age18 ? 1 : 0, userJson.id], 'run'
+                            ).catch(() => {}));
+                        } else if (age18) {
+                            // 18+ user with no profile yet — create a stub so admin
+                            // can see them. They'll fill in the rest when they open E了吗.
+                            ctx.waitUntil(executeD1Query(env,
+                                'INSERT INTO profiles (vrc_id, display_name, photo_url, age_verified) VALUES (?, ?, ?, 1) ON CONFLICT(vrc_id) DO UPDATE SET display_name = COALESCE(excluded.display_name, profiles.display_name), photo_url = COALESCE(excluded.photo_url, profiles.photo_url), age_verified = 1',
+                                [userJson.id, displayName, photoUrl], 'run'
                             ).catch(() => {}));
                         }
                     }
