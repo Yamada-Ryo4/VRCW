@@ -270,6 +270,35 @@ async function requireDatingAuth(request, env) {
     return { identity, response: null };
 }
 
+// Admin auth — verifies X-Admin-Token header against the ADMIN_SECRET env var.
+// ADMIN_SECRET is set in wrangler secrets / CF Dashboard secrets and is NOT
+// committed to git. Returns { ok: true } or { ok: false, response }.
+async function requireAdminAuth(request, env) {
+    const token = request.headers.get('X-Admin-Token');
+    const secret = env.ADMIN_SECRET;
+    if (!secret) {
+        // Admin not configured — fail closed.
+        return { ok: false, response: jsonResp({ error: "Admin not configured (ADMIN_SECRET missing)" }, 503) };
+    }
+    if (!token || token !== secret) {
+        return { ok: false, response: jsonResp({ error: "Forbidden" }, 403) };
+    }
+    return { ok: true, response: null };
+}
+
+// Returns true if the given vrc_id is in the banned_users table.
+async function isUserBanned(env, vrcId) {
+    if (!vrcId) return false;
+    try {
+        const row = await executeD1Query(env, 'SELECT vrc_id FROM banned_users WHERE vrc_id = ?', [vrcId], 'first');
+        return !!row;
+    } catch (_) {
+        // If banned_users table doesn't exist yet (migration not run), don't
+        // block everyone — treat as not banned.
+        return false;
+    }
+}
+
 // Server-side 18+ check from a DOB string ("YYYY-MM-DD"). Mirrors the client
 // logic in shell.js verifyDatingAge() so a tampered client can't bypass it.
 function isAdultFromDob(dobStr) {
@@ -924,6 +953,7 @@ export default {
             // user from overwriting someone else's dating profile.
             const { identity, response: authResp } = await requireDatingAuth(request, env);
             if (authResp) return authResp;
+            if (await isUserBanned(env, identity.id)) return jsonResp({ error: 'banned' }, 403);
             // Only let 18+-verified users maintain a dating profile at all.
             const mySettings = await executeD1Query(env, 'SELECT age_verified FROM profiles WHERE vrc_id = ?', [identity.id], 'first');
             const ageOk = (mySettings && mySettings.age_verified === 1) || identity.age18;
@@ -958,6 +988,7 @@ export default {
             const { identity, response: authResp } = await requireDatingAuth(request, env);
             if (authResp) return authResp;
             const myId = identity.id;
+            if (await isUserBanned(env, myId)) return jsonResp({ error: 'banned' }, 403);
             const body = await request.json();
             const excludedFriends = Array.isArray(body.exclude_friends) ? body.exclude_friends : [];
 
@@ -1419,6 +1450,129 @@ export default {
                 });
             } catch (e) {
                 return jsonResp({ error: "Backup failed: " + e.message }, 500);
+            }
+        }
+
+        // ── Admin API ──────────────────────────────────────────────────────
+        // All /api/admin/* routes require X-Admin-Token header matching ADMIN_SECRET.
+        if (path.startsWith('/api/admin/')) {
+            const { ok, response: authFail } = await requireAdminAuth(request, env);
+            if (!ok) return authFail;
+
+            // GET /api/admin/stats — dashboard summary
+            if (path === '/api/admin/stats' && request.method === 'GET') {
+                const totalUsers = await executeD1Query(env, 'SELECT COUNT(*) as c FROM profiles', [], 'first');
+                const inPool = await executeD1Query(env, 'SELECT COUNT(*) as c FROM match_pool', [], 'first');
+                const banned = await executeD1Query(env, 'SELECT COUNT(*) as c FROM banned_users', [], 'first');
+                const totalMatches = await executeD1Query(env, 'SELECT COUNT(*) as c FROM match_history', [], 'first');
+                const todayStart = new Date().toISOString().split('T')[0] + 'T00:00:00';
+                const todayNew = await executeD1Query(env, 'SELECT COUNT(*) as c FROM profiles WHERE updated_at >= ?', [todayStart], 'first');
+                return jsonResp({
+                    totalUsers: totalUsers?.c || 0,
+                    inPool: inPool?.c || 0,
+                    banned: banned?.c || 0,
+                    totalMatches: totalMatches?.c || 0,
+                    todayNew: todayNew?.c || 0
+                });
+            }
+
+            // GET /api/admin/users?page=1&search=keyword
+            if (path === '/api/admin/users' && request.method === 'GET') {
+                const url = new URL(request.url);
+                const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+                const pageSize = Math.min(100, parseInt(url.searchParams.get('pageSize') || '20'));
+                const search = (url.searchParams.get('search') || '').trim();
+                const offset = (page - 1) * pageSize;
+
+                let query, params;
+                if (search) {
+                    query = `SELECT vrc_id, display_name, photo_url, bio, age_verified, default_region, updated_at FROM profiles WHERE display_name LIKE ? OR vrc_id LIKE ? ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
+                    params = [`%${search}%`, `%${search}%`, pageSize, offset];
+                } else {
+                    query = `SELECT vrc_id, display_name, photo_url, bio, age_verified, default_region, updated_at FROM profiles ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
+                    params = [pageSize, offset];
+                }
+                const rows = await executeD1Query(env, query, params, 'all');
+                const countRow = await executeD1Query(env, search ? 'SELECT COUNT(*) as c FROM profiles WHERE display_name LIKE ? OR vrc_id LIKE ?' : 'SELECT COUNT(*) as c FROM profiles', search ? [`%${search}%`, `%${search}%`] : [], 'first');
+                // Fetch banned status for the returned users
+                const userIds = (rows.results || []).map(r => r.vrc_id);
+                let bannedSet = new Set();
+                if (userIds.length > 0) {
+                    const placeholders = userIds.map(() => '?').join(',');
+                    const bannedRows = await executeD1Query(env, `SELECT vrc_id FROM banned_users WHERE vrc_id IN (${placeholders})`, userIds, 'all');
+                    bannedSet = new Set((bannedRows.results || []).map(r => r.vrc_id));
+                }
+                const users = (rows.results || []).map(r => ({ ...r, is_banned: bannedSet.has(r.vrc_id) }));
+                return jsonResp({ users, total: countRow?.c || 0, page, pageSize });
+            }
+
+            // GET /api/admin/users/:id — full user data
+            if (path.startsWith('/api/admin/users/') && request.method === 'GET') {
+                const targetId = path.split('/').pop();
+                const profile = await executeD1Query(env, 'SELECT * FROM profiles WHERE vrc_id = ?', [targetId], 'first');
+                if (!profile) return jsonResp({ error: "User not found" }, 404);
+                const poolRow = await executeD1Query(env, 'SELECT * FROM match_pool WHERE vrc_id = ?', [targetId], 'first');
+                const history = await executeD1Query(env, 'SELECT * FROM match_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', [targetId], 'all');
+                const eFriends = await executeD1Query(env, 'SELECT * FROM e_friends WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', [targetId], 'all');
+                const ratingsGiven = await executeD1Query(env, 'SELECT * FROM ratings WHERE rater_id = ? ORDER BY created_at DESC LIMIT 50', [targetId], 'all');
+                const ratingsReceived = await executeD1Query(env, 'SELECT * FROM ratings WHERE ratee_id = ? ORDER BY created_at DESC LIMIT 50', [targetId], 'all');
+                const blacklist = await executeD1Query(env, 'SELECT * FROM blacklist WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', [targetId], 'all');
+                const banned = await executeD1Query(env, 'SELECT * FROM banned_users WHERE vrc_id = ?', [targetId], 'first');
+                return jsonResp({ profile, pool: poolRow, history: history.results, eFriends: eFriends.results, ratingsGiven: ratingsGiven.results, ratingsReceived: ratingsReceived.results, blacklist: blacklist.results, banned });
+            }
+
+            // DELETE /api/admin/users/:id — delete all user data
+            if (path.startsWith('/api/admin/users/') && request.method === 'DELETE') {
+                const targetId = path.split('/').pop();
+                await executeD1Query(env, 'DELETE FROM profiles WHERE vrc_id = ?', [targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ?', [targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM match_history WHERE user_id = ?', [targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM e_friends WHERE user_id = ?', [targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM ratings WHERE rater_id = ? OR ratee_id = ?', [targetId, targetId], 'run');
+                await executeD1Query(env, 'DELETE FROM blacklist WHERE user_id = ? OR blocked_id = ?', [targetId, targetId], 'run');
+                return jsonResp({ success: true });
+            }
+
+            // POST /api/admin/users/:id/ban — ban/unban
+            if (path.startsWith('/api/admin/users/') && path.endsWith('/ban') && request.method === 'POST') {
+                const targetId = path.split('/')[4]; // /api/admin/users/:id/ban
+                const body = await request.json().catch(() => ({}));
+                if (body.unban) {
+                    await executeD1Query(env, 'DELETE FROM banned_users WHERE vrc_id = ?', [targetId], 'run');
+                    return jsonResp({ success: true, banned: false });
+                }
+                const reason = body.reason || '';
+                const nameSnap = body.display_name || '';
+                await executeD1Query(env, 'INSERT OR REPLACE INTO banned_users (vrc_id, reason, display_name_snapshot, banned_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)', [targetId, reason, nameSnap], 'run');
+                // Kick from match pool
+                await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ?', [targetId], 'run');
+                return jsonResp({ success: true, banned: true });
+            }
+
+            // PATCH /api/admin/users/:id — edit fields
+            if (path.startsWith('/api/admin/users/') && request.method === 'PATCH') {
+                const targetId = path.split('/').pop();
+                const body = await request.json().catch(() => ({}));
+                const allowedFields = ['age_verified', 'display_name', 'bio', 'pref_time', 'pref_inclination', 'pref_voice', 'pref_model', 'pref_gender', 'target_time', 'target_inclination', 'target_voice', 'target_model', 'target_gender', 'match_with_friends', 'default_region', 'default_world_id', 'favorite_world_id'];
+                const updates = [];
+                const params = [];
+                for (const [k, v] of Object.entries(body)) {
+                    if (allowedFields.includes(k)) {
+                        updates.push(`${k} = ?`);
+                        params.push(v);
+                    }
+                }
+                if (updates.length === 0) return jsonResp({ error: "No valid fields to update" }, 400);
+                updates.push('updated_at = CURRENT_TIMESTAMP');
+                params.push(targetId);
+                await executeD1Query(env, `UPDATE profiles SET ${updates.join(', ')} WHERE vrc_id = ?`, params, 'run');
+                return jsonResp({ success: true });
+            }
+
+            // GET /api/admin/banned — list banned users
+            if (path === '/api/admin/banned' && request.method === 'GET') {
+                const rows = await executeD1Query(env, 'SELECT * FROM banned_users ORDER BY banned_at DESC', [], 'all');
+                return jsonResp({ banned: rows.results });
             }
         }
 
