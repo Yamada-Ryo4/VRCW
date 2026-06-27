@@ -380,13 +380,15 @@ export default {
             return new Response(null, { status: 204, headers: CORS_HEADERS });
         }
 
-        // Serve index.html for root
-        if (path === "/" || path === "/index.html") {
-            // In production, this would be served from Workers Sites / Pages
-            // For local dev, wrangler serves static files from the bucket
+        // ── Static assets ──
+        // Any non-API path (/, /index.html, /admin.html, /style.css, /js/*.js,
+        // /dating/, /favicon.ico, etc.) is served by the Cloudflare Workers
+        // Static Assets binding. We must hand these off BEFORE the API route
+        // block, otherwise they'd fall through to the 404 at the end.
+        if (!path.startsWith('/api/')) {
             return env.ASSETS
                 ? env.ASSETS.fetch(request)
-                : new Response("Serve index.html via wrangler pages or static site", { status: 200 });
+                : new Response("Static assets require env.ASSETS binding", { status: 500 });
         }
 
         // ── API Routes ──
