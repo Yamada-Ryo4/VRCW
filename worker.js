@@ -1690,6 +1690,20 @@ export default {
                 return jsonResp({ success: true, banned: true });
             }
 
+            // POST /api/admin/users/:id/unmatch — force break a match state
+            if (path.startsWith('/api/admin/users/') && path.endsWith('/unmatch') && request.method === 'POST') {
+                const targetId = path.split('/')[4];
+                const record = await executeD1Query(env, 'SELECT matched_with FROM match_pool WHERE vrc_id = ? AND status = "matched"', [targetId], 'first');
+                if (record && record.matched_with) {
+                    // Release both users back to the waiting pool
+                    await executeD1Query(env, 'UPDATE match_pool SET status = "waiting", matched_with = NULL WHERE vrc_id = ? OR vrc_id = ?', [targetId, record.matched_with], 'run');
+                } else {
+                    // Just reset the target directly in case they are stuck matched with NULL
+                    await executeD1Query(env, 'UPDATE match_pool SET status = "waiting", matched_with = NULL WHERE vrc_id = ?', [targetId], 'run');
+                }
+                return jsonResp({ success: true });
+            }
+
             // PATCH /api/admin/users/:id — edit fields
             if (path.startsWith('/api/admin/users/') && request.method === 'PATCH') {
                 const targetId = path.split('/').pop();

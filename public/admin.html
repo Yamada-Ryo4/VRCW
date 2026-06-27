@@ -523,12 +523,25 @@ async function loadMatchPoolTab() {
           <td>${m.status === 'matched' ? '<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);">已匹配</span>' : '<span class="badge badge-verified">等待中</span>'}</td>
           <td>${m.matched_with ? '<span style="font-family:monospace;font-size:0.72rem;opacity:0.7;">→ ' + escHtml(m.matched_with) + '</span>' : '—'}</td>
           <td>${m.is_banned ? '<span class="badge badge-banned">已封禁</span>' : ''}</td>
-          <td style="color:var(--text-muted);font-size:0.78rem;">${m.created_at ? new Date(m.created_at + 'Z').toLocaleString('zh-CN') : '-'}</td>
+          <td style="color:var(--text-muted);font-size:0.78rem;">
+            ${m.created_at ? new Date(m.created_at + 'Z').toLocaleString('zh-CN') : '-'}
+            ${m.status === 'matched' ? `<button onclick="event.stopPropagation(); forceUnmatch('${escJsAttr(m.vrc_id)}')" style="margin-left:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:4px;padding:2px 6px;cursor:pointer;font-size:0.8em;">解除匹配</button>` : ''}
+          </td>
         </tr>
       `).join('');
     }
     document.getElementById('pagination').innerHTML = '';
   } catch (e) { showToast('加载失败: ' + e.message, 'error'); }
+}
+
+async function forceUnmatch(vrcId) {
+  if (!confirm(`将强制打断并解绑该用户及其匹配对象，双方都会退回匹配池。确定吗？`)) return;
+  try {
+    const r = await adminFetch(`/api/admin/users/${encodeURIComponent(vrcId)}/unmatch`, { method: 'POST' });
+    showToast('已强制解除匹配', 'success');
+    await loadMatchPoolTab();
+    await loadStats();
+  } catch (e) { showToast('解除失败: ' + e.message, 'error'); }
 }
 
 // ── Banned list tab ──
