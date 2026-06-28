@@ -1181,10 +1181,12 @@ export default {
                     return jsonResp({ success: true, matched: false, mode: 'public' });
                 }
 
-                // Record the match for BOTH users via single-row upserts.
+                // Record the match for ourselves via single-row upsert.
+                // The target (bestMatch) was already safely updated via the optimistic
+                // lock query above; we MUST NOT run a blind UPSERT for them here,
+                // because if they leave the pool in the intervening millisecond,
+                // an UPSERT would resurrect them as a "zombie" matched record.
                 await executeD1Query(env, 'INSERT INTO match_pool (vrc_id, status, matched_with) VALUES (?, ?, ?) ON CONFLICT(vrc_id) DO UPDATE SET status=excluded.status, matched_with=excluded.matched_with', [myId, 'matched', bestMatch], 'run');
-                // The target was already UPDATE'd above, but we run this UPSERT just to be consistent and resilient.
-                await executeD1Query(env, 'INSERT INTO match_pool (vrc_id, status, matched_with) VALUES (?, ?, ?) ON CONFLICT(vrc_id) DO UPDATE SET status=excluded.status, matched_with=excluded.matched_with', [bestMatch, 'matched', myId], 'run');
 
                 // Add to history for both users
                 const sessionId = crypto.randomUUID();
@@ -1280,7 +1282,8 @@ export default {
             const myId = identity.id;
             const myRecord = await executeD1Query(env, 'SELECT * FROM match_pool WHERE vrc_id = ?', [myId], 'first');
             if (myRecord && myRecord.status === 'matched' && myRecord.matched_with) {
-                 await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ?', ['waiting', myRecord.matched_with], 'run');
+                 // Only reset the partner if they are STILL matched with me
+                 await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ? AND matched_with = ?', ['waiting', myRecord.matched_with, myId], 'run');
             }
             await executeD1Query(env, 'DELETE FROM match_pool WHERE vrc_id = ?', [myId], 'run');
             return jsonResp({ success: true });
@@ -1291,7 +1294,10 @@ export default {
             const myId = identity.id;
             const myRecord = await executeD1Query(env, 'SELECT * FROM match_pool WHERE vrc_id = ?', [myId], 'first');
             if (myRecord && myRecord.status === 'matched' && myRecord.matched_with) {
-                 await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ? OR vrc_id = ?', ['waiting', myId, myRecord.matched_with], 'run');
+                 // First reset my state
+                 await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ?', ['waiting', myId], 'run');
+                 // Then reset partner's state ONLY if they are still matched with me
+                 await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ? AND matched_with = ?', ['waiting', myRecord.matched_with, myId], 'run');
             } else {
                  await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ?', ['waiting', myId], 'run');
             }
@@ -1321,7 +1327,10 @@ export default {
             const blockedId = body.blocked_id;
             if (!blockedId || blockedId === myId) return jsonResp({ error: "Invalid blocked_id" }, 400);
             await executeD1Query(env, 'INSERT OR IGNORE INTO blacklist (user_id, blocked_id) VALUES (?, ?)', [myId, blockedId], 'run');
-            await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ? OR vrc_id = ?', ['waiting', myId, blockedId], 'run');
+            // Reset my state
+            await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ?', ['waiting', myId], 'run');
+            // Reset blocked user's state ONLY if they were matched with me
+            await executeD1Query(env, 'UPDATE match_pool SET status = ?, matched_with = NULL WHERE vrc_id = ? AND matched_with = ?', ['waiting', blockedId, myId], 'run');
             return jsonResp({ success: true });
         }
 
