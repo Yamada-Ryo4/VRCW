@@ -33,7 +33,7 @@
   .search-bar button { padding:8px 18px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:0.85rem; }
   .user-table { width:100%; border-collapse:collapse; background:var(--bg-card); overflow:hidden; }
   .user-table th { text-align:left; padding:10px 14px; background:rgba(255,255,255,0.03); font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; }
-  .user-table td { padding:10px 14px; border-top:1px solid var(--border); font-size:0.82rem; }
+  .user-table td { padding:10px 14px; border-top:1px solid var(--border); font-size:0.82rem; white-space:nowrap; vertical-align:middle; }
   .user-table tr:hover { background:rgba(255,255,255,0.02); cursor:pointer; }
   .avatar-sm { width:28px; height:28px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:8px; }
   .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.68rem; font-weight:600; }
@@ -522,7 +522,7 @@ async function loadMatchPoolTab() {
           <td><img src="${m.photo_url || ''}" class="avatar-sm" onerror="this.style.display='none'">${escHtml(m.display_name || '(无名)')}</td>
           <td style="font-family:monospace;font-size:0.78rem;">${escHtml(m.vrc_id || '')}</td>
           <td>${m.status === 'matched' ? '<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);">已匹配</span>' : '<span class="badge badge-verified">等待中</span>'}</td>
-          <td>${m.matched_with ? '<span style="font-family:monospace;font-size:0.72rem;opacity:0.7;">→ ' + escHtml(m.matched_with) + '</span>' : '—'}</td>
+          <td>${m.matched_with ? '<span style="font-size:0.8rem;opacity:0.8;">→ ' + escHtml(m.matched_with_name || m.matched_with) + '</span>' : '—'}</td>
           <td>${m.is_banned ? '<span class="badge badge-banned">已封禁</span>' : ''}</td>
           <td style="color:var(--text-muted);font-size:0.78rem;">
             ${m.created_at ? new Date(m.created_at + 'Z').toLocaleString('zh-CN') : '-'}

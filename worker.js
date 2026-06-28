@@ -1598,9 +1598,11 @@ export default {
             if (path === '/api/admin/match-pool' && request.method === 'GET') {
                 const rows = await executeD1Query(env, `
                     SELECT m.vrc_id, m.status, m.matched_with, m.created_at,
-                           p.display_name, p.photo_url
+                           p.display_name, p.photo_url,
+                           p2.display_name as matched_with_name
                     FROM match_pool m
                     LEFT JOIN profiles p ON m.vrc_id = p.vrc_id
+                    LEFT JOIN profiles p2 ON m.matched_with = p2.vrc_id
                     ORDER BY m.created_at DESC
                 `, [], 'all');
                 const pool = rows.results || [];
