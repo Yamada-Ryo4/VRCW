@@ -7,24 +7,6 @@
  */
 // ── Mobile Sidebar Toggle ──
 window.toggleSidebar = function (forceState) {
-  // If dating panel is active, delegate to the dating iframe
-  const datingPanel = document.getElementById('datingPanel');
-  if (datingPanel && datingPanel.classList.contains('active')) {
-    const iframe = document.getElementById('datingIframe');
-    if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'toggleSidebar', forceState }, '*');
-      // Also toggle btn icon
-      const btn = document.getElementById('mobileSidebarBtn');
-      if (btn) {
-        const isOpening = forceState !== undefined ? forceState : btn.dataset.datingOpen !== 'true';
-        btn.dataset.datingOpen = isOpening ? 'true' : 'false';
-        btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
-        btn.classList.toggle('active', isOpening);
-      }
-    }
-    return;
-  }
-
   const activePanel = document.querySelector(".download-panel.active") || document.querySelector(".upload-panel.active");
   if (!activePanel) return;
   const sidebar = activePanel.querySelector(".sidebar");
@@ -46,21 +28,6 @@ window.toggleSidebar = function (forceState) {
   btn?.classList.toggle("active", isOpening);
   if (btn) btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
 };
-
-// Listen for sidebar state changes posted back from the dating iframe.
-// When the user closes the sidebar by tapping the overlay (inside the iframe),
-// the iframe calls toggleSidebar(false) directly, bypassing the parent wrapper,
-// so the parent's mobileSidebarBtn icon would get out of sync. This listener
-// keeps the icon correct in that scenario.
-window.addEventListener('message', (e) => {
-  if (!e.data || e.data.type !== 'sidebarStateChanged') return;
-  const btn = document.getElementById('mobileSidebarBtn');
-  if (!btn) return;
-  const isOpen = !!e.data.isOpen;
-  btn.dataset.datingOpen = isOpen ? 'true' : 'false';
-  btn.innerHTML = isOpen ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
-  btn.classList.toggle('active', isOpen);
-});
 
 // ── Login & Account Management ──
 let lastAttemptUser = "";
@@ -337,16 +304,6 @@ function doLogout() {
   document.getElementById("loginPage").classList.remove("hidden");
   document.getElementById("mainApp").classList.add("hidden");
 
-  // Reset the dating iframe to purge any cached session state from the previous
-  // user — without this, switching accounts would show the old user's dating
-  // profile/matches until the page was manually refreshed (user isolation bug).
-  try {
-    const datingIframe = document.getElementById('datingIframe');
-    if (datingIframe) {
-      datingIframe.src = datingIframe.src; // force reload → clears iframe JS state
-    }
-  } catch (e) { /* best-effort */ }
-
   // Focus username so re-login is one keystroke away
   requestAnimationFrame(() => document.getElementById('username')?.focus());
 }
@@ -365,7 +322,6 @@ function showMainApp() {
       const user = await r.json();
       currentUserId = user.id || "";
       window.myProfileData = user;
-      if (typeof initDatingSettings === 'function') initDatingSettings();
     } else if (r.status === 401) {
       // Token is invalid — clear it and show login page
       vrcAuth = "";

@@ -37,7 +37,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌐</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=147">
+    <link rel="stylesheet" href="style.css?v=148">
     <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js" defer></script>
     <script>
       // Register Service Worker for image caching — eliminates repeat Cloudflare image requests
@@ -145,9 +145,6 @@
                     <button class="nav-item" onclick="switchTab('search')" data-tab="search" id="navItemSearch">
                         <i class="nav-icon fa-solid fa-magnifying-glass"></i><span class="nav-label">搜索</span>
                     </button>
-                    <button class="nav-item" onclick="switchTab('dating')" data-tab="dating" id="navItemDating" style="display: none;">
-                        <i class="nav-icon fa-solid fa-heart" style="color: #ff4757;"></i><span class="nav-label" style="color: #ff4757; font-weight: bold;">E了吗</span>
-                    </button>
                     <div style="height:1px;background:var(--border);margin:4px 0;"></div>
                     <button class="nav-item" onclick="switchTab('settings')" data-tab="settings" id="navItemSettings">
                         <i class="nav-icon fa-solid fa-gear"></i><span class="nav-label">高级设置</span>
@@ -173,7 +170,6 @@
                 <button class="nav-item-icon" onclick="switchTab('upload')" data-tab="upload" id="navIconUpload" title="上传"><i class="fa-solid fa-upload"></i> </button>
                 <button class="nav-item-icon" onclick="switchTab('assets')" data-tab="assets" id="navIconAssets" title="资产"><i class="fa-solid fa-sack-dollar"></i> </button>
                 <button class="nav-item-icon" onclick="switchTab('search')" data-tab="search" id="navIconSearch" title="搜索"><i class="fa-solid fa-magnifying-glass"></i> </button>
-                <button class="nav-item-icon" onclick="switchTab('dating')" data-tab="dating" id="navIconDating" title="E了吗" style="display: none;"><i class="fa-solid fa-heart"></i> </button>
                 <hr style="width:70%;border-color:var(--border);margin:2px 0;">
                 <button class="nav-item-icon" onclick="switchTab('settings')" data-tab="settings" id="navIconSettings" title="高级设置"><i class="fa-solid fa-gear"></i> </button>
                 <button class="nav-item-icon" onclick="doLogout()" title="退出" style="margin-top:auto;color:var(--error);"><i class="fa-solid fa-right-from-bracket"></i> </button>
@@ -181,10 +177,6 @@
 
         <div class="main-content">
             <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
-            <!-- ── Dating Panel ── -->
-            <div id="datingPanel" class="tab-panel" style="display:none; width:100%; height:100%; overflow:hidden; flex-direction: column;">
-                <iframe id="datingIframe" src="/dating" style="width:100%; height:100%; border:none; flex: 1;"></iframe>
-            </div>
             <!-- ── Download Panel ── -->
             <div id="downloadPanel" class="download-panel active" style="position:relative;">
                 <div class="sidebar" id="appSidebar">
@@ -645,7 +637,6 @@
                         <div class="btn-group">
                             <button class="btn btn-secondary btn-block cat-btn active" onclick="switchSettingsPage('cache')" id="setCatCache"><i class="fa-solid fa-trash"></i> 缓存管理</button>
                             <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('join')" id="setCatJoin"><i class="fa-solid fa-rocket"></i> 加入偏好</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('dating')" id="setCatDating" style="color: #f43f5e; border-color: rgba(244,63,94,0.3);"><i class="fa-solid fa-heart"></i> E了吗 (18+)</button>
                             <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('about')" id="setCatAbout">ℹ️ 关于</button>
                         </div>
                     </div>
@@ -666,36 +657,6 @@
                         <div style="margin-top:16px;max-width:540px;display:flex;flex-direction:column;gap:10px;">
                             <button id="btnRefreshAllCache" onclick="refreshAllPersistentCache()" class="btn btn-secondary btn-block" style="color:#22c55e;border-color:rgba(34,197,94,0.35);"><i class="fa-solid fa-rotate-right"></i> 刷新所有缓存（从 API 重新拉取）</button>
                             <button onclick="clearAllCacheNow()" class="btn btn-secondary btn-block" style="color:#f87171;border-color:rgba(248,113,113,0.35);"><i class="fa-solid fa-trash"></i> 全部清除（含图片 Blob）</button>
-                        </div>
-                    </div>
-                    <div id="setPageDating" style="display:none;max-width:520px;">
-                        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-heart"></i> E了吗 交友系统 (18+)</h2>
-                        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;">开启后，将在左侧导航栏显示 E了吗 功能。此功能包含成人内容及交互，<strong style="color:#f43f5e;">仅限年满18岁的用户使用</strong>。</p>
-
-                        <!-- VRC 18+ 官方认证用户提示 -->
-                        <div id="datingVrcVerifiedNote" style="display:none; background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.3); padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.85rem; color:#86efac;">
-                            <i class="fa-solid fa-check"></i> 检测到您的 VRChat 账号已通过官方 18+ 年龄认证，功能已自动解锁，无需手动填写出生日期。
-                        </div>
-
-                        <div style="background:rgba(0,0,0,0.2); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.07); margin-bottom: 16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <div>
-                                    <div style="font-weight:600; color: #f43f5e;">启用 E了吗 功能</div>
-                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">在导航栏显示 <i class="fa-solid fa-heart"></i> 入口</div>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="settingEnableDating" onchange="toggleDatingFeature()">
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                            <div id="datingAgePrompt" style="display:none; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px; margin-top:14px;">
-                                <p style="font-size:0.85rem; color:#fbbf24; margin-bottom:4px; font-weight:600;">⚠️ 需要年龄确认</p>
-                                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">您的 VRChat 账号未通过 18+ 官方认证。请手动填写出生日期以完成一次性验证（数据与您的账号 ID 绑定，以后无需重复填写）。</p>
-                                <p style="font-size:0.78rem; color:#f87171; margin-bottom:10px;">免责声明：本平台不对您填写的信息负责，您需自行确保信息真实合法，并承担相应责任。</p>
-                                <label style="display:block;font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;">出生日期</label>
-                                <input type="date" id="datingDobInput" style="background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(255,255,255,0.12); padding:8px 12px; border-radius:6px; margin-bottom:12px; width:100%; box-sizing:border-box; color-scheme: dark; font-size:0.9rem;">
-                                <button class="btn btn-block" onclick="verifyDatingAge()" style="background: linear-gradient(135deg,#f43f5e,#ec4899); color:white; border:none; font-weight:600;">我确认我已年满 18 岁，并同意解锁该功能</button>
-                            </div>
                         </div>
                     </div>
                     <div id="setPageJoin" style="display:none;max-width:520px;">
@@ -1073,23 +1034,23 @@
     </div>
 
 
-    <script src="js/core.js?v=147" defer></script>
-    <script src="js/common.js?v=147" defer></script>
-    <script src="js/images.js?v=147" defer></script>
-    <script src="js/logging.js?v=147" defer></script>
-    <script src="js/auth.js?v=147" defer></script>
-    <script src="js/ui-controls.js?v=147" defer></script>
-    <script src="js/sidebar-profile.js?v=147" defer></script>
-    <script src="js/worlds-shell.js?v=147" defer></script>
-    <script src="js/groups-instance-shell.js?v=147" defer></script>
-    <script src="js/shell.js?v=147" defer></script>
-    <script src="js/avatars.js?v=147" defer></script>
-    <script src="js/friends.js?v=147" defer></script>
-    <script src="js/friend-profile-shell.js?v=147" defer></script>
-    <script src="js/groups-shell.js?v=147" defer></script>
-    <script src="js/search-shell.js?v=147" defer></script>
-    <script src="js/context-menu.js?v=147" defer></script>
-    <script src="js/profile-actions.js?v=147" defer></script>
+    <script src="js/core.js?v=148" defer></script>
+    <script src="js/common.js?v=148" defer></script>
+    <script src="js/images.js?v=148" defer></script>
+    <script src="js/logging.js?v=148" defer></script>
+    <script src="js/auth.js?v=148" defer></script>
+    <script src="js/ui-controls.js?v=148" defer></script>
+    <script src="js/sidebar-profile.js?v=148" defer></script>
+    <script src="js/worlds-shell.js?v=148" defer></script>
+    <script src="js/groups-instance-shell.js?v=148" defer></script>
+    <script src="js/shell.js?v=148" defer></script>
+    <script src="js/avatars.js?v=148" defer></script>
+    <script src="js/friends.js?v=148" defer></script>
+    <script src="js/friend-profile-shell.js?v=148" defer></script>
+    <script src="js/groups-shell.js?v=148" defer></script>
+    <script src="js/search-shell.js?v=148" defer></script>
+    <script src="js/context-menu.js?v=148" defer></script>
+    <script src="js/profile-actions.js?v=148" defer></script>
 
     <!-- ── avtrDB Avatar Detail Modal ── -->
     <div id="avtrdbDetailModal" class="modal hidden" onclick="if(event.target===this)closeAvtrdbDetail()">
