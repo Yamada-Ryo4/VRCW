@@ -937,9 +937,9 @@ function friendCardHtml(f) {
         <div class="friend-location" style="display:flex;align-items:center;gap:4px;">
           <span style="font-weight:600;color:var(--text-primary);">${getStatusLabel(f)}</span>
           <span style="opacity:0.6;">|</span>
-          ${(f.location && f.location !== 'offline' && f.location !== 'private' && f.location.startsWith('wrld_')) 
-              ? `<a href="#" id="${locSpanId}" onclick="openInstanceDetail('${escJsAttr(f.location)}'); event.stopPropagation(); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;" title="查看实例详情">${escHtml(locationText)}</a>`
-              : `<span>${escHtml((f.state==='online' && f.statusDescription) ? f.statusDescription : locationText)}</span>`}
+          ${(f.location && f.location !== 'offline' && f.location !== 'private' && f.location.startsWith('wrld_'))
+              ? `<a href="#" id="${locSpanId}" onclick="openInstanceDetail('${escJsAttr(f.location)}'); event.stopPropagation(); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;" title="查看实例详情">${locationText}</a>`
+              : `<span>${(f.state==='online' && f.statusDescription) ? escHtml(f.statusDescription) : locationText}</span>`}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
