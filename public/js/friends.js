@@ -291,12 +291,15 @@ function renderMyProfile(u) {
         `).join('')}
       </div>`;
     } else {
-      // Fallback: check all groups if showcased/represented fields are missing
-      apiCall('/api/vrc/users/' + u.id + '/groups').then(r => r.ok ? r.json() : []).then(groups => {
+      // Fallback: check all groups if showcased/represented fields are missing.
+      // noAbort: this is a user-initiated profile view, not a tab-load — it must
+      // NOT be cancelled by switchTab's currentTabAbortController.abort().
+      const fetchGroups = () => apiCall('/api/vrc/users/' + u.id + '/groups?n=50', { noAbort: true }).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)));
+      fetchGroups().then(groups => {
         const filtered = groups.filter(g => g.isRepresenting);
-        if (!filtered.length) { 
+        if (!filtered.length) {
           el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">暂无佩戴群组 (No represented group)</div>';
-          return; 
+          return;
         }
         filtered.sort((a, b) => (b.isRepresenting ? 1 : 0) - (a.isRepresenting ? 1 : 0));
         el.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
@@ -314,7 +317,7 @@ function renderMyProfile(u) {
       }).catch(() => {
         // First attempt failed — retry once after 1.5 s before showing error
         setTimeout(() => {
-          apiCall('/api/vrc/users/' + u.id + '/groups').then(r => r.ok ? r.json() : []).then(groups => {
+          fetchGroups().then(groups => {
             const filtered = groups.filter(g => g.isRepresenting);
             if (!filtered.length) {
               el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">暂无佩戴群组 (No represented group)</div>';
@@ -333,8 +336,8 @@ function renderMyProfile(u) {
                 </div>
               `).join('')}
             </div>`;
-          }).catch(() => {
-            el.textContent = '加载群组失败';
+          }).catch((e) => {
+            el.innerHTML = '<div style="font-size:0.85em;color:var(--text-muted);opacity:0.6;">群组加载失败 (' + escHtml(String(e.message || e)) + ')</div>';
           });
         }, 1500);
       });

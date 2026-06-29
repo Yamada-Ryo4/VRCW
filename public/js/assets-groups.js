@@ -96,11 +96,12 @@ async function fetchBalance(container, gen) {
     const myId = await getMyId();
     if (_assetsGen !== gen) return;
     if (!myId) throw new Error("Not logged in");
-    const bal = await (await apiCall(`/api/vrc/user/${myId}/balance`)).json();
+    const bal = await (await apiCall(`/api/vrc/user/${myId}/balance`, { noAbort: true })).json();
     if (_assetsGen !== gen) return;
     await writeAssetsCache('balance', bal);
     _renderBalance(container, bal);
   } catch(e) {
+    if (isAbortError(e)) return;  // tab switch cancelled — not a real failure
     if (_assetsGen !== gen) return;
     // Keep stale cache visible on transient failure instead of a red error.
     if (cached) _renderBalance(container, cached);
@@ -126,8 +127,8 @@ async function fetchStore(container, gen) {
   try {
     container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载商店中...</div>';
     const [balResp, listResp] = await Promise.all([
-      apiCall('/api/vrc/economy/balance'),
-      apiCall('/api/vrc/economy/listings?n=20&offset=0')
+      apiCall('/api/vrc/economy/balance', { noAbort: true }),
+      apiCall('/api/vrc/economy/listings?n=20&offset=0', { noAbort: true })
     ]);
     if (_assetsGen !== gen) return;
 

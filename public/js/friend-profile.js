@@ -305,7 +305,7 @@ async function _loadFriendProfileGroups(userId, isFriend) {
   gSummarySection.style.display = '';
 
   try {
-    const r = await apiCall('/api/vrc/users/' + userId + '/groups', _friendProfileApiOpts());
+    const r = await apiCall('/api/vrc/users/' + userId + '/groups?n=50', _friendProfileApiOpts());
     if (!_isFriendProfileScopeCurrent()) return;
     if (!r.ok) throw new Error('Failed to fetch groups');
     const groups = await r.json();
@@ -383,7 +383,7 @@ async function fetchFriendGroups(userId, seq) {
   if (!el) return;
   el.innerHTML = '<div style="padding:20px;color:rgba(255,255,255,0.3);text-align:center;">加载中...</div>';
   try {
-    const r = await apiCall('/api/vrc/users/' + userId + '/groups', _friendProfileApiOpts());
+    const r = await apiCall('/api/vrc/users/' + userId + '/groups?n=50', _friendProfileApiOpts());
     if (seq != null && window._fpCurrentSeq !== seq) return; // user opened another friend
     if (!_isFriendProfileScopeCurrent()) return;
     if (!r.ok) throw new Error('HTTP ' + r.status);
