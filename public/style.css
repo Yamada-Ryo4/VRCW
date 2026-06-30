@@ -1465,6 +1465,7 @@ select.input-field {
 .download-panel.active {
   display: flex;
   width: 100%;
+  height: 100%;
   position: relative;
   /* min-height:0 is critical for flex children — without it the default
      min-height:auto prevents the panel from shrinking below its content
