@@ -37,7 +37,11 @@ body {
      edge. Without this, the touch/scroll event bubbles up and yanks the
      entire UI. */
   overflow: hidden;
-  overscroll-behavior: none;
+  /* NOTE: do NOT add overscroll-behavior here. On mobile WebKit, setting
+     overscroll-behavior on body (either 'none' or 'contain') causes a touch
+     session freeze: scrolling stops working until the user taps the
+     background. The per-container rule at the bottom of this file handles
+     overscroll containment safely. */
 }
 
 /* Match html element so the brief flash before body's CSS applies isn't white
