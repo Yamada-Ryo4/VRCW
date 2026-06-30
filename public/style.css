@@ -499,7 +499,9 @@ html::-webkit-scrollbar, body::-webkit-scrollbar {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* clip (not hidden): hidden creates a scroll container that swallows wheel/
+     touch events and prevents inner avatar-grid from receiving them */
+  overflow: clip;
 }
 
 .avatar-grid {
@@ -1741,7 +1743,9 @@ select.input-field {
 
   .download-panel.active {
     position: relative;
-    overflow: hidden;
+    /* overflow:clip (not hidden) — hidden creates a scroll container that
+       swallows wheel/touch events, preventing inner grids from scrolling */
+    overflow: clip;
   }
 }
 
