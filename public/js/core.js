@@ -842,6 +842,7 @@ document.addEventListener('keydown', (e) => {
   if (id && Object.prototype.hasOwnProperty.call(closers, id)) {
     const fn = closers[id];
     if (fn && typeof window[fn] === 'function') { window[fn](); e.preventDefault(); return; }
+    if (top.dataset.scrollLocked) { unlockBodyScroll(); delete top.dataset.scrollLocked; }
     top.remove(); e.preventDefault(); return;
   }
 
@@ -855,6 +856,7 @@ document.addEventListener('keydown', (e) => {
 
   // Strategy 3: ad-hoc overlays (modal-overlay class, dynamically inserted)
   if (top.classList.contains('modal-overlay')) {
+    if (top.dataset.scrollLocked) { unlockBodyScroll(); delete top.dataset.scrollLocked; }
     top.remove();
     e.preventDefault();
   }
@@ -883,21 +885,20 @@ function modalZPeek() { return _modalZ; }
 let _scrollLockCount = 0;
 let _savedBodyOverflow = "";
 function lockBodyScroll() {
-  if (_scrollLockCount === 0) {
-    _savedBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-  }
+  // body already has overflow:clip (CSS), so background can't scroll.
+  // Setting overflow:hidden here would create a scroll container and
+  // swallow wheel/touch events — causing the "need to click background
+  // to scroll" freeze. Just count the locks for unlock symmetry.
   _scrollLockCount++;
 }
 function unlockBodyScroll() {
   _scrollLockCount = Math.max(0, _scrollLockCount - 1);
-  if (_scrollLockCount === 0) {
-    document.body.style.overflow = _savedBodyOverflow || "";
-  }
+  // No inline style to restore — body overflow is handled purely by CSS.
 }
 // Hard reset — used as a safety net when fully closing UI (e.g. logout).
 function resetBodyScroll() {
   _scrollLockCount = 0;
+  // Ensure no leftover inline overflow (e.g. from an older code path).
   document.body.style.overflow = "";
 }
 
