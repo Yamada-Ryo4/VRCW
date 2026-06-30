@@ -354,10 +354,10 @@
             </div>
 
             <!-- ── Search Panel (avtrDB) ── -->
-            <div id="searchPanel" class="upload-panel">
-                <div class="upload-area" style="max-width:100%;padding:0;">
+            <div id="searchPanel" class="download-panel">
+                <div class="grid-area" style="display:flex;flex-direction:column;overflow:clip;padding:0;">
                     <!-- Search bar -->
-                    <div class="search-container-premium">
+                    <div class="search-container-premium" style="flex-shrink:0;">
                         <div class="search-box-glass">
                             <div class="search-category-select">
                                 <div class="glass-select" id="catGlassSelect" onclick="toggleGlassSelect(event, this)">
@@ -418,7 +418,7 @@
                         </div>
                     </div>
                     <!-- Stats + Sort -->
-                    <div style="display:flex;align-items:center;gap:12px;padding:8px 24px;flex-wrap:wrap;">
+                    <div style="display:flex;align-items:center;gap:12px;padding:8px 24px;flex-wrap:wrap;flex-shrink:0;">
                         <div id="avtrdbStats" style="font-size:0.8em;color:rgba(255,255,255,0.4);flex:1;min-width:120px;"></div>
                         <div id="avtrdbSortBtns" class="sort-chips">
                             <span style="font-size:0.72em;color:var(--text-muted);margin-right:2px;">排序</span>
