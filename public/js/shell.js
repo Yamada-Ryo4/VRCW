@@ -693,7 +693,7 @@ function switchTab(tab) {
               if (tab === key) {
                   const iframe = document.getElementById('datingIframe');
                   if (iframe && iframe.contentWindow) {
-                      iframe.contentWindow.postMessage({ type: 'tabActivated' }, '*');
+                      iframe.contentWindow.postMessage({ type: 'tabActivated' }, location.origin);
                   }
               }
           }
