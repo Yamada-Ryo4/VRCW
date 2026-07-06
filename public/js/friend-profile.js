@@ -136,7 +136,7 @@ function _renderFriendProfileUI(f, modal) {
     }
   }
   const platb = document.getElementById('fpPlatformBadge');
-  if (platb) platb.textContent = getPlatformEmoji(f.last_platform);
+  if (platb) platb.innerHTML = getPlatformEmoji(f.last_platform);
 
   const showcased = (f.badges||[]).filter(b=>b.showcased).slice(0,8);
   const bdRow = document.getElementById('fpBadgesRow');
