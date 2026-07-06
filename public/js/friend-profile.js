@@ -170,7 +170,7 @@ function _renderFriendProfileUI(f, modal) {
       const btns = isJoinable ? `
         <button onclick="inviteSelf('${escJsAttr(f.location)}')" class="btn btn-xs" style="background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);padding:2px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;margin-left:8px;vertical-align:middle;" title="${t('friend.inviteSelfTitle')}"><i class="fa-solid fa-envelope"></i> ${t('friend.inviteSelf')}</button>
       ` : '';
-      fpWorldInfo.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(f.location)}'); event.preventDefault();" style="color:inherit;text-decoration:none;border-bottom:1px dashed var(--accent-light);vertical-align:middle;">${escHtml(txt)}</a>` + isMineTag + btns; 
+      fpWorldInfo.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(f.location)}'); event.preventDefault();" style="color:inherit;text-decoration:none;border-bottom:1px dashed var(--accent-light);vertical-align:middle;">${txt}</a>` + isMineTag + btns; 
     }).catch(()=>{ fpWorldInfo.innerHTML = escHtml(f.location||'') + isMineTag; });
   }
 
