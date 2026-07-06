@@ -120,7 +120,7 @@ function processImageQueue() {
           if (!wrapper.dataset.retryWired) {
             wrapper.dataset.retryWired = '1';
             wrapper.style.cursor = 'pointer';
-            wrapper.title = '点击重试加载';
+            wrapper.title = t('image.clickToRetry');
             const onRetryClick = (e) => {
               e.stopPropagation();
               wrapper.classList.remove('img-failed');

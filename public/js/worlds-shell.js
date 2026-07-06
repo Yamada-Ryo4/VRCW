@@ -81,7 +81,7 @@ function _callWorld(name, args) {
     return fn.apply(window, args);
   }).catch(err => {
     console.error(err);
-    showToast('世界模块加载失败: ' + err.message, 'error');
+    showToast(t('toast.worldModuleLoadFail', {msg: err.message}), 'error');
   });
 }
 

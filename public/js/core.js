@@ -304,7 +304,7 @@ async function rememberAvatarDetailSnapshot(av) {
   });
   try { await idb.set('avatar_detail_' + id, snapshot); } catch (_) {}
   const name = snapshot.name || snapshot.avatarName || snapshot.lastKnownName;
-  if (name && !String(name).startsWith('失效模型')) persistName(id, name);
+  if (name && !String(name).startsWith(t('fav.invalidPrefix'))) persistName(id, name);
 }
 
 async function findCachedAvatarSnapshot(id) {
@@ -572,13 +572,13 @@ async function syncLocalFavorites() {
     localAvatarIdMap.clear();
     localAvatarFavs.forEach(av => localAvatarIdMap.set(av.id, true));
     const btn = document.getElementById("cat-local");
-    if (btn) btn.innerHTML = `<i class="fa-solid fa-star"></i> 本地收藏 (${localAvatarFavs.length}/200)`;
+    if (btn) btn.innerHTML = t('fav.localCount', {count: localAvatarFavs.length});
   } catch(e) { console.error("syncLocalFavorites", e); }
 }
 
 async function saveToLocalFavorite(av) {
   if (localAvatarFavs.length >= 200) {
-    alert("本地收藏已满 (上限 200)。请删除一些再添加。");
+    alert(t('toast.localFavFull'));
     return;
   }
   if (localAvatarIdMap.has(av.id)) return;
@@ -593,10 +593,10 @@ async function saveToLocalFavorite(av) {
     const fq = card.querySelector('.card-fav-quick');
     if (fq) {
       fq.innerHTML = '<i class="fa-solid fa-star"></i> ';
-      fq.title = '已收藏';
+      fq.title = t('fav.favorited');
     }
   }
-  logMsg(`<i class="fa-solid fa-check"></i> 已保存到本地收藏: ${av.name}`, "info");
+  logMsg(t('toast.savedToLocal', {name: av.name}), "info");
   // Refresh the detail modal button if it's showing this avatar
   if (typeof _refreshDetailAfterFavChange === 'function') _refreshDetailAfterFavChange(av.id);
 }
@@ -607,7 +607,7 @@ async function removeFromLocalFavorite(id) {
   // the entry silently.
   const av = localAvatarFavs.find(a => a.id === id);
   const name = av?.name || id;
-  if (!confirm(`确定要从本地收藏中移除「${name}」吗？`)) return;
+  if (!confirm(t('confirm.removeLocalFav', {name}))) return;
   localAvatarFavs = localAvatarFavs.filter(a => a.id !== id);
   localAvatarIdMap.delete(id);
   // Drop from any pending bulk selection too — leaving it here makes the
@@ -625,7 +625,7 @@ async function removeFromLocalFavorite(id) {
     const totalChip = document.getElementById('statTotal');
     if (totalChip) totalChip.textContent = String(localAvatarFavs.length);
   }
-  logMsg(`🗑️ 已从本地收藏移除`, "info");
+  logMsg(t('toast.removedFromLocal'), "info");
   // Refresh the detail modal button if it's showing this avatar
   if (typeof _refreshDetailAfterFavChange === 'function') _refreshDetailAfterFavChange(id);
 }
@@ -691,8 +691,8 @@ function parseAttrJson(str) {
 function copyToClipboard(text, label) {
   const value = String(text == null ? "" : text);
   const done = () => {
-    try { logMsg((label || "已复制") + ": " + value, "info"); } catch {}
-    try { showToast((label || "已复制") + " ✓"); } catch {}
+    try { logMsg(t('toast.copiedWithLabel', {label: label || t('toast.copied'), value}), "info"); } catch {}
+    try { showToast(t('toast.copiedCheck', {label: label || t('toast.copied')})); } catch {}
   };
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(value).then(done).catch(() => fallbackCopy(value, done));
@@ -713,7 +713,7 @@ function fallbackCopy(value, onOk) {
     document.body.removeChild(ta);
     if (onOk) onOk();
   } catch (e) {
-    alert("复制失败，请手动复制：\n" + value);
+    alert(t('toast.copyFail', {value}));
   }
 }
 
@@ -1059,246 +1059,6 @@ function getEmojiAnimMeta(f) {
   return { frames, fps: fps || 10, loopStyle: loopStyle || 'linear' };
 }
 
-// ── i18n ──
-const I18N = {
-  en: {
-    loginSubtitle: "Sign in with your VRChat account",
-    labelUser: "Username or Email",
-    labelPass: "Password",
-    btnSignIn: "Sign In",
-    tfa2faRequired: "Two-factor authentication required",
-    labelCode: "Verification Code",
-    btnVerify: "Verify",
-    tabDownload: "Mine",
-    tabUpload: "Upload",
-    btnSignOut: "Sign Out",
-    statTotal: "Total",
-    statSelected: "Selected",
-    actions: "Actions",
-    btnSelectAll: "Select All",
-    btnDownload: "Download Selected",
-    btnRefresh: "Refresh",
-    console: "Console",
-    ready: "Ready.",
-    btnPickDir: "Choose Save Location",
-    dirNotSupported: "Your browser does not support directory picker",
-    dirSelected: "Save to: ",
-    dirCleared: "Save location cleared, using browser default",
-    downloading: "Downloading",
-    uploadMode: "Upload Mode",
-    modeNew: "Create New",
-    modeUpdate: "Update Existing",
-    dropText: "Click or drag .vrca files here",
-    dropHint: "Max 500 MB per file",
-    avatarName: "Avatar Name",
-    selectAvatar: "Select Avatar to Update",
-    btnUpload: "Upload",
-    uploading: "Uploading...",
-    uploadOk: "Upload successful!",
-    uploadFail: "Upload failed: ",
-    confirmDelete: "Are you sure you want to delete this avatar?\n\n",
-    deleted: "Deleted ",
-    deleteFail: "Failed to delete: ",
-    editTitle: "Edit Avatar",
-    editDesc: "Description",
-    editStatus: "Release Status",
-    editTags: "Tags (comma separated)",
-    btnCancel: "Cancel",
-    btnSave: "Save",
-    editSuccess: "Successfully updated ",
-    editFail: "Failed to update: ",
-    category: "Category",
-    catMine: "My Avatars",
-    catFav1: "Favorites 1",
-    searchPlaceholder: "Search name, desc, tags...",
-    filterAllStatus: "All Status",
-    filterPublic: "Public",
-    filterPrivate: "Private",
-    filterAllPlatform: "All Platforms",
-    filterCross: "Cross-Platform",
-    filterPC: "Contains PC",
-    filterQuest: "Contains Quest",
-    filterApple: "Contains Apple",
-    filterPCQuest: "PC + Quest",
-    filterPCQuestApple: "PC + Quest + Apple",
-    filterPCQuestAppleShort: "PC + Q + A",
-    editName: "Resource Name",
-    friendSortStatus: "Sort by Status",
-    friendSortName: "Sort by Name",
-    friendSortActivity: "Recently Active",
-    myProfile: "My Profile",
-    coLocatedFriends: "Friends here",
-    loading: "Loading...",
-  },
-  zh: {
-    loginSubtitle: "使用 VRChat 账号登录",
-    labelUser: "用户名或邮箱",
-    labelPass: "密码",
-    btnSignIn: "登录",
-    tfa2faRequired: "需要两步验证",
-    labelCode: "验证码",
-    btnVerify: "验证",
-    tabDownload: "我的",
-    tabUpload: "上传",
-    btnSignOut: "退出登录",
-    statTotal: "总数",
-    statSelected: "已选",
-    actions: "操作",
-    btnSelectAll: "全选",
-    btnDownload: "下载选中",
-    btnRefresh: "刷新",
-    console: "控制台",
-    ready: "就绪。",
-    btnPickDir: "选择保存位置",
-    dirNotSupported: "您的浏览器不支持选择文件夹",
-    dirSelected: "保存到：",
-    dirCleared: "已清除保存位置，使用浏览器默认下载",
-    downloading: "下载中",
-    uploadMode: "上传模式",
-    modeNew: "新建",
-    modeUpdate: "更新已有",
-    dropText: "点击或拖拽 .vrca 文件到这里",
-    dropHint: "每个文件最大 500 MB",
-    avatarName: "模型名称",
-    selectAvatar: "选择要更新的模型",
-    btnUpload: "上传",
-    uploading: "上传中...",
-    uploadOk: "上传成功！",
-    uploadFail: "上传失败：",
-    confirmDelete: "确定要删除此模型吗？（这会将其从此列表中隐藏）\n\n",
-    deleted: "已删除 ",
-    deleteFail: "删除失败：",
-    editTitle: "编辑模型信息",
-    editDesc: "描述",
-    editStatus: "发布状态",
-    editTags: "标签 (逗号分隔)",
-    btnCancel: "取消",
-    btnSave: "保存",
-    editSuccess: "成功更新 ",
-    editFail: "更新失败：",
-    category: "分类",
-    catMine: "我的模型",
-    catFav1: "收藏夹 1",
-    searchPlaceholder: "搜索名称、简介、标签...",
-    filterAllStatus: "所有状态",
-    filterPublic: "公开",
-    filterPrivate: "私有",
-    filterAllPlatform: "所有平台",
-    filterCross: "双端兼容 (PC+Quest)",
-    filterPC: "含 PC",
-    filterQuest: "含 Quest",
-    filterApple: "含 Apple",
-    filterPCQuest: "含 PC + Quest",
-    filterPCQuestApple: "PC + Quest + Apple",
-    filterPCQuestAppleShort: "PC + Q + A",
-    editName: "资源名称",
-    friendSortStatus: "在线优先",
-    friendSortName: "名字 A→Z",
-    friendSortActivity: "最近活跃",
-    myProfile: "我的资料",
-    coLocatedFriends: "在此实例的好友",
-    loading: "加载中...",
-  },
-  ja: {
-    loginSubtitle: "VRChatアカウントでログイン",
-    labelUser: "ユーザー名またはメール",
-    labelPass: "パスワード",
-    btnSignIn: "サインイン",
-    tfa2faRequired: "二段階認証が必要です",
-    labelCode: "認証コード",
-    btnVerify: "認証",
-    tabDownload: "マイアバター",
-    tabUpload: "アップロード",
-    btnSignOut: "サインアウト",
-    statTotal: "合計",
-    statSelected: "選択済み",
-    actions: "アクション",
-    btnSelectAll: "全選択",
-    btnDownload: "選択をダウンロード",
-    btnRefresh: "更新",
-    console: "コンソール",
-    ready: "準備完了。",
-    btnPickDir: "保存先を選択",
-    dirNotSupported: "お使いのブラウザはフォルダ選択に対応していません",
-    dirSelected: "保存先：",
-    dirCleared: "保存先をクリアしました。ブラウザのデフォルトを使用します",
-    downloading: "ダウンロード中",
-    uploadMode: "アップロードモード",
-    modeNew: "新規作成",
-    modeUpdate: "既存を更新",
-    dropText: ".vrcaファイルをここにドラッグ",
-    dropHint: "最大500MB",
-    avatarName: "アバター名",
-    selectAvatar: "更新するアバターを選択",
-    btnUpload: "アップロード",
-    uploading: "アップロード中...",
-    uploadOk: "アップロード成功！",
-    uploadFail: "アップロード失敗：",
-    confirmDelete: "このアバターを削除してもよろしいですか？\n\n",
-    deleted: "削除しました ",
-    deleteFail: "削除に失敗しました：",
-    editTitle: "アバターを編集",
-    editDesc: "説明",
-    editStatus: "公開ステータス",
-    editTags: "タグ (カンマ区切り)",
-    btnCancel: "キャンセル",
-    btnSave: "保存",
-    editSuccess: "更新しました ",
-    editFail: "更新に失敗しました：",
-    category: "カテゴリー",
-    catMine: "マイアバター",
-    catFav1: "お気に入り 1",
-    searchPlaceholder: "名前、説明、タグを検索...",
-    filterAllStatus: "すべての状態",
-    filterPublic: "公開",
-    filterPrivate: "非公開",
-    filterAllPlatform: "すべてのプラットフォーム",
-    filterCross: "クロスプラットフォーム",
-    friendSortStatus: "オンライン優先",
-    friendSortName: "名前順",
-    friendSortActivity: "最近のアクティビティ",
-    myProfile: "マイプロフィール",
-    coLocatedFriends: "このインスタンスのフレンド",
-    loading: "読み込み中...",
-  },
-};
-
-function t(key) {
-  return (I18N[currentLang] || I18N.en)[key] || I18N.en[key] || key;
-}
-
-function setLang(lang) {
-  currentLang = lang;
-  localStorage.setItem("vrc_lang", lang);
-  applyI18n();
-
-  // Update <html lang> so screen readers, search engines and browser
-  // translation features know which language the page actually uses.
-  // (Static lang="zh" was just the initial default.)
-  const htmlLangMap = { en: 'en', zh: 'zh-CN', ja: 'ja' };
-  if (htmlLangMap[lang]) document.documentElement.lang = htmlLangMap[lang];
-
-  document.querySelectorAll(".lang-btn").forEach((b) =>
-    b.classList.toggle(
-      "active",
-      b.textContent.trim() ===
-        ({ en: "EN", zh: "中文", ja: "日本語" }[lang] || "")
-    )
-  );
-}
-
-function applyI18n(root = document) {
-  root.querySelectorAll("[data-i18n]").forEach((el) => {
-    const key = el.getAttribute("data-i18n");
-    const val = t(key);
-    if (val) el.textContent = val;
-  });
-  root.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
-    const key = el.getAttribute("data-i18n-placeholder");
-    const val = t(key);
-    if (val) el.placeholder = val;
-  });
-}
 
 // ── API Helper ──
 let currentTabAbortController = null;

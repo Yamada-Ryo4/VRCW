@@ -18,7 +18,7 @@ function _callSearch(name, args) {
     return fn.apply(window, args);
   }).catch(err => {
     console.error(err);
-    showToast('搜索模块加载失败: ' + err.message, 'error');
+    showToast(t('toast.searchModuleLoadFail', {msg: err.message}), 'error');
   });
 }
 

@@ -88,9 +88,9 @@
             </div>
             <div id="loginplace-section" style="display:none;margin-top:16px;padding:16px;background:rgba(255,200,0,0.1);border:1px solid rgba(255,200,0,0.4);border-radius:12px;text-align:center;">
                 <div style="font-size:1.5em;margin-bottom:8px;">📧</div>
-                <div style="font-weight:600;margin-bottom:6px;">需要验证新设备</div>
-                <div style="font-size:0.88em;opacity:0.85;line-height:1.5;">VRChat 已向您的邮箱发送了一封验证邮件。<br>请点击邮件中的链接完成验证，<br>然后重新点击「登录」按钮。</div>
-                <button onclick="document.getElementById('loginplace-section').style.display='none';doLogin()" class="btn btn-primary btn-block" style="margin-top:12px;">重新登录</button>
+                <div style="font-weight:600;margin-bottom:6px;" data-i18n="needVerifyDevice">需要验证新设备</div>
+                <div style="font-size:0.88em;opacity:0.85;line-height:1.5;" data-i18n-html="needVerifyDeviceDesc">VRChat 已向您的邮箱发送了一封验证邮件。<br>请点击邮件中的链接完成验证，<br>然后重新点击「登录」按钮。</div>
+                <button onclick="document.getElementById('loginplace-section').style.display='none';doLogin()" class="btn btn-primary btn-block" style="margin-top:12px;" data-i18n="btnReLogin">重新登录</button>
             </div>
             <div style="text-align:center;margin-top:16px;">
                 <div class="lang-switch">
@@ -120,37 +120,37 @@
                         <span class="app-title">VRCW</span>
                         <span class="app-version" id="appVersionBadge">v118</span>
                     </div>
-                    <button class="nav-collapse-btn" onclick="toggleGlobalNav()" title="收起">&#8249;</button>
+                    <button class="nav-collapse-btn" onclick="toggleGlobalNav()" title="收起" data-i18n-title="nav.collapse">&#8249;</button>
                 </div>
                 <div class="global-nav-items">
                     <button class="nav-item active" onclick="switchTab('download')" data-tab="download" id="navItemDownload">
-                        <i class="nav-icon fa-solid fa-image"></i><span class="nav-label">模型</span>
+                        <i class="nav-icon fa-solid fa-image"></i><span class="nav-label" data-i18n="nav.avatars">模型</span>
                     </button>
                     <button class="nav-item" onclick="switchTab('friends')" data-tab="friends" id="navItemFriends">
-                        <i class="nav-icon fa-solid fa-user-group"></i><span class="nav-label">好友</span>
+                        <i class="nav-icon fa-solid fa-user-group"></i><span class="nav-label" data-i18n="nav.friends">好友</span>
                     </button>
                     <button class="nav-item" onclick="switchTab('worlds')" data-tab="worlds" id="navItemWorlds">
-                        <i class="nav-icon fa-solid fa-earth-americas"></i><span class="nav-label">世界</span>
+                        <i class="nav-icon fa-solid fa-earth-americas"></i><span class="nav-label" data-i18n="nav.worlds">世界</span>
                     </button>
                     <div style="height:1px;background:var(--border);margin:4px 0;"></div>
                     <button class="nav-item" onclick="switchTab('groups')" data-tab="groups" id="navItemGroups">
-                        <i class="nav-icon fa-solid fa-house"></i><span class="nav-label">群组</span>
+                        <i class="nav-icon fa-solid fa-house"></i><span class="nav-label" data-i18n="nav.groups">群组</span>
                     </button>
                     <button class="nav-item" onclick="switchTab('upload')" data-tab="upload" id="navItemUpload">
-                        <i class="nav-icon fa-solid fa-cloud-arrow-up"></i><span class="nav-label">上传</span>
+                        <i class="nav-icon fa-solid fa-cloud-arrow-up"></i><span class="nav-label" data-i18n="nav.upload">上传</span>
                     </button>
                     <button class="nav-item" onclick="switchTab('assets')" data-tab="assets" id="navItemAssets">
-                        <i class="nav-icon fa-solid fa-coins"></i><span class="nav-label">资产</span>
+                        <i class="nav-icon fa-solid fa-coins"></i><span class="nav-label" data-i18n="nav.assets">资产</span>
                     </button>
                     <button class="nav-item" onclick="switchTab('search')" data-tab="search" id="navItemSearch">
-                        <i class="nav-icon fa-solid fa-magnifying-glass"></i><span class="nav-label">搜索</span>
+                        <i class="nav-icon fa-solid fa-magnifying-glass"></i><span class="nav-label" data-i18n="nav.search" data-i18n="search.btn">搜索</span>
                     </button>
                     <button class="nav-item" onclick="switchTab('dating')" data-tab="dating" id="navItemDating" style="display: none;">
-                        <i class="nav-icon fa-solid fa-heart" style="color: #ff4757;"></i><span class="nav-label" style="color: #ff4757; font-weight: bold;">E了吗</span>
+                        <i class="nav-icon fa-solid fa-heart" style="color: #ff4757;"></i><span class="nav-label" style="color: #ff4757; font-weight: bold;" data-i18n="nav.dating">E了吗</span>
                     </button>
                     <div style="height:1px;background:var(--border);margin:4px 0;"></div>
                     <button class="nav-item" onclick="switchTab('settings')" data-tab="settings" id="navItemSettings">
-                        <i class="nav-icon fa-solid fa-gear"></i><span class="nav-label">高级设置</span>
+                        <i class="nav-icon fa-solid fa-gear"></i><span class="nav-label" data-i18n="nav.settings">高级设置</span>
                     </button>
                 </div>
                 <div class="global-nav-footer">
@@ -164,19 +164,19 @@
             </nav>
             <!-- Collapsed nav (icon only) -->
             <div class="global-nav-collapsed hidden" id="globalNavCollapsed">
-                <button class="nav-collapse-btn" onclick="toggleGlobalNav()" title="展开" style="margin:8px auto;">&#8250;</button>
-                <button class="nav-item-icon" onclick="switchTab('download')" data-tab="download" id="navIconDownload" title="模型"><i class="fa-solid fa-image"></i> </button>
-                <button class="nav-item-icon" onclick="switchTab('friends')" data-tab="friends" id="navIconFriends" title="好友"><i class="fa-solid fa-users"></i> </button>
-                <button class="nav-item-icon" onclick="switchTab('worlds')" data-tab="worlds" id="navIconWorlds" title="世界"><i class="fa-solid fa-earth-americas"></i> </button>
+                <button class="nav-collapse-btn" onclick="toggleGlobalNav()" data-i18n-title="nav.expand" title="展开" style="margin:8px auto;">&#8250;</button>
+                <button class="nav-item-icon" onclick="switchTab('download')" data-tab="download" id="navIconDownload" data-i18n-title="nav.avatars" title="模型"><i class="fa-solid fa-image"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('friends')" data-tab="friends" id="navIconFriends" data-i18n-title="nav.friends" title="好友"><i class="fa-solid fa-users"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('worlds')" data-tab="worlds" id="navIconWorlds" data-i18n-title="nav.worlds" title="世界"><i class="fa-solid fa-earth-americas"></i> </button>
                 <hr style="width:70%;border-color:var(--border);margin:2px 0;">
-                <button class="nav-item-icon" onclick="switchTab('groups')" data-tab="groups" id="navIconGroups" title="群组"><i class="fa-solid fa-house"></i> </button>
-                <button class="nav-item-icon" onclick="switchTab('upload')" data-tab="upload" id="navIconUpload" title="上传"><i class="fa-solid fa-upload"></i> </button>
-                <button class="nav-item-icon" onclick="switchTab('assets')" data-tab="assets" id="navIconAssets" title="资产"><i class="fa-solid fa-sack-dollar"></i> </button>
-                <button class="nav-item-icon" onclick="switchTab('search')" data-tab="search" id="navIconSearch" title="搜索"><i class="fa-solid fa-magnifying-glass"></i> </button>
-                <button class="nav-item-icon" onclick="switchTab('dating')" data-tab="dating" id="navIconDating" title="E了吗" style="display: none;"><i class="fa-solid fa-heart"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('groups')" data-tab="groups" id="navIconGroups" data-i18n-title="nav.groups" title="群组"><i class="fa-solid fa-house"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('upload')" data-tab="upload" id="navIconUpload" data-i18n-title="nav.upload" title="上传"><i class="fa-solid fa-upload"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('assets')" data-tab="assets" id="navIconAssets" data-i18n-title="nav.assets" title="资产"><i class="fa-solid fa-sack-dollar"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('search')" data-tab="search" id="navIconSearch" data-i18n-title="nav.search" title="搜索"><i class="fa-solid fa-magnifying-glass"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('dating')" data-tab="dating" id="navIconDating" data-i18n-title="nav.dating" title="E了吗" style="display: none;"><i class="fa-solid fa-heart"></i> </button>
                 <hr style="width:70%;border-color:var(--border);margin:2px 0;">
-                <button class="nav-item-icon" onclick="switchTab('settings')" data-tab="settings" id="navIconSettings" title="高级设置"><i class="fa-solid fa-gear"></i> </button>
-                <button class="nav-item-icon" onclick="doLogout()" title="退出" style="margin-top:auto;color:var(--error);"><i class="fa-solid fa-right-from-bracket"></i> </button>
+                <button class="nav-item-icon" onclick="switchTab('settings')" data-tab="settings" id="navIconSettings" data-i18n-title="nav.settings" title="高级设置"><i class="fa-solid fa-gear"></i> </button>
+                <button class="nav-item-icon" onclick="doLogout()" data-i18n-title="nav.logout" title="退出" style="margin-top:auto;color:var(--error);"><i class="fa-solid fa-right-from-bracket"></i> </button>
             </div>
 
         <div class="main-content">
@@ -209,8 +209,8 @@
                         <div class="btn-group">
                             <button onclick="selectAll()" class="btn btn-secondary btn-block"
                                 id="btnSelectAll" data-i18n="btnSelectAll">Select All</button>
-                            <button onclick="cleanInvalidFavorites()" id="btnCleanFavs" class="btn btn-warning btn-block hidden">清理失效模型</button>
-                            <button onclick="unfavoriteSelected()" id="btnUnfavoriteSelected" class="btn btn-danger-full btn-block hidden">取消选中收藏</button>
+                            <button onclick="cleanInvalidFavorites()" id="btnCleanFavs" class="btn btn-warning btn-block hidden" data-i18n="btnCleanFavs">清理失效模型</button>
+                            <button onclick="unfavoriteSelected()" id="btnUnfavoriteSelected" class="btn btn-danger-full btn-block hidden" data-i18n="btnUnfavoriteSelected">取消选中收藏</button>
                             <div class="save-dir-group" id="saveDirGroup">
                                 <button onclick="pickSaveDir()" class="btn btn-secondary btn-block"
                                     data-i18n="btnPickDir">Choose Save Location</button>
@@ -275,8 +275,8 @@
                     <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.4);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;">
                         <span style="font-size:1.4em;flex-shrink:0;"><i class="fa-solid fa-ban"></i> </span>
                         <div>
-                            <div style="color:#ef4444;font-weight:600;font-size:0.9em;margin-bottom:4px;">上传功能不可用 / Upload Unavailable</div>
-                            <div style="color:rgba(255,255,255,0.5);font-size:0.78em;line-height:1.5;">由于 VRChat 的限制，.vrca 文件无法通过网页直接上传。<br>Due to VRChat restrictions, .vrca files cannot be uploaded directly via web.</div>
+                            <div style="color:#ef4444;font-weight:600;font-size:0.9em;margin-bottom:4px;" data-i18n="uploadUnavailable">上传功能不可用 / Upload Unavailable</div>
+                            <div style="color:rgba(255,255,255,0.5);font-size:0.78em;line-height:1.5;" data-i18n-html="uploadUnavailableDesc">由于 VRChat 的限制，.vrca 文件无法通过网页直接上传。<br>Due to VRChat restrictions, .vrca files cannot be uploaded directly via web.</div>
                         </div>
                     </div>
                     <div class="upload-form">
@@ -362,33 +362,33 @@
                             <div class="search-category-select">
                                 <div class="glass-select" id="catGlassSelect" onclick="toggleGlassSelect(event, this)">
                                     <div class="glass-select-trigger">
-                                        <span class="selected-label">模型 (Avatar)</span>
+                                        <span class="selected-label" data-i18n="search.category.avatars">模型 (Avatar)</span>
                                         <span class="chevron">▼</span>
                                     </div>
                                     <div class="glass-select-options">
-                                        <div class="glass-option selected" onclick="selectGlassOption(event, this, 'avatars', 'onSearchCategoryChange')">模型 (Avatar)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'users', 'onSearchCategoryChange')">玩家 (User)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'worlds', 'onSearchCategoryChange')">世界 (World)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'groups', 'onSearchCategoryChange')">群组 (Group)</div>
+                                        <div class="glass-option selected" onclick="selectGlassOption(event, this, 'avatars', 'onSearchCategoryChange')" data-i18n="search.category.avatars">模型 (Avatar)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'users', 'onSearchCategoryChange')" data-i18n="search.category.users">玩家 (User)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'worlds', 'onSearchCategoryChange')" data-i18n="search.category.worlds">世界 (World)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'groups', 'onSearchCategoryChange')" data-i18n="search.category.groups">群组 (Group)</div>
                                     </div>
                                     <input type="hidden" id="searchCategory" value="avatars">
                                 </div>
                             </div>
                             <div class="search-box-divider"></div>
-                            <input type="text" id="avtrdbSearch" placeholder="搜索模型、玩家、世界..." oninput="onAvtrdbInput()" onkeydown="if(event.key==='Enter')doAvtrdbSearch()">
+                            <input type="text" id="avtrdbSearch" data-i18n-placeholder="search.placeholder.avtrdb" placeholder="搜索模型、玩家、世界..." oninput="onAvtrdbInput()" onkeydown="if(event.key==='Enter')doAvtrdbSearch()">
                             <div class="search-box-divider mobile-hide"></div>
                             <div class="search-match-field-select">
                                 <div class="glass-select" id="fieldGlassSelect" onclick="toggleGlassSelect(event, this)" style="min-width:140px;">
                                     <div class="glass-select-trigger">
-                                        <span class="selected-label">全部字段</span>
+                                        <span class="selected-label" data-i18n="search.field.all">全部字段</span>
                                         <span class="chevron">▼</span>
                                     </div>
                                     <div class="glass-select-options">
-                                        <div class="glass-option selected" data-field="all" onclick="selectGlassOption(event, this, 'all', 'setAvtrdbMatchField')">全部字段</div>
-                                        <div class="glass-option" data-field="title" onclick="selectGlassOption(event, this, 'title', 'setAvtrdbMatchField')">标题</div>
-                                        <div class="glass-option" data-field="author" onclick="selectGlassOption(event, this, 'author', 'setAvtrdbMatchField')">作者</div>
+                                        <div class="glass-option selected" data-field="all" onclick="selectGlassOption(event, this, 'all', 'setAvtrdbMatchField')" data-i18n="search.field.all">全部字段</div>
+                                        <div class="glass-option" data-field="title" onclick="selectGlassOption(event, this, 'title', 'setAvtrdbMatchField')" data-i18n="search.field.title">标题</div>
+                                        <div class="glass-option" data-field="author" onclick="selectGlassOption(event, this, 'author', 'setAvtrdbMatchField')" data-i18n="search.field.author">作者</div>
                                         <div class="glass-option" data-field="tags" onclick="selectGlassOption(event, this, 'tags', 'setAvtrdbMatchField')">Tag</div>
-                                        <div class="glass-option" data-field="desc" onclick="selectGlassOption(event, this, 'desc', 'setAvtrdbMatchField')">描述</div>
+                                        <div class="glass-option" data-field="desc" onclick="selectGlassOption(event, this, 'desc', 'setAvtrdbMatchField')" data-i18n="search.field.desc">描述</div>
                                     </div>
                                     <input type="hidden" id="avtrdbMatchField" value="all">
                                 </div>
@@ -397,7 +397,7 @@
                             <div class="search-platform-select">
                                 <div class="glass-select" id="platGlassSelect" onclick="toggleGlassSelect(event, this)" style="min-width:140px;">
                                     <div class="glass-select-trigger">
-                                        <span class="selected-label">所有平台 (All)</span>
+                                        <span class="selected-label" data-i18n="search.platform.all">所有平台 (All)</span>
                                         <span class="chevron">▼</span>
                                     </div>
                                     <div class="glass-select-options">
@@ -413,7 +413,7 @@
                             </div>
                             <button id="btnSearchMain" class="search-btn-premium" onclick="doAvtrdbSearch()">
                                 <span class="search-btn-icon"><i class="fa-solid fa-magnifying-glass"></i> </span>
-                                <span class="search-btn-text">搜索</span>
+                                <span class="search-btn-text" data-i18n="search.btn">搜索</span>
                             </button>
                         </div>
                     </div>
@@ -421,10 +421,10 @@
                     <div style="display:flex;align-items:center;gap:12px;padding:8px 24px;flex-wrap:wrap;flex-shrink:0;">
                         <div id="avtrdbStats" style="font-size:0.8em;color:rgba(255,255,255,0.4);flex:1;min-width:120px;"></div>
                         <div id="avtrdbSortBtns" class="sort-chips">
-                            <span style="font-size:0.72em;color:var(--text-muted);margin-right:2px;">排序</span>
-                            <button class="sort-chip active" data-sort="relevance" onclick="setAvtrdbSort('relevance')">相关度</button>
-                            <button class="sort-chip" data-sort="newest" onclick="setAvtrdbSort('newest')">最新</button>
-                            <button class="sort-chip" data-sort="name" onclick="setAvtrdbSort('name')">名称</button>
+                            <span style="font-size:0.72em;color:var(--text-muted);margin-right:2px;" data-i18n="sort.label">排序</span>
+                            <button class="sort-chip active" data-sort="relevance" onclick="setAvtrdbSort('relevance')" data-i18n="sort.relevance">相关度</button>
+                            <button class="sort-chip" data-sort="newest" onclick="setAvtrdbSort('newest')" data-i18n="sort.newest">最新</button>
+                            <button class="sort-chip" data-sort="name" onclick="setAvtrdbSort('name')" data-i18n="sort.name">名称</button>
                         </div>
                     </div>
                     <!-- Results grid -->
@@ -438,35 +438,35 @@
                 <!-- Sidebar -->
                 <div class="sidebar">
                     <div class="sidebar-section">
-                        <h3>我的资料</h3>
+                        <h3 data-i18n="myProfile">我的资料</h3>
                         <div id="sidebarMyMiniProfile" class="sidebar-mini-profile" onclick="switchFriendCategory('myprofile')">
                           <div class="mini-dot" style="background:#475569"></div>
                           <div style="flex:1;min-width:0;">
-                            <div class="mini-name">加载中...</div>
+                            <div class="mini-name" data-i18n="loading" data-i18n="loading">加载中...</div>
                           </div>
                         </div>
                         <div class="category-list" id="friendCategoryList">
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('myprofile')" id="friendCatMyprofile" style="width:100%;display:none;"><i class="fa-solid fa-user"></i> 完整资料</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('myprofile')" id="friendCatMyprofile" style="width:100%;display:none;"><i class="fa-solid fa-user"></i> <span data-i18n="friend.fullProfile">完整资料</span></button>
                         </div>
                     </div>
                     <div class="sidebar-section">
-                        <h3>好友收藏夹</h3>
+                        <h3 data-i18n="friend.favGroups">好友收藏夹</h3>
                         <div class="category-list" id="friendFavGroupList">
-                            <div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">加载中...</div>
+                            <div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;" data-i18n="loading">加载中...</div>
                         </div>
                     </div>
                     <div class="sidebar-section">
-                        <h3>全部好友</h3>
+                        <h3 data-i18n="friend.allFriends">全部好友</h3>
                         <div class="category-list">
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('all')" id="friendCatAll" style="width:100%;"><i class="fa-solid fa-users"></i> 所有好友</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('online')" id="friendCatOnline" style="width:100%;"><i class="fa-solid fa-circle" style="color: #22c55e;"></i> 仅在线</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('notifications')" id="friendCatNotifications" style="width:100%;"><i class="fa-solid fa-bell"></i> 消息通知</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('modlog')" id="friendCatModlog" style="width:100%;"><i class="fa-solid fa-scroll"></i> 管理记录</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('all')" id="friendCatAll" style="width:100%;"><i class="fa-solid fa-users"></i> <span data-i18n="friend.catAll">所有好友</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('online')" id="friendCatOnline" style="width:100%;"><i class="fa-solid fa-circle" style="color: #22c55e;"></i> <span data-i18n="friend.catOnline">仅在线</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('notifications')" id="friendCatNotifications" style="width:100%;"><i class="fa-solid fa-bell"></i> <span data-i18n="friend.catNotifications">消息通知</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchFriendCategory('modlog')" id="friendCatModlog" style="width:100%;"><i class="fa-solid fa-scroll"></i> <span data-i18n="friend.catModlog">管理记录</span></button>
                         </div>
                     </div>
                     <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;">
-                        <h3>控制台</h3>
-                        <div id="friendConsole" class="log-console"><span class="log-info">就绪。</span></div>
+                        <h3 data-i18n="friend.console">控制台</h3>
+                        <div id="friendConsole" class="log-console"><span class="log-info" data-i18n="ready">就绪。</span></div>
                     </div>
                 </div>
                 <!-- Main content -->
@@ -474,7 +474,7 @@
                     <!-- My Profile view -->
                     <div id="friendMyProfileView" style="flex:1;overflow-y:auto;padding:20px 24px;">
                         <div style="text-align:center;padding:60px;color:rgba(255,255,255,0.3);">
-                            登录后点击「我的资料」加载
+                            <span data-i18n="friend.loginToLoadProfile">登录后点击「我的资料」加载</span>
                         </div>
                     </div>
                     <!-- Friend list view -->
@@ -484,7 +484,7 @@
                             <div class="glass-search-input-pill" style="flex:1; min-width:140px;">
                                 <span style="opacity: 0.5; font-size: 0.9em;"><i class="fa-solid fa-magnifying-glass"></i> </span>
                                 <input type="text" id="friendSearch" class="input-field"
-                                    placeholder="搜索好友 / Search..." oninput="filterFriendsDebounced()">
+                                    data-i18n-placeholder="friend.searchPlaceholder" placeholder="搜索好友 / Search..." oninput="filterFriendsDebounced()">
                             </div>
                             <div class="glass-select" style="min-width: 130px;" onclick="toggleGlassSelect(event, this)">
                                 <div class="glass-select-trigger">
@@ -498,7 +498,7 @@
                                 </div>
                                 <input type="hidden" id="friendSortBy" value="status">
                             </div>
-                            <button class="btn btn-secondary" onclick="fetchCurrentFriendCategory(true)"><i class="fa-solid fa-rotate-right"></i> 刷新</button>
+                            <button class="btn btn-secondary" onclick="fetchCurrentFriendCategory(true)"><i class="fa-solid fa-rotate-right"></i> <span data-i18n="friend.refresh">刷新</span></button>
                         </div>
                         <div id="friendStats" style="padding:6px 24px;font-size:0.8em;color:rgba(255,255,255,0.4);flex-shrink:0;"></div>
                         <div id="friendList" style="padding:0 16px 16px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1;"></div>
@@ -506,21 +506,21 @@
                     <!-- Moderation Log view -->
                     <div id="friendModlogView" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
                         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border);">
-                            <h3 style="margin:0;font-size:1.1em;"><i class="fa-solid fa-scroll"></i> 玩家管理记录</h3>
-                            <button class="btn btn-secondary" style="font-size:0.8em;color:var(--text-danger);" onclick="clearModerationLog()"><i class="fa-solid fa-trash"></i> 清空记录</button>
+                            <h3 style="margin:0;font-size:1.1em;"><i class="fa-solid fa-scroll"></i> <span data-i18n="friend.modlogTitle">玩家管理记录</span></h3>
+                            <button class="btn btn-secondary" style="font-size:0.8em;color:var(--text-danger);" onclick="clearModerationLog()"><i class="fa-solid fa-trash"></i> <span data-i18n="friend.clearModlog">清空记录</span></button>
                         </div>
                         <div id="modLogList" style="flex:1;overflow-y:auto;padding:16px 24px;">
-                            <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无管理记录</div>
+                            <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);" data-i18n="friend.modlogEmpty">暂无管理记录</div>
                         </div>
                     </div>
                     <!-- Notification view -->
                     <div id="friendNotificationsView" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
                         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border);">
-                            <h3 style="margin:0;font-size:1.1em;"><i class="fa-solid fa-bell"></i> 消息通知</h3>
-                            <button class="btn btn-secondary" style="font-size:0.8em;" onclick="seeAllNotifications()"><i class="fa-solid fa-broom"></i> 全部标为已读</button>
+                            <h3 style="margin:0;font-size:1.1em;"><i class="fa-solid fa-bell"></i> <span data-i18n="friend.notificationsTitle">消息通知</span></h3>
+                            <button class="btn btn-secondary" style="font-size:0.8em;" onclick="seeAllNotifications()"><i class="fa-solid fa-broom"></i> <span data-i18n="friend.markAllRead">全部标为已读</span></button>
                         </div>
                         <div id="notificationList" style="flex:1;overflow-y:auto;padding:16px 24px;">
-                            <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无消息通知</div>
+                            <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);" data-i18n="friend.notificationsEmpty">暂无消息通知</div>
                         </div>
                     </div>
                 </div>
@@ -531,30 +531,30 @@
                 <!-- Sidebar -->
                 <div class="sidebar">
                     <div class="sidebar-section">
-                        <h3>收藏夹</h3>
+                        <h3 data-i18n="world.favorites">收藏夹</h3>
                         <div class="category-list" id="worldFavGroupList">
-                            <div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">加载中...</div>
+                            <div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;" data-i18n="loading">加载中...</div>
                         </div>
                     </div>
                     <div class="sidebar-section">
-                        <h3>发现</h3>
+                        <h3 data-i18n="world.discover">发现</h3>
                         <div class="category-list">
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchWorldCategory('recent')" id="worldCatRecent" style="width:100%;"><i class="fa-solid fa-clock"></i> 最近访问</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchWorldCategory('active')" id="worldCatActive" style="width:100%;"><i class="fa-solid fa-fire" style="color: #ff4757;"></i> 热门世界</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchWorldCategory('recent')" id="worldCatRecent" style="width:100%;"><i class="fa-solid fa-clock"></i> <span data-i18n="world.recent">最近访问</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchWorldCategory('active')" id="worldCatActive" style="width:100%;"><i class="fa-solid fa-fire" style="color: #ff4757;"></i> <span data-i18n="world.popular">热门世界</span></button>
                         </div>
                     </div>
                     <div class="sidebar-section">
-                        <h3>操作</h3>
+                        <h3 data-i18n="actions">操作</h3>
                         <div class="btn-group">
-                            <button onclick="selectAllWorlds()" class="btn btn-secondary btn-block" id="btnWorldSelectAll">全选</button>
-                            <button onclick="cleanInvalidWorlds()" id="btnWorldCleanInvalid" class="btn btn-warning btn-block hidden">清理失效世界</button>
-                            <button onclick="unfavoriteSelectedWorlds()" id="btnWorldUnfavoriteSelected" class="btn btn-danger-full btn-block hidden">取消选中收藏</button>
-                            <button onclick="fetchWorlds(currentWorldCategory, true)" class="btn btn-secondary btn-block">刷新</button>
+                            <button onclick="selectAllWorlds()" class="btn btn-secondary btn-block" id="btnWorldSelectAll" data-i18n="world.selectAll">全选</button>
+                            <button onclick="cleanInvalidWorlds()" id="btnWorldCleanInvalid" class="btn btn-warning btn-block hidden" data-i18n="world.cleanInvalid">清理失效世界</button>
+                            <button onclick="unfavoriteSelectedWorlds()" id="btnWorldUnfavoriteSelected" class="btn btn-danger-full btn-block hidden" data-i18n="world.unfavoriteSelected">取消选中收藏</button>
+                            <button onclick="fetchWorlds(currentWorldCategory, true)" class="btn btn-secondary btn-block" data-i18n="friend.refresh">刷新</button>
                         </div>
                     </div>
                     <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;">
-                        <h3>控制台</h3>
-                        <div id="worldConsole" class="log-console"><span class="log-info">就绪。</span></div>
+                        <h3 data-i18n="friend.console">控制台</h3>
+                        <div id="worldConsole" class="log-console"><span class="log-info" data-i18n="ready">就绪。</span></div>
                     </div>
                 </div>
                 <!-- Main content -->
@@ -563,7 +563,7 @@
                         <div class="glass-search-input-pill" style="flex:1; min-width:160px;">
                             <span style="opacity: 0.5; font-size: 0.9em;"><i class="fa-solid fa-magnifying-glass"></i> </span>
                             <input type="text" id="worldSearch" class="input-field"
-                                placeholder="搜索世界 / Search worlds..." oninput="filterWorldsDebounced()">
+                                data-i18n-placeholder="world.searchPlaceholder" placeholder="搜索世界 / Search worlds..." oninput="filterWorldsDebounced()">
                         </div>
                         <div class="glass-select" style="min-width: 140px;" onclick="toggleGlassSelect(event, this)">
                             <div class="glass-select-trigger">
@@ -578,7 +578,7 @@
                             </div>
                             <input type="hidden" id="worldFilterPlatform" value="all">
                         </div>
-                        <button class="btn btn-secondary" onclick="fetchWorlds(currentWorldCategory, true)"><i class="fa-solid fa-rotate-right"></i> 刷新</button>
+                        <button class="btn btn-secondary" onclick="fetchWorlds(currentWorldCategory, true)"><i class="fa-solid fa-rotate-right"></i> <span data-i18n="world.refresh">刷新</span></button>
                     </div>
                     <div id="worldStats" style="padding:6px 24px;font-size:0.8em;color:rgba(255,255,255,0.4);flex-shrink:0;"></div>
                     <div id="worldGrid" class="avatar-grid" style="flex:1;overflow-y:auto;padding:0 16px 16px;"></div>
@@ -589,22 +589,22 @@
             <div id="groupsPanel" class="download-panel">
                 <div class="sidebar">
                     <div class="sidebar-section">
-                        <h3>群组 (Groups)</h3>
+                        <h3 data-i18n="group.title">群组 (Groups)</h3>
                         <div class="btn-group">
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchGroupsCategory('mine')" id="gpCatMine"><i class="fa-solid fa-house"></i> 我创建的</button>
-                            <button class="btn btn-secondary btn-block cat-btn active btn-primary" onclick="switchGroupsCategory('joined')" id="gpCatJoined"><i class="fa-solid fa-clipboard"></i> 已加入的</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchGroupsCategory('mine')" id="gpCatMine"><i class="fa-solid fa-house"></i> <span data-i18n="group.mine">我创建的</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn active btn-primary" onclick="switchGroupsCategory('joined')" id="gpCatJoined"><i class="fa-solid fa-clipboard"></i> <span data-i18n="group.joined">已加入的</span></button>
                         </div>
                     </div>
                     <div class="sidebar-section" style="margin-top:12px;">
-                        <h3>发现</h3>
+                        <h3 data-i18n="world.discover">发现</h3>
                         <div class="btn-group">
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchGroupsCategory('search')" id="gpCatSearch"><i class="fa-solid fa-magnifying-glass"></i> 搜索群组</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchGroupsCategory('search')" id="gpCatSearch"><i class="fa-solid fa-magnifying-glass"></i> <span data-i18n="group.search">搜索群组</span></button>
                         </div>
                     </div>
                 </div>
                 <div class="grid-area" style="padding:20px 24px;overflow-y:auto;" id="groupsContentArea">
-                    <h2 style="font-size:1.3rem;font-weight:600;margin-bottom:16px;"><i class="fa-solid fa-house"></i> 我的群组</h2>
-                    <p style="color:var(--text-muted);font-size:0.85rem;">加载中...</p>
+                    <h2 style="font-size:1.3rem;font-weight:600;margin-bottom:16px;"><i class="fa-solid fa-house"></i> <span data-i18n="group.myGroups">我的群组</span></h2>
+                    <p style="color:var(--text-muted);font-size:0.85rem;" data-i18n="loading">加载中...</p>
                 </div>
             </div>
 
@@ -612,65 +612,65 @@
             <div id="assetsPanel" class="download-panel">
                 <div class="sidebar">
                     <div class="sidebar-section">
-                        <h3><i class="fa-solid fa-sack-dollar"></i> 经济 (Economy)</h3>
+                        <h3><i class="fa-solid fa-sack-dollar"></i> <span data-i18n="assets.economy">经济 (Economy)</span></h3>
                         <div class="btn-group">
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('balance')" id="cat-assets-balance"><i class="fa-solid fa-wallet"></i> 钱包余额</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('store')" id="cat-assets-store"><i class="fa-solid fa-shop"></i> 商店浏览</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('tx')" id="cat-assets-tx"><i class="fa-solid fa-money-bill-transfer"></i> 交易记录</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('sub')" id="cat-assets-sub"><i class="fa-solid fa-star"></i> VRC+ 订阅</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('balance')" id="cat-assets-balance"><i class="fa-solid fa-wallet"></i> <span data-i18n="assets.wallet">钱包余额</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('store')" id="cat-assets-store"><i class="fa-solid fa-shop"></i> <span data-i18n="assets.store">商店浏览</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('tx')" id="cat-assets-tx"><i class="fa-solid fa-money-bill-transfer"></i> <span data-i18n="assets.transactions">交易记录</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('sub')" id="cat-assets-sub"><i class="fa-solid fa-star"></i> <span data-i18n="assets.vrcPlus">VRC+ 订阅</span></button>
                         </div>
                     </div>
                     <div class="sidebar-section" style="margin-top:12px;">
-                        <h3><i class="fa-solid fa-suitcase"></i> 库存 (Inventory)</h3>
+                        <h3><i class="fa-solid fa-suitcase"></i> <span data-i18n="assets.inventory">库存 (Inventory)</span></h3>
                         <div class="btn-group">
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('gallery')" id="cat-assets-gallery"><i class="fa-solid fa-image"></i> VRC+ 相册</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('prints')" id="cat-assets-prints"><i class="fa-solid fa-film"></i> 拍立得照片</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('emoji')" id="cat-assets-emoji"><i class="fa-solid fa-face-smile"></i> 表情与贴纸</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('inventory')" id="cat-assets-inventory"><i class="fa-solid fa-gift"></i> 库存物品</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('props')" id="cat-assets-props"><i class="fa-solid fa-wand-magic-sparkles"></i> 道具 Props</button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('gallery')" id="cat-assets-gallery"><i class="fa-solid fa-image"></i> <span data-i18n="assets.gallery">VRC+ 相册</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('prints')" id="cat-assets-prints"><i class="fa-solid fa-film"></i> <span data-i18n="assets.prints">拍立得照片</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('emoji')" id="cat-assets-emoji"><i class="fa-solid fa-face-smile"></i> <span data-i18n="assets.emoji">表情与贴纸</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('inventory')" id="cat-assets-inventory"><i class="fa-solid fa-gift"></i> <span data-i18n="assets.items">库存物品</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchAssetsPage('props')" id="cat-assets-props"><i class="fa-solid fa-wand-magic-sparkles"></i> <span data-i18n="assets.props">道具 Props</span></button>
                         </div>
                     </div>
                 </div>
             <!-- Assets Panel -->
                 <div class="grid-area" style="padding:20px 24px;overflow-y:auto;" id="assetsContentArea">
-                    <h2 style="font-size:1.4rem;font-weight:600;margin-bottom:16px;"><i class="fa-solid fa-sack-dollar"></i> 资产与经济</h2>
-                    <p style="color:var(--text-muted);font-size:0.85rem;">选择左侧菜单查看你的余额、商店、库存和订阅。</p>
+                    <h2 style="font-size:1.4rem;font-weight:600;margin-bottom:16px;"><i class="fa-solid fa-sack-dollar"></i> <span data-i18n="assets.title">资产与经济</span></h2>
+                    <p style="color:var(--text-muted);font-size:0.85rem;"><span data-i18n="assets.intro">选择左侧菜单查看你的余额、商店、库存和订阅。</span></p>
                 </div>
             </div>
 
             <div id="settingsPanel" class="download-panel hidden">
                 <div class="sidebar">
                     <div class="sidebar-section">
-                        <h3><i class="fa-solid fa-gear"></i> 高级设置</h3>
+                        <h3><i class="fa-solid fa-gear"></i> <span data-i18n="settings.advanced">高级设置</span></h3>
                         <div class="btn-group">
-                            <button class="btn btn-secondary btn-block cat-btn active" onclick="switchSettingsPage('cache')" id="setCatCache"><i class="fa-solid fa-trash"></i> 缓存管理</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('join')" id="setCatJoin"><i class="fa-solid fa-rocket"></i> 加入偏好</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('dating')" id="setCatDating" style="color: #f43f5e; border-color: rgba(244,63,94,0.3);"><i class="fa-solid fa-heart"></i> E了吗 (18+)</button>
-                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('about')" id="setCatAbout">ℹ️ 关于</button>
+                            <button class="btn btn-secondary btn-block cat-btn active" onclick="switchSettingsPage('cache')" id="setCatCache"><i class="fa-solid fa-trash"></i> <span data-i18n="settings.cache">缓存管理</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('join')" id="setCatJoin"><i class="fa-solid fa-rocket"></i> <span data-i18n="settings.join">加入偏好</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('dating')" id="setCatDating" style="color: #f43f5e; border-color: rgba(244,63,94,0.3);"><i class="fa-solid fa-heart"></i> <span data-i18n="settings.dating">E了吗 (18+)</span></button>
+                            <button class="btn btn-secondary btn-block cat-btn" onclick="switchSettingsPage('about')" id="setCatAbout" data-i18n="settings.about">ℹ️ 关于</button>
                         </div>
                     </div>
                     <!-- 退出登录 — 在手机端侧边栏不可见时，设置页底部提供退出入口 -->
                     <div class="sidebar-section" style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border);">
                         <button onclick="doLogout()" class="btn btn-danger btn-block" style="font-size:0.82rem;">
-                            <i class="fa-solid fa-right-from-bracket"></i> 退出登录
+                            <i class="fa-solid fa-right-from-bracket"></i> <span data-i18n="settings.logout">退出登录</span>
                         </button>
                     </div>
                 </div>
                 <div class="grid-area" style="padding:24px;overflow-y:auto;" id="settingsContentArea">
                     <div id="setPageCache">
-                        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-trash"></i> 缓存管理</h2>
-                        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;">管理本地 IndexedDB 缓存。清除某类别后，下次访问时数据将从 API 重新拉取。</p>
+                        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-trash"></i> <span data-i18n="settings.cacheTitle">缓存管理</span></h2>
+                        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;"><span data-i18n="settings.cacheDesc">管理本地 IndexedDB 缓存。清除某类别后，下次访问时数据将从 API 重新拉取。</span></p>
                         <div id="cacheStatsContainer" style="display:flex;flex-direction:column;gap:10px;max-width:540px;">
-                            <div style="color:var(--text-muted);font-size:0.85em;padding:20px;text-align:center;">正在读取缓存信息...</div>
+                            <div style="color:var(--text-muted);font-size:0.85em;padding:20px;text-align:center;" data-i18n="settings.cacheReading">正在读取缓存信息...</div>
                         </div>
                         <div style="margin-top:16px;max-width:540px;display:flex;flex-direction:column;gap:10px;">
-                            <button id="btnRefreshAllCache" onclick="refreshAllPersistentCache()" class="btn btn-secondary btn-block" style="color:#22c55e;border-color:rgba(34,197,94,0.35);"><i class="fa-solid fa-rotate-right"></i> 刷新所有缓存（从 API 重新拉取）</button>
-                            <button onclick="clearAllCacheNow()" class="btn btn-secondary btn-block" style="color:#f87171;border-color:rgba(248,113,113,0.35);"><i class="fa-solid fa-trash"></i> 全部清除（含图片 Blob）</button>
+                            <button id="btnRefreshAllCache" onclick="refreshAllPersistentCache()" class="btn btn-secondary btn-block" style="color:#22c55e;border-color:rgba(34,197,94,0.35);"><i class="fa-solid fa-rotate-right"></i> <span data-i18n="settings.refreshAllCache">刷新所有缓存（从 API 重新拉取）</span></button>
+                            <button onclick="clearAllCacheNow()" class="btn btn-secondary btn-block" style="color:#f87171;border-color:rgba(248,113,113,0.35);"><i class="fa-solid fa-trash"></i> <span data-i18n="settings.clearAllCache">全部清除（含图片 Blob）</span></button>
                         </div>
                     </div>
                     <div id="setPageDating" style="display:none;max-width:520px;">
-                        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-heart"></i> E了吗 交友系统 (18+)</h2>
-                        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;">开启后，将在左侧导航栏显示 E了吗 功能。此功能包含成人内容及交互，<strong style="color:#f43f5e;">仅限年满18岁的用户使用</strong>。</p>
+                        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-heart"></i> <span data-i18n="settings.datingTitle">E了吗 交友系统 (18+)</span></h2>
+                        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;">开启后，将在左侧导航栏显示 E了吗 功能。<span data-i18n="settings.datingDesc">此功能包含成人内容及交互，</span><strong style="color:#f43f5e;" data-i18n="settings.datingDescWarning">仅限年满18岁的用户使用</strong>。</p>
 
                         <!-- VRC 18+ 官方认证用户提示 -->
                         <div id="datingVrcVerifiedNote" style="display:none; background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.3); padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.85rem; color:#86efac;">
@@ -680,8 +680,8 @@
                         <div style="background:rgba(0,0,0,0.2); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.07); margin-bottom: 16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <div>
-                                    <div style="font-weight:600; color: #f43f5e;">启用 E了吗 功能</div>
-                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">在导航栏显示 <i class="fa-solid fa-heart"></i> 入口</div>
+                                    <div style="font-weight:600; color: #f43f5e;"><span data-i18n="settings.enableDating">启用 E了吗 功能</span></div>
+                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;"><span data-i18n="settings.enableDatingHint">在导航栏显示 <i class="fa-solid fa-heart"></i> 入口</span></div>
                                 </div>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="settingEnableDating" onchange="toggleDatingFeature()">
@@ -689,53 +689,53 @@
                                 </label>
                             </div>
                             <div id="datingAgePrompt" style="display:none; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px; margin-top:14px;">
-                                <p style="font-size:0.85rem; color:#fbbf24; margin-bottom:4px; font-weight:600;">⚠️ 需要年龄确认</p>
+                                <p style="font-size:0.85rem; color:#fbbf24; margin-bottom:4px; font-weight:600;"><span data-i18n="settings.ageWarning">⚠️ 需要年龄确认</span></p>
                                 <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">您的 VRChat 账号未通过 18+ 官方认证。请手动填写出生日期以完成一次性验证（数据与您的账号 ID 绑定，以后无需重复填写）。</p>
-                                <p style="font-size:0.78rem; color:#f87171; margin-bottom:10px;">免责声明：本平台不对您填写的信息负责，您需自行确保信息真实合法，并承担相应责任。</p>
-                                <label style="display:block;font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;">出生日期</label>
+                                <p style="font-size:0.78rem; color:#f87171; margin-bottom:10px;"><span data-i18n="settings.ageDisclaimer">免责声明：本平台不对您填写的信息负责，您需自行确保信息真实合法，并承担相应责任。</span></p>
+                                <label style="display:block;font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;" data-i18n="settings.dob">出生日期</label>
                                 <input type="date" id="datingDobInput" style="background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(255,255,255,0.12); padding:8px 12px; border-radius:6px; margin-bottom:12px; width:100%; box-sizing:border-box; color-scheme: dark; font-size:0.9rem;">
-                                <button class="btn btn-block" onclick="verifyDatingAge()" style="background: linear-gradient(135deg,#f43f5e,#ec4899); color:white; border:none; font-weight:600;">我确认我已年满 18 岁，并同意解锁该功能</button>
+                                <button class="btn btn-block" onclick="verifyDatingAge()" style="background: linear-gradient(135deg,#f43f5e,#ec4899); color:white; border:none; font-weight:600;"><span data-i18n="settings.ageConfirm">我确认我已年满 18 岁，并同意解锁该功能</span></button>
                             </div>
                         </div>
                     </div>
                     <div id="setPageJoin" style="display:none;max-width:520px;">
-                        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-rocket"></i> 加入偏好</h2>
-                        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;">点击“加入世界”时自动使用以下设置创建实例。</p>
+                        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-rocket"></i> <span data-i18n="settings.joinTitle">加入偏好</span></h2>
+                        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;"><span data-i18n="settings.joinDesc">点击“加入世界”时自动使用以下设置创建实例。</span></p>
 
                         <div style="display:flex;flex-direction:column;gap:20px;">
                             <!-- Instance Type -->
                             <div>
-                                <label style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;">房间类型</label>
+                                <label style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;" data-i18n="settings.instanceType">房间类型</label>
                                 <div class="glass-select" id="instanceTypeSelect">
                                     <div class="glass-select-trigger" onclick="toggleGlassSelect(event,this.parentElement)">
-                                        <span class="selected-label">Friends+ (好友加)</span>
+                                        <span class="selected-label" data-i18n="instance.friendsPlus">Friends+ (好友加)</span>
                                         <span style="opacity:0.5;">&#9660;</span>
                                     </div>
                                     <div class="glass-select-options">
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'hidden','')" data-val="hidden">好友加 (Friends+) — 推荐</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'public','')" data-val="public">公开 (Public)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'friends','')" data-val="friends">仅好友 (Friends Only)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'invite','')" data-val="invite">邀请 (Invite Only)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'inviteplus','')" data-val="inviteplus">邀请加 (Invite+)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'hidden','')" data-val="hidden" data-i18n="instance.friendsPlusDesc">好友加 (Friends+) — 推荐</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'public','')" data-val="public" data-i18n="instance.public">公开 (Public)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'friends','')" data-val="friends" data-i18n="instance.friendsOnly">仅好友 (Friends Only)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'invite','')" data-val="invite" data-i18n="instance.inviteOnly">邀请 (Invite Only)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'inviteplus','')" data-val="inviteplus" data-i18n="instance.invitePlus">邀请加 (Invite+)</div>
                                     </div>
                                     <input type="hidden" id="settingInstanceType" value="hidden">
                                 </div>
-                                <p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">Friends+ 表示好友及好友的好友可加入。</p>
+                                <p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;"><span data-i18n="instance.friendsPlusHint">Friends+ 表示好友及好友的好友可加入。</span></p>
                             </div>
 
                             <!-- Region -->
                             <div>
-                                <label style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;">服务器地区</label>
+                                <label style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;" data-i18n="settings.region">服务器地区</label>
                                 <div class="glass-select" id="instanceRegionSelect">
                                     <div class="glass-select-trigger" onclick="toggleGlassSelect(event,this.parentElement)">
-                                        <span class="selected-label">🇺🇸 美国东 (US East)</span>
+                                        <span class="selected-label" data-i18n="region.use">🇺🇸 美国东 (US East)</span>
                                         <span style="opacity:0.5;">&#9660;</span>
                                     </div>
                                     <div class="glass-select-options">
-                                        <div class="glass-option selected" onclick="selectGlassOption(event,this,'use','')" data-val="use">🇺🇸 美国东 (US East)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'usw','')" data-val="usw">🇺🇸 美国西 (US West)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'eu','')" data-val="eu">🇪🇺 欧洲 (Europe)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event,this,'jp','')" data-val="jp">🇯🇵 日本 (Japan)</div>
+                                        <div class="glass-option selected" onclick="selectGlassOption(event,this,'use','')" data-val="use" data-i18n="region.use">🇺🇸 美国东 (US East)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'usw','')" data-val="usw" data-i18n="region.usw">🇺🇸 美国西 (US West)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'eu','')" data-val="eu" data-i18n="region.eu">🇪🇺 欧洲 (Europe)</div>
+                                        <div class="glass-option" onclick="selectGlassOption(event,this,'jp','')" data-val="jp" data-i18n="region.jp">🇯🇵 日本 (Japan)</div>
                                     </div>
                                     <input type="hidden" id="settingRegion" value="use">
                                 </div>
@@ -743,8 +743,8 @@
 
                             <!-- Save Button -->
                             <div>
-                                <button class="btn btn-primary" onclick="saveJoinPrefs()" style="min-width:120px;">保存设置</button>
-                                <span id="joinPrefsSaveStatus" style="margin-left:12px;font-size:0.82rem;color:var(--success);display:none;">✓ 已保存</span>
+                                <button class="btn btn-primary" onclick="saveJoinPrefs()" style="min-width:120px;" data-i18n="settings.savePrefs">保存设置</button>
+                                <span id="joinPrefsSaveStatus" style="margin-left:12px;font-size:0.82rem;color:var(--success);display:none;"><span data-i18n="settings.saved">✓ 已保存</span></span>
                             </div>
                         </div>
                     </div>
@@ -768,38 +768,38 @@
                             </div>
                             <div class="about-meta-grid">
                                 <div class="about-meta-item">
-                                    <span class="about-meta-label">版本</span>
+                                    <span class="about-meta-label" data-i18n="about.version">版本</span>
                                     <strong data-app-version>v118</strong>
                                 </div>
                                 <div class="about-meta-item">
-                                    <span class="about-meta-label">作者</span>
+                                    <span class="about-meta-label" data-i18n="about.author">作者</span>
                                     <strong>LengFengY</strong>
                                 </div>
                                 <div class="about-meta-item">
-                                    <span class="about-meta-label">运行环境</span>
+                                    <span class="about-meta-label" data-i18n="about.runtime">运行环境</span>
                                     <strong data-app-build>Workers Edition</strong>
                                 </div>
                                 <div class="about-meta-item">
-                                    <span class="about-meta-label">数据位置</span>
-                                    <strong>本地浏览器缓存</strong>
+                                    <span class="about-meta-label" data-i18n="about.dataLocation">数据位置</span>
+                                    <strong data-i18n="about.dataLocal">本地浏览器缓存</strong>
                                 </div>
                             </div>
                         </section>
 
                         <section class="about-section">
-                            <div class="about-section-title">功能范围</div>
+                            <div class="about-section-title" data-i18n="about.features">功能范围</div>
                             <div class="about-chip-row">
-                                <span>模型管理</span>
-                                <span>收藏同步</span>
-                                <span>世界实例</span>
-                                <span>好友资料</span>
-                                <span>群组工具</span>
-                                <span>公开搜索</span>
+                                <span data-i18n="about.featureAvatars">模型管理</span>
+                                <span data-i18n="about.featureFavorites">收藏同步</span>
+                                <span data-i18n="about.featureWorlds">世界实例</span>
+                                <span data-i18n="about.featureFriends">好友资料</span>
+                                <span data-i18n="about.featureGroups">群组工具</span>
+                                <span data-i18n="about.featureSearch">公开搜索</span>
                             </div>
                         </section>
 
                         <section class="about-section">
-                            <div class="about-section-title">项目链接</div>
+                            <div class="about-section-title" data-i18n="about.links">项目链接</div>
                             <a class="about-link-card" href="https://github.com/Yamada-Ryo4/VRCW" target="_blank" rel="noopener">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
                                 <span>Yamada-Ryo4/VRCW</span>
@@ -822,7 +822,7 @@
                 <div id="fpAvatarWrap" style="position:absolute;bottom:-24px;left:20px;width:72px;height:72px;border-radius:50%;overflow:hidden;border:3px solid var(--bg-primary);background:var(--bg-card);">
                     <img id="fpAvatar" style="width:100%;height:100%;object-fit:cover;" src="" alt="" onerror="this.parentElement.style.display='none'">
                 </div>
-                <div id="fpAvatarThumbWrap" style="position:absolute;bottom:8px;right:20px;width:56px;height:56px;border-radius:8px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);cursor:pointer;transition:transform 0.2s;" title="点击查看当前模型" onclick="openCurrentAvatarDetail()" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                <div id="fpAvatarThumbWrap" style="position:absolute;bottom:8px;right:20px;width:56px;height:56px;border-radius:8px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);cursor:pointer;transition:transform 0.2s;" data-i18n-title="fp.viewAvatar" title="点击查看当前模型" onclick="openCurrentAvatarDetail()" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
                     <img id="fpAvatarThumb" style="width:100%;height:100%;object-fit:cover;" src="" alt="" onerror="this.parentElement.style.display='none'">
                 </div>
             </div>
@@ -847,11 +847,11 @@
                 <div id="fpBadgesRow" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
                 <!-- Sub tabs -->
                 <div class="tab-nav" style="border-bottom:1px solid var(--border);">
-                    <button class="tab-btn active" id="fpTabInfo" onclick="switchFriendProfileTab('info')">信息</button>
-                    <button class="tab-btn" id="fpTabGroups" onclick="switchFriendProfileTab('groups')">群组</button>
-                    <button class="tab-btn" id="fpTabMutual" onclick="switchFriendProfileTab('mutual')">共同好友</button>
-                    <button class="tab-btn" id="fpTabWorlds" onclick="switchFriendProfileTab('worlds')">创建的世界</button>
-                    <button class="tab-btn" id="fpTabAvatars" onclick="switchFriendProfileTab('avatars')">创建的模型</button>
+                    <button class="tab-btn active" id="fpTabInfo" onclick="switchFriendProfileTab('info')" data-i18n="fp.tabInfo">信息</button>
+                    <button class="tab-btn" id="fpTabGroups" onclick="switchFriendProfileTab('groups')" data-i18n="fp.tabGroups">群组</button>
+                    <button class="tab-btn" id="fpTabMutual" onclick="switchFriendProfileTab('mutual')" data-i18n="fp.tabMutual">共同好友</button>
+                    <button class="tab-btn" id="fpTabWorlds" onclick="switchFriendProfileTab('worlds')" data-i18n="fp.tabWorlds">创建的世界</button>
+                    <button class="tab-btn" id="fpTabAvatars" onclick="switchFriendProfileTab('avatars')" data-i18n="fp.tabAvatars">创建的模型</button>
                 </div>
             </div>
             <!-- Tab content -->
@@ -860,31 +860,31 @@
                 <div id="fpInfoTab">
                     <!-- Location -->
                     <div id="fpLocationSection" style="margin-bottom:14px;display:none;">
-                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px;">当前位置</div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px;" data-i18n="fp.location">当前位置</div>
                         <div id="fpWorldInfo" style="font-size:0.82em;color:var(--text-secondary);"></div>
                     </div>
                     <!-- Status -->
                     <div id="fpStatusSection" style="margin-bottom:14px;">
-                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">状态</div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;" data-i18n="fp.status">状态</div>
                         <div id="fpStatusDesc" style="font-size:0.82em;color:var(--text-secondary);"></div>
                     </div>
                     <!-- Bio -->
                     <div id="fpBioSection" style="margin-bottom:14px;display:none;">
-                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">个人简介</div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;" data-i18n="fp.bio">个人简介</div>
                         <div id="fpBio" style="font-size:0.8em;color:var(--text-secondary);white-space:pre-line;line-height:1.6;max-height:120px;overflow-y:auto;"></div>
                     </div>
                     <div id="fpLinksSection" style="margin-bottom:14px;display:none;">
-                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px;">主页链接</div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px;" data-i18n="fp.homepage">主页链接</div>
                         <div id="fpLinks" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
                     </div>
                     <!-- Stats grid -->
                     <div id="fpStatsGrid"></div>
                     <!-- Player ID -->
-                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">玩家 ID</div>
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;" data-i18n="fp.userId">玩家 ID</div>
                     <div id="fpUserId" style="font-size:0.72em;color:var(--text-muted);font-family:monospace;display:flex;align-items:center;gap:6px;margin-bottom:14px;"></div>
                     <!-- Profile Groups Summary -->
                     <div id="fpGroupsSummarySection" style="margin-bottom:14px;display:none;">
-                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px;">展示群组</div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px;" data-i18n="fp.featuredGroup">展示群组</div>
                         <div id="fpGroupsSummaryList"></div>
                     </div>
                 </div>
@@ -922,10 +922,10 @@
                     <span id="worldDetailBreadcrumbName" style="color:var(--text-primary);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">World Details</span>
                 </div>
                 <div class="world-detail-header-btns" style="display:flex;gap:8px;flex-shrink:0;">
-                    <button id="worldDetailDeleteBtn" class="btn btn-icon" style="display:none;" title="删除世界" onclick="deleteCurrentWorld()"><i class="fa-solid fa-trash"></i> </button>
-                    <button id="worldDetailMainFavBtn" onclick="toggleWorldFavMenu(event)" class="btn btn-icon" title="收藏世界"><i class="fa-solid fa-star"></i> </button>
-                    <button id="worldDetailJoinBtn" onclick="joinWorldInstance()" class="btn btn-icon" title="加入世界"><i class="fa-solid fa-bolt"></i> </button>
-                    <button onclick="closeWorldDetail()" class="btn btn-icon" title="关闭">✕</button>
+                    <button id="worldDetailDeleteBtn" class="btn btn-icon" style="display:none;" data-i18n-title="wd.delete" title="删除世界" onclick="deleteCurrentWorld()"><i class="fa-solid fa-trash"></i> </button>
+                    <button id="worldDetailMainFavBtn" onclick="toggleWorldFavMenu(event)" class="btn btn-icon" data-i18n-title="wd.favorite" title="收藏世界"><i class="fa-solid fa-star"></i> </button>
+                    <button id="worldDetailJoinBtn" onclick="joinWorldInstance()" class="btn btn-icon" data-i18n-title="wd.join" title="加入世界"><i class="fa-solid fa-bolt"></i> </button>
+                    <button onclick="closeWorldDetail()" class="btn btn-icon" data-i18n-title="wd.close" title="关闭">✕</button>
                 </div>
             </div>
 
@@ -940,7 +940,7 @@
                 <!-- Right: Content area -->
                 <div class="world-detail-info-col" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
                     <div class="world-detail-info-header" style="padding:24px 32px 0;">
-                        <h1 id="worldDetailName" style="margin:0;font-size:1.8em;font-weight:700;color:var(--text-primary);">加载中...</h1>
+                        <h1 id="worldDetailName" style="margin:0;font-size:1.8em;font-weight:700;color:var(--text-primary);" data-i18n="wd.loading">加载中...</h1>
                         <div id="worldDetailAuthorRow" style="margin-top:4px;font-size:0.95em;color:var(--text-muted);"></div>
                         
                         <!-- Badges Row -->
@@ -953,8 +953,8 @@
 
                         <!-- Tab Nav -->
                         <div class="tab-nav" style="margin-top:24px;border-bottom:1px solid var(--border);">
-                            <button class="tab-btn active" id="wdTabInfo" onclick="switchWorldDetailTab('info')">信息</button>
-                            <button class="tab-btn" id="wdTabInstances" onclick="switchWorldDetailTab('instances')">实例</button>
+                            <button class="tab-btn active" id="wdTabInfo" onclick="switchWorldDetailTab('info')" data-i18n="wd.tabInfo">信息</button>
+                            <button class="tab-btn" id="wdTabInstances" onclick="switchWorldDetailTab('instances')" data-i18n="wd.tabInstances">实例</button>
                             <button class="tab-btn" id="wdTabRaw" onclick="switchWorldDetailTab('raw')">JSON</button>
                         </div>
                     </div>
@@ -964,32 +964,32 @@
                         <!-- Info Tab -->
                         <div id="wdPageInfo">
                             <div id="worldDetailDescRow" style="margin-bottom:24px;">
-                                <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-weight:700;">描述 / Description</div>
+                                <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-weight:700;" data-i18n="wd.description">描述 / Description</div>
                                 <div id="worldDetailDesc" style="font-size:0.9em;color:var(--text-secondary);line-height:1.6;white-space:pre-wrap;"></div>
                             </div>
 
                             <div class="world-detail-meta-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
                                 <div>
-                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:6px;font-weight:700;">世界 ID / World ID</div>
-                                    <div id="worldDetailId" style="font-size:0.8em;color:var(--text-secondary);font-family:monospace;background:rgba(0,0,0,0.2);padding:4px 8px;border-radius:4px;word-break:break-all;cursor:pointer;" title="点击复制" onclick="copyToClipboard(this.textContent)"></div>
+                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:6px;font-weight:700;" data-i18n="wd.worldId">世界 ID / World ID</div>
+                                    <div id="worldDetailId" style="font-size:0.8em;color:var(--text-secondary);font-family:monospace;background:rgba(0,0,0,0.2);padding:4px 8px;border-radius:4px;word-break:break-all;cursor:pointer;" data-i18n-title="wd.clickToCopy" title="点击复制" onclick="copyToClipboard(this.textContent)"></div>
                                 </div>
                                 <div>
-                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:6px;font-weight:700;">支持的平台 / Platforms</div>
+                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:6px;font-weight:700;" data-i18n="wd.platforms">支持的平台 / Platforms</div>
                                     <div id="worldDetailPlatformsList" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
                                 </div>
                             </div>
 
                             <div class="world-detail-dates-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
                                 <div>
-                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;font-weight:700;">创建时间</div>
+                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;font-weight:700;" data-i18n="wd.createdAt">创建时间</div>
                                     <div id="worldDetailCreated" style="font-size:0.85em;color:var(--text-secondary);"></div>
                                 </div>
                                 <div>
-                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;font-weight:700;">最后更新</div>
+                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;font-weight:700;" data-i18n="wd.lastUpdated">最后更新</div>
                                     <div id="worldDetailUpdated" style="font-size:0.85em;color:var(--text-secondary);"></div>
                                 </div>
                                 <div>
-                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;font-weight:700;">标签 / Tags</div>
+                                    <div style="font-size:0.65em;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;font-weight:700;" data-i18n="wd.tags">标签 / Tags</div>
                                     <div id="worldDetailTags" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
                                 </div>
                             </div>
@@ -1011,9 +1011,9 @@
             <!-- Mobile-only bottom action bar (matches avatar detail style) -->
             <div class="world-detail-mobile-actions" style="display:none;gap:10px;padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0;">
                 <div style="flex:1;position:relative;">
-                    <button class="btn btn-secondary" style="width:100%;" onclick="toggleWorldFavMenu(event)" id="worldDetailFavBtn"><i class="fa-solid fa-star"></i> 收藏</button>
+                    <button class="btn btn-secondary" style="width:100%;" onclick="toggleWorldFavMenu(event)" id="worldDetailFavBtn"><i class="fa-solid fa-star"></i> <span data-i18n="wd.favBtn">收藏</span></button>
                 </div>
-                <button class="btn btn-primary" style="flex:1;" onclick="joinWorldInstance()"><i class="fa-solid fa-bolt"></i> 加入世界</button>
+                <button class="btn btn-primary" style="flex:1;" onclick="joinWorldInstance()"><i class="fa-solid fa-bolt"></i> <span data-i18n="wd.joinBtn">加入世界</span></button>
             </div>
 
             <div id="worldDetailFavStatus" style="padding:10px 24px;font-size:0.8em;background:rgba(0,0,0,0.1);border-top:1px solid var(--border);text-align:center;min-height:38px;color:var(--success);"></div>
@@ -1026,15 +1026,15 @@
             <h2 data-i18n="editTitle" style="margin-bottom: 16px;">Edit Avatar</h2>
             <!-- Thumbnail -->
             <div class="form-group" style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
-                <div style="position:relative;flex-shrink:0;cursor:pointer;" onclick="document.getElementById('editThumbInput').click()" title="点击更换封面 / Click to change thumbnail">
+                <div style="position:relative;flex-shrink:0;cursor:pointer;" onclick="document.getElementById('editThumbInput').click()" data-i18n-title="edit.changeThumb" title="点击更换封面 / Click to change thumbnail">
                     <img id="editThumbPreview" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--border);display:block;background:var(--bg-secondary);">
                     <div style="position:absolute;inset:0;border-radius:8px;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0">
                         <span style="font-size:1.4em;"><i class="fa-solid fa-camera"></i> </span>
                     </div>
                 </div>
                 <div style="flex:1;">
-                    <div style="font-size:0.8em;color:var(--text-secondary);margin-bottom:6px;">封面图片 / Thumbnail</div>
-                    <button type="button" class="btn btn-secondary" style="font-size:0.75em;padding:5px 10px;" onclick="document.getElementById('editThumbInput').click()">更换图片 / Change</button>
+                    <div style="font-size:0.8em;color:var(--text-secondary);margin-bottom:6px;" data-i18n="edit.thumbnail">封面图片 / Thumbnail</div>
+                    <button type="button" class="btn btn-secondary" style="font-size:0.75em;padding:5px 10px;" onclick="document.getElementById('editThumbInput').click()" data-i18n="edit.changeImage">更换图片 / Change</button>
                     <div id="editThumbNote" style="font-size:0.7em;color:var(--text-muted);margin-top:4px;"></div>
                 </div>
                 <input type="file" id="editThumbInput" accept="image/png,image/jpeg,image/webp" hidden onchange="onEditThumbSelected(this)">
@@ -1073,23 +1073,24 @@
     </div>
 
 
-    <script src="js/core.js?v=156" defer></script>
-    <script src="js/common.js?v=156" defer></script>
-    <script src="js/images.js?v=156" defer></script>
-    <script src="js/logging.js?v=156" defer></script>
-    <script src="js/auth.js?v=156" defer></script>
-    <script src="js/ui-controls.js?v=156" defer></script>
-    <script src="js/sidebar-profile.js?v=156" defer></script>
-    <script src="js/worlds-shell.js?v=156" defer></script>
-    <script src="js/groups-instance-shell.js?v=156" defer></script>
-    <script src="js/shell.js?v=156" defer></script>
-    <script src="js/avatars.js?v=156" defer></script>
-    <script src="js/friends.js?v=156" defer></script>
-    <script src="js/friend-profile-shell.js?v=156" defer></script>
-    <script src="js/groups-shell.js?v=156" defer></script>
-    <script src="js/search-shell.js?v=156" defer></script>
-    <script src="js/context-menu.js?v=156" defer></script>
-    <script src="js/profile-actions.js?v=156" defer></script>
+    <script src="js/core.js?v=157" defer></script>
+    <script src="js/i18n.js?v=157" defer></script>
+    <script src="js/common.js?v=157" defer></script>
+    <script src="js/images.js?v=157" defer></script>
+    <script src="js/logging.js?v=157" defer></script>
+    <script src="js/auth.js?v=157" defer></script>
+    <script src="js/ui-controls.js?v=157" defer></script>
+    <script src="js/sidebar-profile.js?v=157" defer></script>
+    <script src="js/worlds-shell.js?v=157" defer></script>
+    <script src="js/groups-instance-shell.js?v=157" defer></script>
+    <script src="js/shell.js?v=157" defer></script>
+    <script src="js/avatars.js?v=157" defer></script>
+    <script src="js/friends.js?v=157" defer></script>
+    <script src="js/friend-profile-shell.js?v=157" defer></script>
+    <script src="js/groups-shell.js?v=157" defer></script>
+    <script src="js/search-shell.js?v=157" defer></script>
+    <script src="js/context-menu.js?v=157" defer></script>
+    <script src="js/profile-actions.js?v=157" defer></script>
 
     <!-- ── avtrDB Avatar Detail Modal ── -->
     <div id="avtrdbDetailModal" class="modal hidden" onclick="if(event.target===this)closeAvtrdbDetail()">
@@ -1109,34 +1110,34 @@
                         <span id="avtrdbDetailRelease" style="font-size:0.72em;padding:2px 10px;border-radius:5px;font-weight:700;letter-spacing:0.03em;"></span>
                     </div>
                 </div>
-                <button onclick="closeAvtrdbDetail()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--text-muted);font-size:1.3em;cursor:pointer;line-height:1;padding:4px;" title="关闭">✕</button>
+                <button onclick="closeAvtrdbDetail()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--text-muted);font-size:1.3em;cursor:pointer;line-height:1;padding:4px;" data-i18n-title="wd.close" title="关闭">✕</button>
             </div>
             <!-- Detail rows -->
             <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;border-top:1px solid var(--border);">
                 <!-- Performance -->
                 <div>
-                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:5px;">性能评级 / Performance</div>
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:5px;" data-i18n="avtrdb.performance">性能评级 / Performance</div>
                     <div id="avtrdbDetailPerf" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
                 </div>
                 <!-- Avatar ID -->
                 <div>
-                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">模型 ID / Avatar ID</div>
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;" data-i18n="avtrdb.avatarId">模型 ID / Avatar ID</div>
                     <div id="avtrdbDetailId" style="font-size:0.75em;color:var(--text-secondary);font-family:monospace;word-break:break-all;"></div>
                 </div>
                 <!-- Dates -->
                 <div style="display:flex;gap:24px;flex-wrap:wrap;">
                     <div>
-                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px;">创建时间</div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px;" data-i18n="avtrdb.createdAt">创建时间</div>
                         <div id="avtrdbDetailCreated" style="font-size:0.75em;color:var(--text-secondary);"></div>
                     </div>
                     <div>
-                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px;">最后更新</div>
+                        <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px;" data-i18n="avtrdb.lastUpdated">最后更新</div>
                         <div id="avtrdbDetailUpdated" style="font-size:0.75em;color:var(--text-secondary);"></div>
                     </div>
                 </div>
                 <!-- Description (hidden if empty) -->
                 <div id="avtrdbDetailDescRow">
-                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">描述 / Description</div>
+                    <div style="font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;" data-i18n="avtrdb.description">描述 / Description</div>
                     <div id="avtrdbDetailDesc" style="font-size:0.8em;color:var(--text-secondary);line-height:1.5;max-height:80px;overflow-y:auto;"></div>
                 </div>
                 <!-- Actions -->
@@ -1144,17 +1145,17 @@
                     <!-- Favorite button with dropdown -->
                     <div style="flex:1;position:relative;" id="avtrdbFavWrapper">
                         <button id="avtrdbDetailFavBtn" class="btn btn-secondary" style="width:100%;"
-                            onclick="toggleAvtrdbFavMenu(event)"><i class="fa-solid fa-star"></i> 收藏</button>
+                            onclick="toggleAvtrdbFavMenu(event)"><i class="fa-solid fa-star"></i> <span data-i18n="avtrdb.favBtn">收藏</span></button>
                     </div>
-                    <button id="avtrdbDetailSwitchBtn" class="btn btn-primary" style="flex:1;"><i class="fa-solid fa-bolt"></i> 切换模型</button>
+                    <button id="avtrdbDetailSwitchBtn" class="btn btn-primary" style="flex:1;"><i class="fa-solid fa-bolt"></i> <span data-i18n="avtrdb.switchAvatar">切换模型</span></button>
                 </div>
                 <!-- Owner-only actions: edit + delete. Visible only when av.authorId
                      matches currentUserId. Per-card edit/delete were removed for
                      visual consistency across mine / favorites / local categories,
                      so this is the single home for those actions. -->
                 <div id="avtrdbDetailOwnerActions" class="hidden" style="display:flex;gap:8px;">
-                    <button id="avtrdbDetailEditBtn" class="btn btn-secondary" style="flex:1;">✏️ 编辑</button>
-                    <button id="avtrdbDetailDeleteBtn" class="btn btn-danger-full" style="flex:1;"><i class="fa-solid fa-trash"></i> 删除</button>
+                    <button id="avtrdbDetailEditBtn" class="btn btn-secondary" style="flex:1;" data-i18n="avtrdb.edit">✏️ 编辑</button>
+                    <button id="avtrdbDetailDeleteBtn" class="btn btn-danger-full" style="flex:1;"><i class="fa-solid fa-trash"></i> <span data-i18n="avtrdb.delete">删除</span></button>
                 </div>
                 <!-- Favorite status feedback -->
                 <div id="avtrdbFavStatus" style="font-size:0.75em;text-align:center;min-height:18px;"></div>
@@ -1175,21 +1176,21 @@
     <!-- avtrDB Favorite Group Menu -->
     <div id="avtrdbFavMenu" class="hidden"
         style="position:fixed;min-width:180px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;overflow:hidden;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,0.5);">
-        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择模型收藏夹</div>
+        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);" data-i18n="favselect.avatar">选择模型收藏夹</div>
         <div id="avtrdbFavGroupList"></div>
     </div>
 
     <!-- World Favorite Group Menu -->
     <div id="worldFavMenu" class="hidden"
         style="position:fixed;min-width:180px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;overflow:hidden;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,0.5);">
-        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择世界收藏夹</div>
+        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);" data-i18n="favselect.world">选择世界收藏夹</div>
         <div id="worldFavGroupListMenu"></div>
     </div>
 
     <!-- Friend Favorite Group Menu -->
     <div id="friendFavMenu" class="hidden"
         style="position:fixed;min-width:180px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;overflow:hidden;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,0.5);">
-        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);">选择好友分组</div>
+        <div style="padding:6px 10px;font-size:0.62em;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);border-bottom:1px solid var(--border);" data-i18n="favselect.friend">选择好友分组</div>
         <div id="friendFavGroupListMenu"></div>
     </div>
 </body>

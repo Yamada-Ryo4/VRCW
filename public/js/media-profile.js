@@ -15,9 +15,9 @@ async function gifToSpritesheet(file, fpsOverride) {
     const gif = window.parseGIF(buf);
     frames = window.decompressFrames(gif, true);
   } catch(e) {
-    throw new Error('无法解析 GIF: ' + e.message);
+    throw new Error(t('media.gifParseError', {msg: e.message}));
   }
-  if (!frames || frames.length < 2) throw new Error('GIF 至少需要 2 帧！');
+  if (!frames || frames.length < 2) throw new Error(t('media.gifNeed2Frames'));
 
   // Auto-detect FPS from GIF frame delays (delay is in centiseconds)
   // gifuct-js exposes frame.delay in centiseconds (1/100 s)
@@ -71,16 +71,16 @@ function makeUploadCard(opts) {
       ondragleave="this.classList.remove('dragover')"
       ondrop="event.preventDefault();this.classList.remove('dragover');document.getElementById('${uniqueId}').files=event.dataTransfer.files;onUploadFileSelected('${uniqueId}','${opts.tag}')">
       <span class="upload-icon">${isAnimated ? '🎞️' : '<i class="fa-solid fa-cloud-arrow-up"></i> '}</span>
-      <span class="upload-label">点击或拖拽文件</span>
+      <span class="upload-label">${escHtml(t('media.clickOrDragFile'))}</span>
       <span class="upload-hint">${opts.hint}</span>
-      <span class="upload-selected" id="sel_${uniqueId}">未选择文件</span>
+      <span class="upload-selected" id="sel_${uniqueId}">${escHtml(t('media.noFileSelected'))}</span>
       <span class="upload-dim" id="dim_${uniqueId}" style="font-size:0.72em;color:var(--text-muted);"></span>
       <input type="file" id="${uniqueId}" accept="${opts.accept}"
         onchange="onUploadFileSelected('${uniqueId}','${opts.tag}')">
     </div>
-    ${isAnimated ? `<label style="font-size:0.78em;color:var(--text-muted);display:flex;align-items:center;gap:8px;margin-top:6px;">动画 FPS：<input type="range" id="fps_${uniqueId}" min="1" max="64" value="12" style="flex:1;"><span id="fpsval_${uniqueId}">12</span></label>` : ''}
+    ${isAnimated ? `<label style="font-size:0.78em;color:var(--text-muted);display:flex;align-items:center;gap:8px;margin-top:6px;">${escHtml(t('media.animFps'))}<input type="range" id="fps_${uniqueId}" min="1" max="64" value="12" style="flex:1;"><span id="fpsval_${uniqueId}">12</span></label>` : ''}
     <button class="vrc-upload-btn" id="btn_${uniqueId}" disabled
-      onclick="uploadToVRCStyled('${escJsAttr(uniqueId)}','${escJsAttr(opts.tag)}','${escJsAttr(opts.refreshPage)}')">上传</button>
+      onclick="uploadToVRCStyled('${escJsAttr(uniqueId)}','${escJsAttr(opts.tag)}','${escJsAttr(opts.refreshPage)}')">${escHtml(t('media.upload'))}</button>
     <div class="vrc-upload-status" id="status_${uniqueId}"></div>
   </div>`;
 }
@@ -108,7 +108,7 @@ async function onUploadFileSelected(inputId, tag) {
     img.onload = () => {
       URL.revokeObjectURL(objUrl);
       const ok = img.width <= 1024 && img.height <= 1024;
-      if (dim) dim.textContent = img.width + '×' + img.height + (ok ? '' : ' ⚠️ 超出 1024×1024！');
+      if (dim) dim.textContent = img.width + '×' + img.height + (ok ? '' : t('media.exceeds1024'));
       if (dim) dim.style.color = ok ? 'var(--text-muted)' : '#f87171';
       btn.disabled = tooBig || !ok;
     };
@@ -117,7 +117,7 @@ async function onUploadFileSelected(inputId, tag) {
   } else if (tag === 'emojianimated') {
     // For GIFs, auto-detect FPS from frame delays
     if (f.type === 'image/gif') {
-      if (dim) { dim.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 正在读取 GIF 帧速...'; dim.style.color = 'var(--text-muted)'; }
+      if (dim) { dim.innerHTML = t('media.readingGifFps'); dim.style.color = 'var(--text-muted)'; }
       const buf = await f.arrayBuffer();
       try {
         const gif = window.parseGIF(buf);
@@ -127,14 +127,14 @@ async function onUploadFileSelected(inputId, tag) {
         if (fpsSl) { fpsSl.value = detectedFps; }
         if (fpsEl) { fpsEl.textContent = detectedFps; }
         if (dim) {
-          dim.innerHTML = `<i class="fa-solid fa-check"></i> ${gifFrames.length} 帧，自动检测 ${detectedFps} fps`;
+          dim.innerHTML = t('media.gifDetectedFps', {frames: gifFrames.length, fps: detectedFps});
           dim.style.color = 'var(--accent-light)';
         }
       } catch(e) {
-        if (dim) { dim.textContent = '⚠️ 无法解析 GIF，手动设置 FPS'; dim.style.color = '#f87171'; }
+        if (dim) { dim.textContent = t('media.gifParseFailManualFps'); dim.style.color = '#f87171'; }
       }
     } else {
-      if (dim) dim.textContent = '⚠️ 动态表情请上传 GIF';
+      if (dim) dim.textContent = t('media.animEmojiNeedGif');
       if (dim) dim.style.color = '#f87171';
     }
     btn.disabled = tooBig;
@@ -148,9 +148,9 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
   const btn      = document.getElementById('btn_' + inputId);
   const statusEl = document.getElementById('status_' + inputId);
   const fpsSl    = document.getElementById('fps_' + inputId);
-  if (!input || !input.files || !input.files[0]) { statusEl.textContent = '请先选择文件'; return; }
+  if (!input || !input.files || !input.files[0]) { statusEl.textContent = t('media.selectFileFirst'); return; }
   let file = input.files[0];
-  if (file.size > 10*1024*1024) { statusEl.innerHTML = '<i class="fa-solid fa-xmark"></i> 文件超过 10MB'; statusEl.style.color='#f87171'; return; }
+  if (file.size > 10*1024*1024) { statusEl.innerHTML = t('media.fileOver10mb'); statusEl.style.color='#f87171'; return; }
 
   btn.disabled = true;
   statusEl.style.color = 'var(--text-muted)';
@@ -160,24 +160,24 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
   try {
     if (tag === 'emojianimated') {
       // GIF → Spritesheet conversion
-      statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 正在转换 GIF → 精灵图（可能需要几秒）...';
-      if (file.type !== 'image/gif') throw new Error('动态表情必须上传 GIF 文件！');
+      statusEl.innerHTML = t('media.convertingGif');
+      if (file.type !== 'image/gif') throw new Error(t('media.animEmojiMustGif'));
       const fps = fpsSl ? parseInt(fpsSl.value) || 12 : 12;
       const { blob, frames, framesOverTime } = await gifToSpritesheet(file, fps);
       fd.append('filestring', blob, 'spritesheet.png');
       fd.append('tagstring', 'emojianimated');
       fd.append('frames', String(frames));
       fd.append('framesOverTime', String(framesOverTime));
-      statusEl.innerHTML = `<i class="fa-solid fa-hourglass-half"></i> 上传精灵图（${frames} 帧，${framesOverTime}fps）...`;
+      statusEl.innerHTML = t('media.uploadingSpritesheet', {frames: frames, fps: framesOverTime});
     } else if (tag === 'emoji' || tag === 'sticker') {
       // Static emoji/sticker — validate 1024×1024
-      statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 检查尺寸...';
+      statusEl.innerHTML = t('media.checkingSize');
       await new Promise((res, rej) => {
         const img = new Image();
         const objUrl = URL.createObjectURL(file);
         img.onload = () => {
           URL.revokeObjectURL(objUrl);
-          if (img.width > 1024 || img.height > 1024) rej(new Error(`图片尺寸 ${img.width}×${img.height} 超出上限 1024×1024`));
+          if (img.width > 1024 || img.height > 1024) rej(new Error(t('media.imgSizeExceeds', {w: img.width, h: img.height})));
           else res();
         };
         img.onerror = () => { URL.revokeObjectURL(objUrl); res(); }; // if can't load dimensions, proceed anyway
@@ -185,12 +185,12 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
       });
       fd.append('filestring', file, file.name);
       fd.append('tagstring', tag);
-      statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 上传中...';
+      statusEl.innerHTML = t('media.uploading');
     } else {
       // gallery, icon, prints preview
       fd.append('filestring', file, file.name);
       fd.append('tagstring', tag);
-      statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 上传中...';
+      statusEl.innerHTML = t('media.uploading');
     }
 
     // Route through apiCall (fresh in-memory vrcAuth + multipart boundary auto-set).
@@ -202,11 +202,11 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
       const txt = await r.text().catch(() => '');
       throw new Error('HTTP ' + r.status + ': ' + txt.substring(0, 200));
     }
-    statusEl.innerHTML = '<i class="fa-solid fa-check"></i> 上传成功！';
+    statusEl.innerHTML = t('media.uploadSuccess');
     statusEl.style.color = '#86efac';
     input.value = '';
     const selEl = document.getElementById('sel_' + inputId);
-    if (selEl) selEl.textContent = '未选择文件';
+    if (selEl) selEl.textContent = t('media.noFileSelected');
     const dimEl = document.getElementById('dim_' + inputId);
     if (dimEl) dimEl.textContent = '';
     // Drop the cached payload for this sub-page so the reload actually
@@ -215,7 +215,7 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
     if (refreshPage && typeof invalidateAssetsCache === 'function') invalidateAssetsCache();
     setTimeout(() => { if (refreshPage) switchAssetsPage(refreshPage); }, 1800);
   } catch(e) {
-    statusEl.innerHTML = '<i class="fa-solid fa-xmark"></i> ' + e.message;
+    statusEl.innerHTML = '<i class="fa-solid fa-xmark"></i> ' + escHtml(e.message);
     statusEl.style.color = '#f87171';
     btn.disabled = false;
   }
@@ -228,18 +228,18 @@ async function fetchGalleryOnly(container, gen) {
     if (fresh && Array.isArray(cached)) {
       files = cached;
     } else {
-      container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载中...</div>';
+      container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">' + escHtml(t('loading')) + '</div>';
       const r = await apiCall('/api/vrc/files?tag=gallery&n=60');
       if (gen != null && _assetsGen !== gen) return;
       files = r.ok ? await r.json() : [];
       await writeAssetsCache('gallery', files);
     }
-    container.innerHTML = '<h2 style="margin-bottom:16px;">🖼️ VRC+ 相册</h2>';
+    container.innerHTML = '<h2 style="margin-bottom:16px;">' + escHtml(t('media.vrcGallery')) + '</h2>';
     container.innerHTML += '<div class="vrc-upload-row">' + makeUploadCard({
-      title:'<i class="fa-solid fa-cloud-arrow-up"></i> 上传到 VRC+ 相册', hint:'PNG/JPG/GIF · 最大 10MB',
+      title: t('media.uploadToGallery'), hint: t('media.galleryHint'),
       tag:'gallery', accept:'image/*', refreshPage:'gallery', id:'gallery'
     }) + '</div>';
-    container.innerHTML += '<h3 style="font-size:0.92rem;margin-bottom:12px;"><i class="fa-solid fa-camera"></i> 我的相册 (' + files.length + ')</h3>';
+    container.innerHTML += '<h3 style="font-size:0.92rem;margin-bottom:12px;">' + t('media.myGallery', {count: files.length}) + '</h3>';
     if (files.length) {
       container.innerHTML += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;">' +
         files.map(f => {
@@ -250,11 +250,11 @@ async function fetchGalleryOnly(container, gen) {
           '</div>';
         }).join('') + '</div>';
     } else {
-      container.innerHTML += '<div style="color:var(--text-muted);font-size:0.85em;">暂无 VRC+ 相册图片（需要 VRC+，可在游戏内或此处上传）</div>';
+      container.innerHTML += '<div style="color:var(--text-muted);font-size:0.85em;">' + escHtml(t('media.noGalleryImages')) + '</div>';
     }
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = '<div style="color:var(--error);">加载失败: ' + e.message + '</div>';
+    container.innerHTML = '<div style="color:var(--error);">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</div>';
   }
 }
 
@@ -268,7 +268,7 @@ async function fetchPrints(container, gen) {
     if (fresh && Array.isArray(cached)) {
       prints = cached;
     } else {
-      container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载中...</div>';
+      container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">' + escHtml(t('loading')) + '</div>';
       const myId = await getMyId();
       if (gen != null && _assetsGen !== gen) return;
       const r = await apiCall('/api/vrc/prints/user/' + myId + '?n=100&offset=0');
@@ -277,37 +277,37 @@ async function fetchPrints(container, gen) {
       await writeAssetsCache('prints', prints);
     }
     const printUploadId = 'printUpl_' + Date.now();
-    container.innerHTML = '<h2 style="margin-bottom:12px;">🎞️ 拍立得照片</h2>' +
+    container.innerHTML = '<h2 style="margin-bottom:12px;">' + escHtml(t('media.prints')) + '</h2>' +
       '<div class="vrc-upload-card" style="max-width:420px;margin-bottom:20px;">' +
-        '<h4><i class="fa-solid fa-cloud-arrow-up"></i> 上传拍立得照片</h4>' +
+        '<h4>' + t('media.uploadPrint') + '</h4>' +
         '<div class="vrc-upload-zone" id="zone_' + printUploadId + '"' +
           ' ondragover="event.preventDefault();this.classList.add(\'dragover\')"' +
           ' ondragleave="this.classList.remove(\'dragover\')"' +
           ' ondrop="event.preventDefault();this.classList.remove(\'dragover\');document.getElementById(\'' + printUploadId + '\').files=event.dataTransfer.files;onPrintFileSelected(\'' + printUploadId + '\')">' +
           '<span class="upload-icon"><i class="fa-solid fa-camera"></i> </span>' +
-          '<span class="upload-label">点击或拖拽照片 (PNG/JPG)</span>' +
-          '<span class="upload-hint">最大 10MB · 推荐 1920×1080 · 需要 VRC+</span>' +
-          '<span class="upload-selected" id="sel_' + printUploadId + '">未选择文件</span>' +
+          '<span class="upload-label">' + escHtml(t('media.clickOrDragPhoto')) + '</span>' +
+          '<span class="upload-hint">' + escHtml(t('media.printHint')) + '</span>' +
+          '<span class="upload-selected" id="sel_' + printUploadId + '">' + escHtml(t('media.noFileSelected')) + '</span>' +
           '<input type="file" id="' + printUploadId + '" accept="image/*" onchange="onPrintFileSelected(\'' + printUploadId + '\')">' +
         '</div>' +
-        '<input type="text" id="note_' + printUploadId + '" class="input-field" placeholder="备注 / Caption（选填）" style="font-size:0.8em;padding:6px 10px;margin-top:4px;">' +
-        '<button class="vrc-upload-btn" id="btn_' + printUploadId + '" disabled onclick="uploadPrint(\'' + printUploadId + '\')">上传</button>' +
+        '<input type="text" id="note_' + printUploadId + '" class="input-field" placeholder="' + t('media.printNotePlaceholder') + '" style="font-size:0.8em;padding:6px 10px;margin-top:4px;">' +
+        '<button class="vrc-upload-btn" id="btn_' + printUploadId + '" disabled onclick="uploadPrint(\'' + printUploadId + '\')">' + escHtml(t('media.upload')) + '</button>' +
         '<div class="vrc-upload-status" id="status_' + printUploadId + '"></div>' +
       '</div>';
     if (!prints.length) {
-      container.innerHTML += '<div style="color:var(--text-muted);font-size:0.85em;padding:40px;text-align:center;">暂无拍立得照片</div>';
+      container.innerHTML += '<div style="color:var(--text-muted);font-size:0.85em;padding:40px;text-align:center;">' + escHtml(t('media.noPrints')) + '</div>';
       return;
     }
-    container.innerHTML += '<div style="font-size:0.78em;color:var(--text-muted);margin-bottom:16px;">共 ' + prints.length + ' 张</div>';
+    container.innerHTML += '<div style="font-size:0.78em;color:var(--text-muted);margin-bottom:16px;">' + escHtml(t('media.printsCount', {count: prints.length})) + '</div>';
     container.innerHTML += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:18px;">' +
       prints.map(p => {
         const rawUrl = (p.files && p.files.image) ? p.files.image : (p.imageUrl || p.thumbnailImageUrl || '');
         const imgUrl = proxyImg(rawUrl);
         const world = p.worldName || p.worldId || '';
         const author = p.ownerDisplayName || '';
-        const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString('zh-CN') : '';
+        const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString(getLocale()) : '';
         return '<div class="print-card" style="position:relative;cursor:pointer;background:#fff;border-radius:4px;padding:10px 10px 20px;box-shadow:0 4px 18px rgba(0,0,0,0.45);transition:transform 0.15s;" onmouseover="this.style.transform=\'scale(1.03)\'" onmouseout="this.style.transform=\'\'">' +
-          '<button title="删除" onclick="event.stopPropagation(); deletePrint(\'' + escJsAttr(p.id) + '\', this)" style="position:absolute;top:6px;right:6px;z-index:3;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:0.8em;line-height:1;">×</button>' +
+          '<button title="' + t('media.delete') + '" onclick="event.stopPropagation(); deletePrint(\'' + escJsAttr(p.id) + '\', this)" style="position:absolute;top:6px;right:6px;z-index:3;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:0.8em;line-height:1;">×</button>' +
           '<img onclick="window.open(\'' + escJsAttr(imgUrl) + '\',\'_blank\')" src="' + escHtml(imgUrl) + '" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:2px;" loading="lazy" onerror="this.style.display=\'none\'">' +
           '<div style="margin-top:8px;">' +
             '<div style="font-size:0.7em;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;">' + escHtml(world) + '</div>' +
@@ -319,13 +319,13 @@ async function fetchPrints(container, gen) {
       }).join('') + '</div>';
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = '<div style="color:var(--error);">加载失败: ' + e.message + '</div>';
+    container.innerHTML = '<div style="color:var(--error);">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</div>';
   }
 }
 
 // Delete a polaroid print (DELETE /prints/{printId})
 async function deletePrint(printId, btn) {
-  if (!confirm('确定删除这张拍立得照片吗？此操作不可撤销。')) return;
+  if (!confirm(t('confirm.deletePrint'))) return;
   if (btn) btn.disabled = true;
   try {
     const r = await apiCall(`/api/vrc/prints/${printId}`, { method: 'DELETE' });
@@ -335,15 +335,15 @@ async function deletePrint(printId, btn) {
       // leaving an empty white card visible until the next refresh.
       const card = btn && (btn.closest('.print-card') || btn.closest('div'));
       if (card && card.parentElement) card.remove();
-      showToast('已删除拍立得', 'success');
-      logMsg('🗑️ 已删除拍立得照片', 'info');
+      showToast(t('toast.printDeleted'), 'success');
+      logMsg(t('log.printDeleted'), 'info');
     } else {
       if (btn) btn.disabled = false;
-      showToast('删除失败: HTTP ' + r.status, 'error');
+      showToast(t('toast.deleteFailHttp', {status: r.status}), 'error');
     }
   } catch(e) {
     if (btn) btn.disabled = false;
-    showToast('删除失败: ' + e.message, 'error');
+    showToast(t('toast.deleteFail', {msg: e.message}), 'error');
   }
 }
 function onPrintFileSelected(inputId) {
@@ -362,11 +362,11 @@ async function uploadPrint(inputId) {
   const btn      = document.getElementById('btn_' + inputId);
   const statusEl = document.getElementById('status_' + inputId);
   const noteEl   = document.getElementById('note_' + inputId);
-  if (!input || !input.files || !input.files[0]) { statusEl.textContent = '请先选择文件'; return; }
+  if (!input || !input.files || !input.files[0]) { statusEl.textContent = t('media.selectFileFirst'); return; }
   const file = input.files[0];
-  if (file.size > 10*1024*1024) { statusEl.innerHTML = '<i class="fa-solid fa-xmark"></i> 文件超过 10MB'; statusEl.style.color='#f87171'; return; }
+  if (file.size > 10*1024*1024) { statusEl.innerHTML = t('media.fileOver10mb'); statusEl.style.color='#f87171'; return; }
   btn.disabled = true;
-  statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 上传中 (处理图片...)';
+  statusEl.innerHTML = t('media.uploadingProcessing');
   statusEl.style.color = 'var(--text-muted)';
   try {
     // VRCX ALWAYS converts prints to PNG before uploading.
@@ -375,7 +375,7 @@ async function uploadPrint(inputId) {
     const img = new Image();
     await new Promise((res, rej) => {
       img.onload = res;
-      img.onerror = () => rej(new Error('无法解析图片'));
+      img.onerror = () => rej(new Error(t('media.imgParseError')));
       img.src = imgUrl;
     });
     
@@ -388,7 +388,7 @@ async function uploadPrint(inputId) {
     const pngBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
     URL.revokeObjectURL(imgUrl);
 
-    statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 上传中 (发送到 VRChat...)';
+    statusEl.innerHTML = t('media.uploadingSending');
     const fd = new FormData();
     fd.append('image', pngBlob, 'image.png');
     fd.append('timestamp', new Date().toISOString());
@@ -402,15 +402,15 @@ async function uploadPrint(inputId) {
       const txt = await r.text();
       throw new Error('HTTP ' + r.status + ': ' + txt);
     }
-    statusEl.innerHTML = '<i class="fa-solid fa-check"></i> 上传成功！';
+    statusEl.innerHTML = t('media.uploadSuccess');
     statusEl.style.color = '#86efac';
     if (input) input.value = '';
     const sel = document.getElementById('sel_' + inputId);
-    if (sel) sel.textContent = '未选择文件';
+    if (sel) sel.textContent = t('media.noFileSelected');
     if (typeof invalidateAssetsCache === 'function') invalidateAssetsCache();
     setTimeout(() => switchAssetsPage('prints'), 2000);
   } catch(e) {
-    statusEl.innerHTML = '<i class="fa-solid fa-xmark"></i> ' + e.message;
+    statusEl.innerHTML = '<i class="fa-solid fa-xmark"></i> ' + escHtml(e.message);
     statusEl.style.color = '#f87171';
     btn.disabled = false;
   }

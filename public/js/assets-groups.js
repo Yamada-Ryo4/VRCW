@@ -68,7 +68,7 @@ function switchAssetsPage(page) {
   if (btn) btn.classList.add('active', 'btn-primary');
 
   const content = document.getElementById('assetsContentArea');
-  content.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载中... (Loading...)</div>';
+  content.innerHTML = `<div style="color:var(--text-muted);margin:20px;">${t('assets.loading')}</div>`;
 
   const gen = ++_assetsGen;  // capture current generation
   if (page === 'balance') fetchBalance(content, gen);
@@ -111,21 +111,21 @@ async function fetchBalance(container, gen) {
 
 function _renderBalance(container, bal) {
   container.innerHTML = `
-    <h2 style="margin-bottom:16px;"><i class="fa-solid fa-wallet"></i> 钱包余额</h2>
+    <h2 style="margin-bottom:16px;"><i class="fa-solid fa-wallet"></i> ${t('assets.wallet')}</h2>
     <div class="my-profile-card" style="display:flex;align-items:center;gap:20px;max-width:400px;">
       <div style="width:60px;height:60px;background:var(--bg-glass);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--warning);"><i class="fa-solid fa-coins"></i> </div>
       <div>
-        <div style="font-size:0.8rem;color:var(--text-muted);">当前 VRChat 点数 / Credits</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);">${t('assets.currentCredits')}</div>
         <div style="font-size:1.8rem;font-weight:700;color:var(--text-primary);">${escHtml(String(bal.balance||0))} <span style="font-size:0.5em;color:var(--text-muted);">VRC</span></div>
       </div>
     </div>
-    <p style="margin-top:12px;color:var(--text-muted);font-size:0.85rem;">可在 VRChat 内购买创作者经济商品或订阅。</p>
+    <p style="margin-top:12px;color:var(--text-muted);font-size:0.85rem;">${t('assets.walletHint')}</p>
   `;
 }
 
 async function fetchStore(container, gen) {
   try {
-    container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载商店中...</div>';
+    container.innerHTML = `<div style="color:var(--text-muted);margin:20px;">${t('assets.loadingStore')}</div>`;
     const [balResp, listResp] = await Promise.all([
       apiCall('/api/vrc/economy/balance', { noAbort: true }),
       apiCall('/api/vrc/economy/listings?n=20&offset=0', { noAbort: true })
@@ -142,7 +142,7 @@ async function fetchStore(container, gen) {
           <div style="font-size:0.75em;color:var(--text-muted);font-weight:600;letter-spacing:.05em;text-transform:uppercase;">VRChat Credits</div>
           <div style="font-size:1.4em;font-weight:700;color:#d4d4d8;">${escHtml(String(credits))}</div>
         </div>
-        <a href="https://vrchat.com/home/marketplace/storefront" target="_blank" class="btn btn-secondary" style="margin-left:auto;font-size:0.8em;"><i class="fa-solid fa-cart-shopping"></i> 打开商店</a>
+        <a href="https://vrchat.com/home/marketplace/storefront" target="_blank" class="btn btn-secondary" style="margin-left:auto;font-size:0.8em;">${t('assets.openStore')}</a>
       </div>`;
     }
 
@@ -151,11 +151,11 @@ async function fetchStore(container, gen) {
       const data = await listResp.json();
       const items = Array.isArray(data) ? data : (data.listings || data.results || []);
       if (items.length) {
-        listingsHtml = '<h3 style="font-size:0.9rem;margin-bottom:12px;">🏷️ 商店商品</h3>' +
+        listingsHtml = `<h3 style="font-size:0.9rem;margin-bottom:12px;">${t('assets.storeItems')}</h3>` +
           '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">' +
           items.map(item => {
             const img = proxyImg(item.thumbnailImageUrl || item.imageUrl || '');
-            const name = escHtml(item.displayName || item.name || item.id || '商品');
+            const name = escHtml(item.displayName || item.name || item.id || t('assets.product'));
             const price = item.priceTokens != null ? `<i class="fa-solid fa-gem" style="color: #00f2fe;"></i> ${item.priceTokens}` : (item.price ? `$${(item.price/100).toFixed(2)}` : '');
             const type = escHtml(item.productType || item.type || '');
             return `<div style="background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;" onclick="window.open('https://vrchat.com/home/marketplace','_blank')">
@@ -168,21 +168,21 @@ async function fetchStore(container, gen) {
             </div>`;
           }).join('') + '</div>';
       } else {
-        listingsHtml = '<div style="color:var(--text-muted);font-size:0.85em;">暂无上架商品，或此功能需要 VRC+ Creator 权限。</div>';
+        listingsHtml = `<div style="color:var(--text-muted);font-size:0.85em;">${t('assets.noListings')}</div>`;
       }
     } else {
       // Listings may require special perms - just link to website
       listingsHtml = `<div style="padding:20px;text-align:center;background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;">
         <div style="font-size:2em;margin-bottom:8px;"><i class="fa-solid fa-shop"></i> </div>
-        <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px;">商品列表需要在 VRChat 网站查看</div>
-        <a href="https://vrchat.com/home/marketplace/storefront" target="_blank" class="btn btn-primary" style="font-size:0.85em;"><i class="fa-solid fa-link"></i> 打开 VRChat 商店</a>
+        <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px;">${t('assets.viewListingsOnSite')}</div>
+        <a href="https://vrchat.com/home/marketplace/storefront" target="_blank" class="btn btn-primary" style="font-size:0.85em;">${t('assets.openVrcStore')}</a>
       </div>`;
     }
 
-    container.innerHTML = '<h2 style="margin-bottom:16px;"><i class="fa-solid fa-shop"></i> 商店浏览</h2>' + balHtml + listingsHtml;
+    container.innerHTML = `<h2 style="margin-bottom:16px;"><i class="fa-solid fa-shop"></i> ${t('assets.store')}</h2>` + balHtml + listingsHtml;
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = '<div style="color:var(--error);">加载失败: ' + e.message + '</div>';
+    container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: e.message})}</div>`;
   }
 }
 
@@ -202,19 +202,19 @@ async function fetchTransactions(container, gen) {
       if (gen != null && _assetsGen !== gen) return;
       await writeAssetsCache('tx', tx);
     }
-    container.innerHTML = '<h2 style="margin-bottom:16px;"><i class="fa-solid fa-money-bill-transfer"></i> 交易记录</h2>';
+    container.innerHTML = `<h2 style="margin-bottom:16px;"><i class="fa-solid fa-money-bill-transfer"></i> ${t('assets.transactions')}</h2>`;
     if (!tx || (Array.isArray(tx) && tx.length === 0)) {
-      container.innerHTML += '<div style="color:var(--text-muted);">暂无交易记录</div>';
+      container.innerHTML += `<div style="color:var(--text-muted);">${t('assets.noTransactions')}</div>`;
       return;
     }
     const items = Array.isArray(tx) ? tx : [tx];
     const statusColors = {succeeded:'#86efac',expired:'#fbbf24',failed:'#f87171'};
-    const statusLabels = {succeeded:'<i class="fa-solid fa-check"></i> 成功',expired:'<i class="fa-solid fa-clock"></i> 已过期',failed:'<i class="fa-solid fa-xmark"></i> 失败'};
+    const statusLabels = {succeeded:t('assets.tx.succeeded'),expired:t('assets.tx.expired'),failed:t('assets.tx.failed')};
     container.innerHTML += items.map(t => {
       const sub = t.subscription || {};
       const amt = t.amount || sub.amount;
       const amtStr = amt ? (amt / 100).toFixed(2) : '—';
-      const created = t.created_at ? new Date(t.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+      const created = t.created_at ? new Date(t.created_at).toLocaleString(getLocale(),{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
       const st = t.status || 'unknown';
       const stColor = statusColors[st] || 'var(--text-muted)';
       const stLabel = statusLabels[st] || st;
@@ -226,7 +226,7 @@ async function fetchTransactions(container, gen) {
           ${isCredits ? '<i class="fa-solid fa-gem" style="color: #00f2fe;"></i> ' : '<i class="fa-solid fa-credit-card"></i> '}
         </div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:0.85em;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(sub.description || t.id || '交易')} ${giftTo}</div>
+          <div style="font-weight:600;font-size:0.85em;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(sub.description || t.id || t('assets.transaction'))} ${giftTo}</div>
           <div style="font-size:0.68em;color:var(--text-muted);margin-top:2px;">${created} · ID: ${escHtml(t.id?.substring(0,8))}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
@@ -237,7 +237,7 @@ async function fetchTransactions(container, gen) {
     }).join('');
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = '<div style="color:var(--error);">加载失败: ' + e.message + '</div>';
+    container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: e.message})}</div>`;
   }
 }
 
@@ -252,17 +252,17 @@ async function fetchSubscriptions(container, gen) {
       if (gen != null && _assetsGen !== gen) return;
       await writeAssetsCache('sub', subs);
     }
-    container.innerHTML = '<h2 style="margin-bottom:16px;"><i class="fa-solid fa-star"></i> VRC+ 订阅</h2>';
+    container.innerHTML = `<h2 style="margin-bottom:16px;"><i class="fa-solid fa-star"></i> ${t('assets.vrcPlus')}</h2>`;
     if (!subs || subs.length === 0) {
-      container.innerHTML += '<div style="color:var(--text-muted);">当前无有效的 VRC+ 订阅 (No active subscriptions)</div>';
+      container.innerHTML += `<div style="color:var(--text-muted);">${t('assets.noSubscriptions')}</div>`;
       return;
     }
     container.innerHTML += subs.map(s => `<div class="my-profile-card" style="margin-bottom:12px;">
       <h3 style="color:#d4d4d8;margin-bottom:4px;">${escHtml(s.description || s.tier || 'VRChat Plus')}</h3>
       <div style="font-size:0.8rem;color:var(--text-secondary);">
-        状态: <span style="color:var(--success);">${escHtml(s.status || 'active')}</span><br>
-        类型: ${escHtml(s.store || 'Unknown')}<br>
-        过期时间: ${escHtml(s.expires ? new Date(s.expires).toLocaleString() : '永久')}
+        ${t('assets.status')}: <span style="color:var(--success);">${escHtml(s.status || 'active')}</span><br>
+        ${t('assets.type')}: ${escHtml(s.store || 'Unknown')}<br>
+        ${t('assets.expiresAt')}: ${escHtml(s.expires ? new Date(s.expires).toLocaleString() : t('assets.permanent'))}
       </div>
     </div>`).join('');
   } catch(e) {
@@ -280,7 +280,7 @@ async function fetchEmoji(container, gen) {
       emojisAnim = cached.emojisAnim || [];
       stickers = cached.stickers || [];
     } else {
-      container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载中...</div>';
+      container.innerHTML = `<div style="color:var(--text-muted);margin:20px;">${t('assets.loadingShort')}</div>`;
       const [rEmoji, rEmojiAnim, rSticker] = await Promise.all([
         apiCall('/api/vrc/files?tag=emoji&n=100'),
         apiCall('/api/vrc/files?tag=emojianimated&n=100'),
@@ -313,7 +313,7 @@ async function fetchEmoji(container, gen) {
             media = '<img src="' + escHtml(imgUrl) + '" style="width:' + TILE + 'px;height:' + TILE + 'px;object-fit:contain;" loading="lazy" onerror="this.style.opacity=\'0.3\'">';
           }
           return '<div title="' + escHtml(f.name || f.id) + '" style="background:var(--bg-glass);border:1px solid var(--border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:6px;gap:4px;position:relative;">' +
-            (isAnimated ? '<span style="position:absolute;top:4px;right:4px;font-size:0.55em;background:#52525b;color:#fff;padding:1px 4px;border-radius:3px;z-index:2;">动画</span>' : '') +
+            (isAnimated ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55em;background:#52525b;color:#fff;padding:1px 4px;border-radius:3px;z-index:2;">${t('assets.animated')}</span>` : '') +
             media +
             '<div style="font-size:0.6em;color:var(--text-muted);text-align:center;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(f.name || '') + '</div>' +
           '</div>';
@@ -321,19 +321,19 @@ async function fetchEmoji(container, gen) {
       '</div>';
     };
 
-    container.innerHTML = '<h2 style="margin-bottom:16px;"><i class="fa-solid fa-face-smile"></i> 表情与贴纸</h2>' +
+    container.innerHTML = `<h2 style="margin-bottom:16px;"><i class="fa-solid fa-face-smile"></i> ${t('assets.emoji')}</h2>` +
       '<div class="vrc-upload-row">' +
-        makeUploadCard({title:'<i class="fa-solid fa-face-smile"></i> 上传静态表情', hint:'PNG · 最大 10MB · 最大 1024×1024', tag:'emoji', accept:'image/png,image/jpeg,image/webp', refreshPage:'emoji'}) +
-        makeUploadCard({title:'<i class="fa-solid fa-film"></i> 上传动态表情 (GIF)', hint:'GIF → 自动转精灵图 · 最大 10MB', tag:'emojianimated', accept:'image/gif', refreshPage:'emoji'}) +
-        makeUploadCard({title:'🏷️ 上传贴纸', hint:'PNG · 最大 10MB · 最大 1024×1024', tag:'sticker', accept:'image/png,image/jpeg,image/webp', refreshPage:'emoji'}) +
+        makeUploadCard({title:t('assets.uploadStaticEmoji'), hint:t('assets.uploadStaticEmojiHint'), tag:'emoji', accept:'image/png,image/jpeg,image/webp', refreshPage:'emoji'}) +
+        makeUploadCard({title:t('assets.uploadAnimEmoji'), hint:t('assets.uploadAnimEmojiHint'), tag:'emojianimated', accept:'image/gif', refreshPage:'emoji'}) +
+        makeUploadCard({title:t('assets.uploadSticker'), hint:t('assets.uploadStickerHint'), tag:'sticker', accept:'image/png,image/jpeg,image/webp', refreshPage:'emoji'}) +
       '</div>' +
-      '<h3 style="font-size:0.9rem;margin-bottom:10px;">自定义表情 (' + allEmojis.length + ')</h3>' +
-      renderFileGrid(allEmojis, '暂无自定义表情（需要 VRC+，可在官网或此处上传）') +
-      '<h3 style="font-size:0.9rem;margin-bottom:10px;">贴纸 (' + stickers.length + ')</h3>' +
-      renderFileGrid(stickers, '暂无贴纸（需要 VRC+，可在官网或此处上传）');
+      `<h3 style="font-size:0.9rem;margin-bottom:10px;">${t('assets.customEmojis', {count: allEmojis.length})}</h3>` +
+      renderFileGrid(allEmojis, t('assets.noCustomEmojis')) +
+      `<h3 style="font-size:0.9rem;margin-bottom:10px;">${t('assets.stickers', {count: stickers.length})}</h3>` +
+      renderFileGrid(stickers, t('assets.noStickers'));
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = '<div style="color:var(--error);">加载失败: ' + e.message + '</div>';
+    container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: e.message})}</div>`;
   }
 }
 
@@ -341,7 +341,7 @@ async function fetchEmoji(container, gen) {
 // INVENTORY (库存物品: 无人机/传送门/加载屏/掉落物等)
 // GET /inventory → { data: [...] } paginated, + GET /inventory/global
 // ═══════════════════════════════════════════════════════════
-const _equipSlotLabels = { drone: '无人机', portal: '传送门', warp: 'Warp', loadingscreen: '加载屏' };
+const _equipSlotLabels = { drone: t('assets.slot.drone'), portal: t('assets.slot.portal'), warp: t('assets.slot.warp'), loadingscreen: t('assets.slot.loadingscreen') };
 
 async function fetchInventory(container, gen) {
   try {
@@ -351,7 +351,7 @@ async function fetchInventory(container, gen) {
     if (fresh && Array.isArray(cachedItems)) {
       items = cachedItems;
     } else {
-      container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载库存中...</div>';
+      container.innerHTML = `<div style="color:var(--text-muted);margin:20px;">${t('assets.loadingInventory')}</div>`;
       items = [];
       // Paginate (cap at a few pages to stay within request budget)
       for (let i = 0; i < 5; i++) {
@@ -374,7 +374,7 @@ async function fetchInventory(container, gen) {
       const t = it.itemType || it.type || 'other';
       (groups[t] = groups[t] || []).push(it);
     }
-    const typeLabel = { prop: '<i class="fa-solid fa-wand-magic-sparkles"></i> 道具', emoji: '<i class="fa-solid fa-face-smile"></i> 表情', sticker: '🏷️ 贴纸', gift: '<i class="fa-solid fa-gift"></i> 礼物', drop: '<i class="fa-solid fa-box"></i> 掉落物', other: '<i class="fa-solid fa-box"></i> 其它' };
+    const typeLabel = { prop: t('assets.type.prop'), emoji: t('assets.type.emoji'), sticker: t('assets.type.sticker'), gift: t('assets.type.gift'), drop: t('assets.type.drop'), other: t('assets.type.other') };
 
     const card = (it) => {
       const img = proxyImg(it.imageUrl || it.thumbnailImageUrl || (it.metadata && it.metadata.imageUrl) || '');
@@ -385,17 +385,17 @@ async function fetchInventory(container, gen) {
         (img ? `<img src="${escHtml(img)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:1/1;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2em;"><i class="fa-solid fa-gift"></i> </div>') +
         '<div style="padding:8px 10px;display:flex;flex-direction:column;gap:4px;">' +
           `<div style="font-size:0.8em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(it.name || it.id || '')}</div>` +
-          (slot ? `<div style="font-size:0.65em;color:var(--text-muted);">槽位: ${escHtml(_equipSlotLabels[slot] || slot)}</div>` : '') +
-          (canEquip ? `<button class="btn btn-secondary" style="font-size:0.7em;padding:4px;" onclick="equipInventoryItem('${escJsAttr(it.id)}','${escJsAttr(slot)}',${equipped ? 'true' : 'false'})">${equipped ? '卸下' : '装备'}</button>` : '') +
+          (slot ? `<div style="font-size:0.65em;color:var(--text-muted);">${t('assets.slotLabel')}: ${escHtml(_equipSlotLabels[slot] || slot)}</div>` : '') +
+          (canEquip ? `<button class="btn btn-secondary" style="font-size:0.7em;padding:4px;" onclick="equipInventoryItem('${escJsAttr(it.id)}','${escJsAttr(slot)}',${equipped ? 'true' : 'false'})">${equipped ? t('assets.unequip') : t('assets.equip')}</button>` : '') +
         '</div></div>';
     };
 
-    let html = '<h2 style="margin-bottom:16px;"><i class="fa-solid fa-gift"></i> 库存物品 (' + items.length + ')</h2>';
+    let html = `<h2 style="margin-bottom:16px;">${t('assets.itemsTitle', {count: items.length})}</h2>`;
     if (!items.length) {
-      html += '<div style="color:var(--text-muted);font-size:0.9em;">暂无库存物品。库存包含无人机、传送门、加载屏、掉落物等（部分需要 VRC+）。</div>';
+      html += `<div style="color:var(--text-muted);font-size:0.9em;">${t('assets.noInventory')}</div>`;
     } else {
-      for (const [t, list] of Object.entries(groups)) {
-        html += `<h3 style="font-size:0.9rem;margin:14px 0 10px;">${typeLabel[t] || ('<i class="fa-solid fa-box"></i> ' + t)} (${list.length})</h3>`;
+      for (const [t2, list] of Object.entries(groups)) {
+        html += `<h3 style="font-size:0.9rem;margin:14px 0 10px;">${typeLabel[t2] || ('<i class="fa-solid fa-box"></i> ' + t2)} (${list.length})</h3>`;
         html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;">' +
           list.map(card).join('') + '</div>';
       }
@@ -403,7 +403,7 @@ async function fetchInventory(container, gen) {
     container.innerHTML = html;
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = '<div style="color:var(--error);">加载失败: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: escHtml(e.message)})}</div>`;
   }
 }
 
@@ -416,15 +416,15 @@ async function equipInventoryItem(inventoryId, slot, currentlyEquipped) {
       r = await apiCall(`/api/vrc/inventory/${inventoryId}/equip`, { method: 'PUT', json: { equipSlot: slot } });
     }
     if (r.ok) {
-      showToast(currentlyEquipped ? '已卸下' : '已装备', 'success');
+      showToast(currentlyEquipped ? t('assets.unequipped') : t('assets.equipped'), 'success');
       // Equipment state changed — drop the cache so the reload shows it.
       try { idb.set('assets_age_inventory', 0); } catch (_) {}
       switchAssetsPage('inventory');
     } else {
       const err = await r.json().catch(() => ({}));
-      showToast((currentlyEquipped ? '卸下' : '装备') + '失败: ' + (err.error?.message || ('HTTP ' + r.status)), 'error');
+      showToast(t('assets.equipFail', {action: currentlyEquipped ? t('assets.unequip') : t('assets.equip'), msg: (err.error?.message || ('HTTP ' + r.status))}), 'error');
     }
-  } catch(e) { showToast('错误: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -437,10 +437,10 @@ async function fetchProps(container, gen) {
     if (fresh && Array.isArray(cached)) {
       props = cached;
     } else {
-      container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">加载道具中...</div>';
+      container.innerHTML = `<div style="color:var(--text-muted);margin:20px;">${t('assets.loadingProps')}</div>`;
       const myId = await getMyId();
       if (_assetsGen !== gen) return;
-      if (!myId) throw new Error('未登录');
+      if (!myId) throw new Error(t('assets.notLoggedIn'));
       // /props lists the current user's props (owned)
       const r = await apiCall(`/api/vrc/props?userId=${myId}&n=100`);
       if (_assetsGen !== gen) return;
@@ -449,9 +449,9 @@ async function fetchProps(container, gen) {
       await writeAssetsCache('props', props);
     }
 
-    let html = '<h2 style="margin-bottom:16px;"><i class="fa-solid fa-wand-magic-sparkles"></i> 道具 Props (' + props.length + ')</h2>';
+    let html = `<h2 style="margin-bottom:16px;">${t('assets.propsTitle', {count: props.length})}</h2>`;
     if (!props.length) {
-      html += '<div style="color:var(--text-muted);font-size:0.9em;">暂无道具。道具(Props)是可在世界中生成的物件，需在 Unity SDK 中创建上传。</div>';
+      html += `<div style="color:var(--text-muted);font-size:0.9em;">${t('assets.noProps')}</div>`;
     } else {
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;">' +
         props.map(p => {
@@ -461,14 +461,14 @@ async function fetchProps(container, gen) {
             (img ? `<img src="${escHtml(img)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:1/1;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2em;"><i class="fa-solid fa-wand-magic-sparkles"></i> </div>') +
             '<div style="padding:8px 10px;">' +
               `<div style="font-size:0.82em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.name || p.id || '')}</div>` +
-              `<div style="font-size:0.65em;color:${published ? '#4ade80' : 'var(--text-muted)'};margin-top:2px;">${published ? '<i class="fa-solid fa-check"></i> 已发布' : '<i class="fa-solid fa-lock"></i> 未发布'}</div>` +
+              `<div style="font-size:0.65em;color:${published ? '#4ade80' : 'var(--text-muted)'};margin-top:2px;">${published ? t('assets.published') : t('assets.unpublished')}</div>` +
             '</div></div>';
         }).join('') + '</div>';
     }
     container.innerHTML = html;
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = '<div style="color:var(--error);">加载失败: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: escHtml(e.message)})}</div>`;
   }
 }
 

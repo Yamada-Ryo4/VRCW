@@ -38,19 +38,19 @@ document.addEventListener("DOMContentLoaded", () => {
 // ═══════════════════════════════════════════════════════════════
 
 function getStatusLabel(f) {
-  if (!f) return '离线';
-  if (f.state === 'active') return '网页在线';
-  if (f.state === 'online') return '游戏中';
-  if (f.location && f.location !== 'offline') return '游戏中';
-  return '离线';
+  if (!f) return t('stat.offline');
+  if (f.state === 'active') return t('stat.webOnline');
+  if (f.state === 'online') return t('stat.inGame');
+  if (f.location && f.location !== 'offline') return t('stat.inGame');
+  return t('stat.offline');
 }
 
 function getTrustInfo(tags = []) {
-  if (tags.includes('system_trust_veteran'))    return { label: 'Trusted User', color: '#B18FFF', cls: 'veteran' };
-  if (tags.includes('system_trust_trusted'))    return { label: 'Known User',  color: '#FF7B42', cls: 'trusted' };
-  if (tags.includes('system_trust_known'))      return { label: 'User',        color: '#2BCF5C', cls: 'known' };
-  if (tags.includes('system_trust_basic'))      return { label: 'New User',    color: '#1172B5', cls: 'basic' };
-  return { label: 'Visitor', color: '#CCCCCC', cls: 'visitor' };
+  if (tags.includes('system_trust_veteran'))    return { label: t('trust.veteran'), color: '#B18FFF', cls: 'veteran' };
+  if (tags.includes('system_trust_trusted'))    return { label: t('trust.trusted'), color: '#FF7B42', cls: 'trusted' };
+  if (tags.includes('system_trust_known'))      return { label: t('trust.known'),   color: '#2BCF5C', cls: 'known' };
+  if (tags.includes('system_trust_basic'))      return { label: t('trust.basic'),   color: '#1172B5', cls: 'basic' };
+  return { label: t('trust.visitor'), color: '#CCCCCC', cls: 'visitor' };
 }
 
 function isVRCPlus(tags = []) {
@@ -82,17 +82,17 @@ function _saveWorldNameCache() {
 }
 
 async function getLocationDisplay(location, worldId) {
-  if (!location || location === 'offline') return '离线';
-  if (location === 'private')   return '<i class="fa-solid fa-lock"></i> 私人房间';
-  if (location === 'traveling') return '✈️ 传送中';
+  if (!location || location === 'offline') return t('loc.offline');
+  if (location === 'private')   return t('loc.privateRoom');
+  if (location === 'traveling') return t('loc.traveling');
 
   const [wid, rest = ''] = location.split(':');
-  let type = '公开';
-  if (rest.includes('~private'))        type = '<i class="fa-solid fa-lock"></i> 私人';
-  else if (rest.includes('~friends+')) type = '<i class="fa-solid fa-user-group"></i> 好友+';
-  else if (rest.includes('~friends'))  type = '<i class="fa-solid fa-user-group"></i> 好友';
-  else if (rest.includes('~hidden'))   type = '<i class="fa-solid fa-user-group"></i> 好友+';
-  else if (rest.includes('group('))    type = '🏠 群组';
+  let type = t('loc.public');
+  if (rest.includes('~private'))        type = t('loc.private');
+  else if (rest.includes('~friends+')) type = t('loc.friendsPlus');
+  else if (rest.includes('~friends'))  type = t('loc.friends');
+  else if (rest.includes('~hidden'))   type = t('loc.friendsPlus');
+  else if (rest.includes('group('))    type = t('loc.group');
 
   const regionMatch = rest.match(/region\(([^)]+)\)/);
   const region = regionMatch ? regionMatch[1].toUpperCase() : '';
@@ -110,7 +110,7 @@ async function getLocationDisplay(location, worldId) {
       }
     } catch(_) {}
   }
-  return `${regionFlag} ${worldName || wid} · ${type}`;
+  return `${regionFlag} ${escHtml(worldName || wid)} · ${type}`;
 }
 
 function parseLocation(location) {
@@ -137,7 +137,7 @@ function friendLogMsg(msg, type = 'info') {
   const el = document.getElementById('friendConsole');
   if (!el) return;
   const d = document.createElement('div'); d.className = `log-${type}`;
-  d.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  d.textContent = `[${new Date().toLocaleTimeString(getLocale())}] ${msg}`;
   el.appendChild(d); el.scrollTop = el.scrollHeight;
   while (el.children.length > 200) el.removeChild(el.firstChild);
 }
@@ -146,7 +146,7 @@ function worldLogMsg(msg, type = 'info') {
   const el = document.getElementById('worldConsole');
   if (!el) return;
   const d = document.createElement('div'); d.className = `log-${type}`;
-  d.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  d.textContent = `[${new Date().toLocaleTimeString(getLocale())}] ${msg}`;
   el.appendChild(d); el.scrollTop = el.scrollHeight;
   while (el.children.length > 200) el.removeChild(el.firstChild);
 }
@@ -159,16 +159,21 @@ function proxyImg(url) {
   return url;
 }
 
+// 根据当前 i18n 语言返回 BCP 47 locale,供 toLocaleString 使用
+function getLocale() {
+  return { zh: 'zh-CN', ja: 'ja-JP', en: 'en-US' }[currentLang] || 'zh-CN';
+}
+
 function formatDate(d) {
   if (!d) return "-";
-  return new Date(d).toLocaleString("zh-CN", { 
-    year: "numeric", 
-    month: "2-digit", 
-    day: "2-digit", 
-    hour: "2-digit", 
-    minute: "2-digit" 
+  return new Date(d).toLocaleString(getLocale(), {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
   });
 }
 
-VRCW.registerModule('common', { getStatusLabel, getTrustInfo, isVRCPlus, getPlatformEmoji, getLocationDisplay, parseLocation, getLanguages, friendLogMsg, worldLogMsg, proxyImg, formatDate });
+VRCW.registerModule('common', { getStatusLabel, getTrustInfo, isVRCPlus, getPlatformEmoji, getLocationDisplay, parseLocation, getLanguages, friendLogMsg, worldLogMsg, proxyImg, formatDate, getLocale });
 renderAppVersionInfo();

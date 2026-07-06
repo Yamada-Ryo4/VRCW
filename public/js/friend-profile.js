@@ -121,13 +121,13 @@ function _renderFriendProfileUI(f, modal) {
   if (modBadge) {
     if (isBlocked) {
       modBadge.style.display = '';
-      modBadge.innerHTML = '<i class="fa-solid fa-ban"></i> 已屏蔽';
+      modBadge.innerHTML = t('friend.blocked');
       modBadge.style.background = 'rgba(239, 68, 68, 0.2)';
       modBadge.style.color = '#ef4444';
       modBadge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
     } else if (isMuted) {
       modBadge.style.display = '';
-      modBadge.innerHTML = '<i class="fa-solid fa-volume-xmark"></i> 已静音';
+      modBadge.innerHTML = t('friend.muted');
       modBadge.style.background = 'rgba(245, 158, 11, 0.2)';
       modBadge.style.color = '#f59e0b';
       modBadge.style.border = '1px solid rgba(245, 158, 11, 0.4)';
@@ -142,7 +142,7 @@ function _renderFriendProfileUI(f, modal) {
   const bdRow = document.getElementById('fpBadgesRow');
   if (bdRow) bdRow.innerHTML = showcased.map(b=>
     `<img src="${escHtml(b.badgeImageUrl||'')}" title="${escHtml(b.badgeName||'')}" style="width:30px;height:30px;border-radius:5px;" onerror="this.style.display='none'">`
-  ).join('') || '<span style="font-size:0.75em;color:var(--text-muted);">无展示徽章</span>';
+  ).join('') || `<span style="font-size:0.75em;color:var(--text-muted);">${t('friend.noShowcasedBadges')}</span>`;
 
   // Bug#1 fix: show formatted location
   const loc = parseLocation(f.location);
@@ -151,30 +151,30 @@ function _renderFriendProfileUI(f, modal) {
   
   const myLoc = (window.myProfileData && window.myProfileData.location) || '';
   const isMine = f.location && myLoc && f.location === myLoc && f.location !== 'offline' && f.location !== 'private';
-  const isMineTag = isMine ? ' <span style="font-size:0.85em;background:rgba(255, 255, 255, 0.3);color:#d4d4d8;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;"><i class="fa-solid fa-location-dot"></i> 你也在这里</span>' : '';
+  const isMineTag = isMine ? ` <span style="font-size:0.85em;background:rgba(255, 255, 255, 0.3);color:#d4d4d8;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;"><i class="fa-solid fa-location-dot"></i> ${t('friend.youAreHere')}</span>` : '';
 
   if (loc.isOffline) {
     locSection.style.display = 'none';
   } else if (loc.isPrivate || f.location === 'private') {
     locSection.style.display = '';
-    fpWorldInfo.innerHTML = `<span style="opacity:0.8;"><i class="fa-solid fa-lock"></i> 私人房间</span>`;
+    fpWorldInfo.innerHTML = `<span style="opacity:0.8;">${t('friend.privateRoom')}</span>`;
   } else if (loc.isTraveling || f.location === 'traveling') {
     locSection.style.display = '';
-    fpWorldInfo.innerHTML = `<span style="opacity:0.8;">✈️ 正在前往世界...</span>`;
+    fpWorldInfo.innerHTML = `<span style="opacity:0.8;">${t('friend.travelingToWorld')}</span>`;
   } else {
     locSection.style.display = '';
-    fpWorldInfo.innerHTML = '加载位置...' + isMineTag;
+    fpWorldInfo.innerHTML = t('friend.loadingLocation') + isMineTag;
     getLocationDisplay(f.location).then(txt => { 
       // If they have a valid world location and it's not private, they are joinable
       const isJoinable = !f.location.includes('~private');
       const btns = isJoinable ? `
-        <button onclick="inviteSelf('${escJsAttr(f.location)}')" class="btn btn-xs" style="background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);padding:2px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;margin-left:8px;vertical-align:middle;" title="发送邀请给自己"><i class="fa-solid fa-envelope"></i> 邀请自己</button>
+        <button onclick="inviteSelf('${escJsAttr(f.location)}')" class="btn btn-xs" style="background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);padding:2px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;margin-left:8px;vertical-align:middle;" title="${t('friend.inviteSelfTitle')}"><i class="fa-solid fa-envelope"></i> ${t('friend.inviteSelf')}</button>
       ` : '';
       fpWorldInfo.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(f.location)}'); event.preventDefault();" style="color:inherit;text-decoration:none;border-bottom:1px dashed var(--accent-light);vertical-align:middle;">${escHtml(txt)}</a>` + isMineTag + btns; 
     }).catch(()=>{ fpWorldInfo.innerHTML = escHtml(f.location||'') + isMineTag; });
   }
 
-  document.getElementById('fpStatusDesc').innerHTML = `<span style="font-weight:600;color:var(--text-primary);">${getStatusLabel(f)}</span> <span style="opacity:0.6">|</span> ` + escHtml(f.state==='offline' ? '离线' : (f.statusDescription||f.status||'').replace(/\\n/g, String.fromCharCode(10)));
+  document.getElementById('fpStatusDesc').innerHTML = `<span style="font-weight:600;color:var(--text-primary);">${getStatusLabel(f)}</span> <span style="opacity:0.6">|</span> ` + escHtml(f.state==='offline' ? t('stat.offline') : (f.statusDescription||f.status||'').replace(/\\n/g, String.fromCharCode(10)));
   const bioSection = document.getElementById('fpBioSection');
   if (f.bio) { bioSection.style.display=''; document.getElementById('fpBio').textContent=(f.bio||'').replace(/\\n/g, String.fromCharCode(10)); }
   else bioSection.style.display='none';
@@ -214,29 +214,29 @@ function _renderFriendProfileUI(f, modal) {
     const d = new Date(joinedStr);
     joinedStr = d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
   } else {
-    joinedStr = '未知 (非好友可见性限制)';
+    joinedStr = t('friend.dateJoinedUnknown');
   }
 
   document.getElementById('fpStatsGrid').innerHTML =
-    statField('账号创建日期', joinedStr) +
-    statField('最后活跃', f.last_activity ? new Date(f.last_activity).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '') +
-    statField('允许克隆模型', f.allowAvatarCopying ? '允许' : '不允许');
+    statField(t('friend.accountCreatedDate'), joinedStr) +
+    statField(t('field.lastActivity'), f.last_activity ? new Date(f.last_activity).toLocaleString(getLocale(),{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '') +
+    statField(t('friend.allowAvatarCopy'), f.allowAvatarCopying ? t('label.allowed') : t('label.disallowed'));
 
   document.getElementById('fpUserId').innerHTML =
     `<span style="font-family:monospace;font-size:0.9em;">${escHtml(f.id||'')}</span>
-    <button onclick="navigator.clipboard.writeText('${escJsAttr(f.id||'')}').then(()=>this.textContent='✓')" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;">复制</button>`;
+    <button onclick="navigator.clipboard.writeText('${escJsAttr(f.id||'')}').then(()=>this.textContent='✓')" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;">${t('btn.copy')}</button>`;
 
   const isFriendFaved = fpState.isFriendFaved;
   const isOnline = fpState.isOnline;
   const friendFavBtn = isFriend
-    ? `<button class="btn ${isFriendFaved?'btn-warning':'btn-secondary'}" style="font-size:0.82em;" onclick="${isFriendFaved?'toggleFriendFavorite(\''+escJsAttr(id)+'\',\''+escJsAttr(name)+'\')':'toggleFriendFavMenu(event,\''+escJsAttr(id)+'\')'}">${isFriendFaved?'<i class="fa-solid fa-star"></i> 已收藏':'<i class="fa-solid fa-star"></i> 收藏'}</button>`
+    ? `<button class="btn ${isFriendFaved?'btn-warning':'btn-secondary'}" style="font-size:0.82em;" onclick="${isFriendFaved?'toggleFriendFavorite(\''+escJsAttr(id)+'\',\''+escJsAttr(name)+'\')':'toggleFriendFavMenu(event,\''+escJsAttr(id)+'\')'}">${isFriendFaved?t('friend.favoritedIcon'):t('avatar.favoriteBtn')}</button>`
     : '';
   
   let actionButtons = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-      <button class="btn btn-secondary" style="font-size:0.82em;padding:6px 14px;" onclick="showFriendContextMenu(event)">··· 操作菜单</button>
+      <button class="btn btn-secondary" style="font-size:0.82em;padding:6px 14px;" onclick="showFriendContextMenu(event)">${t('friend.actionMenu')}</button>
       ${friendFavBtn}
-      <button class="btn btn-secondary" style="font-size:0.82em;" onclick="window.open('https://vrchat.com/home/user/${escJsAttr(f.id||'')}','_blank')"><i class="fa-solid fa-link"></i> VRChat 主页</button>
+      <button class="btn btn-secondary" style="font-size:0.82em;" onclick="window.open('https://vrchat.com/home/user/${escJsAttr(f.id||'')}','_blank')">${t('friend.vrchatHome')}</button>
     </div>
   `;
 
@@ -244,28 +244,28 @@ function _renderFriendProfileUI(f, modal) {
     actionButtons += `<div style="display:flex;gap:8px;flex-wrap:wrap;">`;
     if (isFriend) {
       if (isBlocked) {
-        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.82em;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">解除屏蔽</button>`;
+        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.82em;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unblock')}</button>`;
       } else {
         actionButtons += `
-          <button class="btn btn-primary" style="font-size:0.82em;" onclick="sendBoop('${escJsAttr(id)}','${escJsAttr(name)}')"><i class="fa-solid fa-hand"></i> 戳一下 (Boop)</button>
-          ${isOnline ? `<button class="btn btn-success" style="font-size:0.82em;" onclick="sendInvite('${escJsAttr(id)}','${escJsAttr(name)}')"><i class="fa-solid fa-envelope"></i> 邀请</button>` : ''}
-          ${isOnline ? `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="requestInvite('${escJsAttr(id)}','${escJsAttr(name)}')"><i class="fa-solid fa-envelope"></i> 请求邀请</button>` : ''}
+          <button class="btn btn-primary" style="font-size:0.82em;" onclick="sendBoop('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.boop')}</button>
+          ${isOnline ? `<button class="btn btn-success" style="font-size:0.82em;" onclick="sendInvite('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.invite')}</button>` : ''}
+          ${isOnline ? `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="requestInvite('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.requestInvite')}</button>` : ''}
         `;
       }
       if (isMuted) {
-        actionButtons += `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">解除静音</button>`;
+        actionButtons += `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unmute')}</button>`;
       }
-      actionButtons += `<button class="btn" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:0.82em;" onclick="deleteFriend('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">🗑️ 删除好友</button>`;
+      actionButtons += `<button class="btn" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:0.82em;" onclick="deleteFriend('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.deleteFriend')}</button>`;
     } else {
       if (isBlocked) {
-        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.82em;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">解除屏蔽</button>`;
+        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.82em;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unblock')}</button>`;
       } else if (fpState.friendRequestPending) {
-        actionButtons += `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="cancelFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')"><i class="fa-solid fa-hourglass-half"></i> 取消好友请求</button>`;
+        actionButtons += `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="cancelFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.cancelFriendRequest')}</button>`;
       } else {
-        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.82em;" onclick="sendFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')"><i class="fa-solid fa-plus"></i> 添加好友</button>`;
+        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.82em;" onclick="sendFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.addFriend')}</button>`;
       }
       if (isMuted) {
-        actionButtons += `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">解除静音</button>`;
+        actionButtons += `<button class="btn btn-secondary" style="font-size:0.82em;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unmute')}</button>`;
       }
     }
     actionButtons += `</div>`;
@@ -301,7 +301,7 @@ async function _loadFriendProfileGroups(userId, isFriend) {
   if (!gSummaryList || !gSummarySection) return;
 
   // Show loading state
-  gSummaryList.innerHTML = '<div style="font-size:0.75em;opacity:0.5;padding:4px 0;">加载群组中...</div>';
+  gSummaryList.innerHTML = `<div style="font-size:0.75em;opacity:0.5;padding:4px 0;">${t('friend.loadingGroupsDots')}</div>`;
   gSummarySection.style.display = '';
 
   try {
@@ -340,7 +340,7 @@ async function _loadFriendProfileGroups(userId, isFriend) {
             <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
             <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
           </div>
-          ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">佩戴</span>' : ''}
+          ${g.isRepresenting ? `<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">${t('friend.representing')}</span>` : ''}
         </div>
       `).join('')}
     </div>`;
@@ -381,7 +381,7 @@ function _isFriendProfileScopeCurrent() {
 async function fetchFriendGroups(userId, seq) {
   const el = document.getElementById('fpGroupsList');
   if (!el) return;
-  el.innerHTML = '<div style="padding:20px;color:rgba(255,255,255,0.3);text-align:center;">加载中...</div>';
+  el.innerHTML = `<div style="padding:20px;color:rgba(255,255,255,0.3);text-align:center;">${t('friend.loading')}</div>`;
   try {
     const r = await apiCall('/api/vrc/users/' + userId + '/groups?n=50', _friendProfileApiOpts());
     if (seq != null && window._fpCurrentSeq !== seq) return; // user opened another friend
@@ -392,7 +392,7 @@ async function fetchFriendGroups(userId, seq) {
     if (!_isFriendProfileScopeCurrent()) return;
 
     if (!groups || !groups.length) { 
-      el.innerHTML = '<div style="padding:20px;color:rgba(255,255,255,0.3);">暂无公开群组</div>'; 
+      el.innerHTML = `<div style="padding:20px;color:rgba(255,255,255,0.3);">${t('friend.noPublicGroups')}</div>`;
       return; 
     }
 
@@ -419,17 +419,17 @@ async function fetchFriendGroups(userId, seq) {
 
     let html = '';
     if (owned.length) {
-      html += '<div style="font-size:0.72em;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">创建的群组 (' + owned.length + ')</div>';
-      html += owned.map(g => renderGroup(g, ' <span style="font-size:0.65em;background:rgba(255,255,255,0.13);color:#d4d4d8;border:1px solid rgba(255,255,255,0.27);padding:2px 5px;border-radius:99px;">创建者</span>')).join('');
+      html += `<div style="font-size:0.72em;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">${t('friend.createdGroups', {count: owned.length})}</div>`;
+      html += owned.map(g => renderGroup(g, ` <span style="font-size:0.65em;background:rgba(255,255,255,0.13);color:#d4d4d8;border:1px solid rgba(255,255,255,0.27);padding:2px 5px;border-radius:99px;">${t('friend.creator')}</span>`)).join('');
       html += '<div style="border-top:1px solid var(--border);margin:10px 0;"></div>';
     }
     if (mutual.length && !window._fpIsSelf) {
-      html += '<div style="font-size:0.72em;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">共同群组 (' + mutual.length + ')</div>';
-      html += mutual.map(g => renderGroup(g, ' <span style="font-size:0.65em;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 5px;border-radius:99px;">共同</span>')).join('');
+      html += `<div style="font-size:0.72em;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">${t('friend.mutualGroups', {count: mutual.length})}</div>`;
+      html += mutual.map(g => renderGroup(g, ` <span style="font-size:0.65em;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);padding:2px 5px;border-radius:99px;">${t('friend.mutual')}</span>`)).join('');
       html += '<div style="border-top:1px solid var(--border);margin:10px 0;"></div>';
     }
     if (remaining.length) {
-      html += '<div style="font-size:0.72em;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">其他群组 (' + remaining.length + ')</div>';
+      html += `<div style="font-size:0.72em;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">${t('friend.otherGroups', {count: remaining.length})}</div>`;
       html += remaining.map(g => renderGroup(g, '')).join('');
     }
     el.innerHTML = html;
@@ -443,7 +443,7 @@ async function fetchFriendGroups(userId, seq) {
 async function fetchFriendWorlds(userId, seq) {
   const el = document.getElementById('fpWorldsList');
   if(!el) return;
-  el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">加载中...</div>';
+  el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">${t('friend.loading')}</div>`;
   try {
     const r = await apiCall(`/api/vrc/worlds?userId=${userId}&releaseStatus=public&n=20&sort=updated`, _friendProfileApiOpts());
     if (seq != null && window._fpCurrentSeq !== seq) return;
@@ -452,7 +452,7 @@ async function fetchFriendWorlds(userId, seq) {
     const worlds = await r.json();
     if (seq != null && window._fpCurrentSeq !== seq) return;
     if (!_isFriendProfileScopeCurrent()) return;
-    if (!worlds || !worlds.length) { el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);">暂无公开世界</div>'; return; }
+    if (!worlds || !worlds.length) { el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);">${t('friend.noPublicWorlds')}</div>`; return; }
     const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     el.innerHTML = worlds.map(w => `<div class="avatar-card" style="cursor:pointer;" onclick="openWorldDetail('${escJsAttr(w.id)}')">
       <div class="avatar-thumb-wrapper img-loading">
@@ -515,7 +515,7 @@ async function fetchFriendAvatars(userId, seq) {
   if (fpAvatarFetchCache.has(userId)) return fpAvatarFetchCache.get(userId);
   
   const fetchTask = (async () => {
-    el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">正在通过 4 个数据库跨服搜寻模型 (Scanning 4 DBs)...</div>';
+    el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">${t('friend.scanningDbs')}</div>`;
     
     try {
     const promises = [];
@@ -603,7 +603,7 @@ async function fetchFriendAvatars(userId, seq) {
 
     if (!allAvatars.length) { 
       // If we got NO results at all, show a specific empty message
-      el.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">暂无公开模型记录 (No database records found)</div>'; 
+      el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:rgba(255,255,255,0.3);text-align:center;">${t('friend.noAvatarRecords')}</div>`;
       return; 
     }
     
@@ -671,7 +671,7 @@ async function fetchFriendAvatars(userId, seq) {
   } catch(e) { 
     if (isAbortError(e)) return;
     console.error('fetchFriendAvatars error:', e);
-    el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:var(--text-muted);font-size:0.85em;text-align:center;">读取列表时出错: ${escHtml(e.message)}</div>`; 
+    el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:var(--text-muted);font-size:0.85em;text-align:center;">${t('friend.loadListError', {msg: escHtml(e.message)})}</div>`;
   } finally {
     fpAvatarFetchCache.delete(userId);
   }
@@ -682,7 +682,7 @@ async function fetchFriendAvatars(userId, seq) {
 }
 
 async function deleteFriend(userId, name) {
-  if (!confirm(`确定要删除好友「${name}」吗？`)) return;
+  if (!confirm(t('confirm.deleteFriend', {name: name}))) return;
   try {
     const r = await apiCall(`/api/vrc/auth/user/friends/${userId}`, { method: 'DELETE' });
     if (!r.ok) throw new Error(await r.text());
@@ -708,15 +708,15 @@ async function deleteFriend(userId, name) {
       await idb.set('friend_basics', basics);
       await idb.set('friend_basics_age', Date.now());
     } catch (e) { /* IDB best-effort */ }
-    friendLogMsg(`✓ 已删除好友 ${name}`, 'success');
-  } catch(e) { friendLogMsg(`✗ 删除失败: ${e.message}`, 'error'); }
+    friendLogMsg(t('log.friendDeleted', {name: name}), 'success');
+  } catch(e) { friendLogMsg(t('log.deleteFriendFail', {msg: e.message}), 'error'); }
 }
 
 async function sendFriendRequest(userId, name) {
   try {
     const r = await apiCall(`/api/vrc/user/${userId}/friendRequest`, { method: 'POST' });
     if (!r.ok) throw new Error(await r.text());
-    friendLogMsg(`✓ 已向 ${name} 发送好友申请`, 'success');
+    friendLogMsg(t('log.friendReqSent', {name: name}), 'success');
     // Mark the request as pending. Don't flip isFriend — that requires the
     // other side to accept. The pending flag drives the disabled
     // "请求已发送" button on next render so the user can't double-send.
@@ -727,7 +727,7 @@ async function sendFriendRequest(userId, name) {
         _renderFriendProfileUI(currentFriendProfile, modal);
       }
     }
-  } catch(e) { friendLogMsg(`✗ 发送失败: ${e.message}`, 'error'); }
+  } catch(e) { friendLogMsg(t('log.friendReqFail', {msg: e.message}), 'error'); }
 }
 
 VRCW.registerModule('friendProfile', { openFriendProfile, getFriendProfileActionState, _renderFriendProfileUI, closeFriendProfile, switchFriendProfileTab, deleteFriend, sendFriendRequest });
@@ -738,7 +738,7 @@ renderAppVersionInfo();
 async function openCurrentAvatarDetail() {
     const f = window.currentFriendProfile;
     if (!f || !f.currentAvatar) {
-        showToast('无法获取此用户的当前模型 ID，用户可能已离线或隐藏了模型信息。', 'error');
+        showToast(t('toast.noCurrentAvatarId'), 'error');
         return;
     }
     
@@ -747,7 +747,7 @@ async function openCurrentAvatarDetail() {
     try {
         const resp = await apiCall('/api/vrc/avatars/' + avtrId);
         if (!resp.ok) {
-            if (resp.status === 404 || resp.status === 403) throw new Error('此模型为私有模型，或已被作者删除。');
+            if (resp.status === 404 || resp.status === 403) throw new Error(t('toast.avatarPrivateOrDeleted'));
             throw new Error('HTTP ' + resp.status);
         }
         const av = await resp.json();
@@ -755,9 +755,9 @@ async function openCurrentAvatarDetail() {
         if (typeof displayAvatarDetail === 'function') {
             displayAvatarDetail(av);
         } else {
-            showToast('组件未加载，请稍后再试', 'error');
+            showToast(t('toast.componentNotLoaded'), 'error');
         }
     } catch (e) {
-        showToast('获取模型失败: ' + e.message, 'error');
+        showToast(t('toast.avatarLoadFail', {msg: e.message}), 'error');
     }
 }

@@ -9,7 +9,7 @@
 
 async function loadMyGroups() {
   const el = document.getElementById('friendList');
-  if (el) el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">加载群组中...</div>';
+  if (el) el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">' + escHtml(t('group.loadingGroupsDetail')) + '</div>';
   try {
     const meResp = await apiCall('/api/vrc/auth/user');
     const me = await meResp.json();
@@ -18,7 +18,7 @@ async function loadMyGroups() {
     const groups = await r.json();
     myGroupsCache = groups || [];
     if (!groups || !groups.length) {
-      el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">暂无群组</div>';
+      el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">' + escHtml(t('group.noGroups')) + '</div>';
       return;
     }
     // Sort: own groups first, then rest
@@ -26,16 +26,16 @@ async function loadMyGroups() {
     const other = groups.filter(g => g.ownerId !== me.id && g.userId !== me.id);
     let html = '';
     if (owned.length) {
-      html += '<div style="padding:8px 0 4px;font-size:0.75em;font-weight:700;color:var(--text-muted);letter-spacing:0.05em;text-transform:uppercase;">我创建的群组</div>';
+      html += '<div style="padding:8px 0 4px;font-size:0.75em;font-weight:700;color:var(--text-muted);letter-spacing:0.05em;text-transform:uppercase;">' + escHtml(t('group.myCreatedGroups')) + '</div>';
       html += owned.map(g => groupCardHtml(g, me.id)).join('');
       html += '<div style="margin:8px 0;border-top:1px solid var(--border);"></div>';
     }
     html += other.map(g => groupCardHtml(g, me.id)).join('');
     el.innerHTML = html;
-    document.getElementById('friendStats').textContent = '共 ' + groups.length + ' 个群组';
+    document.getElementById('friendStats').textContent = t('group.totalGroupsCount', {count: groups.length});
   } catch(e) {
     if (isAbortError(e)) return;
-    if (el) el.innerHTML = '<div style="color:var(--error);padding:20px;">加载失败: ' + e.message + '</div>';
+    if (el) el.innerHTML = '<div style="color:var(--error);padding:20px;">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</div>';
   }
 }
 
@@ -46,7 +46,7 @@ function groupCardHtml(g, myId) {
       '<img src="' + escHtml(proxyImg(g.iconUrl||'')) + '" style="border-radius:10px;object-fit:cover;" onerror="this.style.display=\'none\'">' +
     '</div>' +
     '<div class="friend-info">' +
-      '<div class="friend-name">' + escHtml(g.name||'') + (isOwner ? ' <span style="font-size:0.65em;background:rgba(255,255,255,0.13);color:#d4d4d8;border:1px solid rgba(255,255,255,0.27);padding:2px 6px;border-radius:99px;">创建者</span>' : '') + '</div>' +
+      '<div class="friend-name">' + escHtml(g.name||'') + (isOwner ? ' <span style="font-size:0.65em;background:rgba(255,255,255,0.13);color:#d4d4d8;border:1px solid rgba(255,255,255,0.27);padding:2px 6px;border-radius:99px;">' + escHtml(t('group.owner')) + '</span>' : '') + '</div>' +
       '<div class="friend-location" style="font-size:0.78em;color:var(--text-muted);">.' + escHtml(g.shortCode||'') + ' · <i class="fa-solid fa-user-group"></i> ' + (g.memberCount||0) + '</div>' +
     '</div>' +
   '</div>';
@@ -92,8 +92,8 @@ async function openGroupDetail(groupId) {
           <div id="gdDesc" style="font-size:0.85em;color:var(--text-secondary);line-height:1.6;max-height:180px;overflow-y:auto;white-space:pre-line;margin-bottom:16px;"></div>
           
           <div class="tab-nav" style="background:transparent;border-bottom:1px solid var(--border);margin-bottom:12px;">
-            <button class="tab-btn active" onclick="switchGroupDetailTab(this, 'instances')">当前实例</button>
-            <button class="tab-btn" onclick="switchGroupDetailTab(this, 'members')">成员列表</button>
+            <button class="tab-btn active" onclick="switchGroupDetailTab(this, 'instances')">${escHtml(t('group.tabInstances'))}</button>
+            <button class="tab-btn" onclick="switchGroupDetailTab(this, 'members')">${escHtml(t('group.tabMembers'))}</button>
           </div>
           
           <div id="gdInstances" class="group-instance-list"></div>
@@ -111,7 +111,7 @@ async function openGroupDetail(groupId) {
     lockBodyScroll();
     modal.dataset.scrollLocked = '1';
   }
-  document.getElementById('gdName').textContent = '加载中...';
+  document.getElementById('gdName').textContent = t('loading');
   document.getElementById('gdDesc').textContent = '';
   document.getElementById('gdStats').innerHTML = '';
   document.getElementById('gdBanner').style.backgroundImage = '';
@@ -138,11 +138,11 @@ async function openGroupDetail(groupId) {
     _gdIconFallback.textContent = (g.name || '?').trim().charAt(0).toUpperCase();
     document.getElementById('gdName').textContent = g.name || '';
     document.getElementById('gdShortCode').textContent = '.' + (g.shortCode || '');
-    document.getElementById('gdDesc').textContent = g.description || '暂无简介';
+    document.getElementById('gdDesc').textContent = g.description || t('group.noDesc');
     document.getElementById('gdStats').innerHTML =
-      '<span><i class="fa-solid fa-user-group"></i> ' + (g.memberCount || 0) + ' 成员</span>' +
+      '<span><i class="fa-solid fa-user-group"></i> ' + t('group.memberCount', {count: (g.memberCount || 0)}) + '</span>' +
       '<span style="opacity:0.3;margin:0 4px;">|</span>' +
-      '<span>' + (g.joinState === 'closed' ? '<i class="fa-solid fa-lock"></i> 闭门' : g.joinState === 'invite' ? '✉️ 邀请' : g.joinState === 'request' ? '<i class="fa-solid fa-hand"></i> 申请' : '<i class="fa-solid fa-lock-open"></i> 公开') + '</span>' +
+      '<span>' + (g.joinState === 'closed' ? t('group.joinClosed') : g.joinState === 'invite' ? t('group.joinInvite') : g.joinState === 'request' ? t('group.joinRequest') : t('group.joinOpen')) + '</span>' +
       (g.languages && g.languages.length ? '<span style="opacity:0.3;margin:0 4px;">|</span><span><i class="fa-solid fa-globe"></i> ' + g.languages.join(', ') + '</span>' : '');
 
     // Render Actions
@@ -151,12 +151,12 @@ async function openGroupDetail(groupId) {
       const myId = g.myMember.userId;
       const vis = g.myMember.visibility; // 'visible', 'hidden', 'friends'
       const oppVis = vis === 'visible' ? 'hidden' : 'visible';
-      const visText = vis === 'visible' ? '👁️ 个人资料可见' : (vis === 'friends' ? '<i class="fa-solid fa-user-group"></i> 仅好友可见' : '👻 资料页隐藏');
-      actionHtml += `<button onclick="vrcGroupAction('${escJsAttr(groupId)}','visibility','${escJsAttr(myId)}','${escJsAttr(oppVis)}')" style="background:var(--bg-glass);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.75em;color:var(--text-primary);cursor:pointer;" title="点击切换">${visText}</button>`;
-      actionHtml += `<button onclick="vrcGroupAction('${escJsAttr(groupId)}','leave')" style="background:#ef444422;border:1px solid #ef444444;border-radius:6px;padding:4px 10px;font-size:0.75em;color:#ef4444;cursor:pointer;"><i class="fa-solid fa-door-open"></i> 退出群组</button>`;
+      const visText = vis === 'visible' ? t('group.visVisible') : (vis === 'friends' ? t('group.visFriends') : t('group.visHidden'));
+      actionHtml += `<button onclick="vrcGroupAction('${escJsAttr(groupId)}','visibility','${escJsAttr(myId)}','${escJsAttr(oppVis)}')" style="background:var(--bg-glass);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.75em;color:var(--text-primary);cursor:pointer;" title="${t('group.clickToToggle')}">${visText}</button>`;
+      actionHtml += `<button onclick="vrcGroupAction('${escJsAttr(groupId)}','leave')" style="background:#ef444422;border:1px solid #ef444444;border-radius:6px;padding:4px 10px;font-size:0.75em;color:#ef4444;cursor:pointer;">${t('group.leaveGroup')}</button>`;
     } else {
       if (g.joinState !== 'closed') {
-        actionHtml += `<button onclick="vrcGroupAction('${escJsAttr(groupId)}','join')" style="background:var(--accent);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.75em;color:#fff;cursor:pointer;font-weight:600;"><i class="fa-solid fa-plus"></i> 申请加入</button>`;
+        actionHtml += `<button onclick="vrcGroupAction('${escJsAttr(groupId)}','join')" style="background:var(--accent);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.75em;color:#fff;cursor:pointer;font-weight:600;">${t('group.requestJoin')}</button>`;
       }
     }
     document.getElementById('gdActions').innerHTML = actionHtml;
@@ -166,7 +166,7 @@ async function openGroupDetail(groupId) {
 
   } catch(e) {
     if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('groupDetail', detailCtrl)) return;
-    document.getElementById('gdName').textContent = '加载失败: ' + e.message;
+    document.getElementById('gdName').textContent = t('toast.loadFailMsg', {msg: e.message});
   }
 }
 
@@ -193,7 +193,7 @@ async function vrcGroupAction(groupId, action, myId, nextVis) {
     // and join/leave/visibility silently fail. (Fixed: was `await fetch(...)`.)
     let url, opts = { method: 'POST' };
     if (action === 'leave') {
-      if(!confirm('确定要退出该群组吗？')) return;
+      if(!confirm(t('confirm.leaveGroup'))) return;
       url = '/api/vrc/groups/' + groupId + '/leave';
     } else if (action === 'join') {
       url = '/api/vrc/groups/' + groupId + '/join';
@@ -217,7 +217,7 @@ async function vrcGroupAction(groupId, action, myId, nextVis) {
     // Refresh modal
     openGroupDetail(groupId);
   } catch(e) {
-    showToast('操作失败: ' + e.message, 'error');
+    showToast(t('toast.opFailMsg', {msg: e.message}), 'error');
   }
 }
 
@@ -237,12 +237,12 @@ function renderGroupInstancesForbidden(el, groupId, groupContext) {
   const isMember = !!(groupContext && groupContext.myMember);
   const joinState = groupContext && groupContext.joinState;
   const canRequestJoin = !isMember && joinState !== 'closed';
-  const title = isMember ? 'VRChat 拒绝读取群组实例' : '加入群组后才能查看当前实例';
+  const title = isMember ? t('group.forbiddenTitleMember') : t('group.forbiddenTitleNonMember');
   const body = isMember
-    ? '你的账号已在这个群组内，但 VRChat 仍返回 403。通常是该群组实例有角色门槛、你没有对应权限，或 VRChat 暂时不允许 API 读取这组实例。'
-    : '这个群组虽然资料页是公开的，但 VRChat 对“当前实例列表”有额外权限限制；非成员读取 /groups/{groupId}/instances 时会返回 403。';
+    ? t('group.forbiddenBodyMember')
+    : t('group.forbiddenBodyNonMember');
   const action = canRequestJoin
-    ? `<button class="btn btn-xs btn-primary" style="margin-top:10px;padding:5px 10px;font-size:0.72rem;" onclick="vrcGroupAction('${escJsAttr(groupId)}','join')">加入/申请加入</button>`
+    ? `<button class="btn btn-xs btn-primary" style="margin-top:10px;padding:5px 10px;font-size:0.72rem;" onclick="vrcGroupAction('${escJsAttr(groupId)}','join')">${escHtml(t('group.joinOrRequest'))}</button>`
     : '';
   el.innerHTML = `<div style="padding:12px;color:var(--text-secondary);font-size:0.82rem;line-height:1.6;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;">
     <div style="color:var(--text-primary);font-weight:700;margin-bottom:4px;">${escHtml(title)}</div>
@@ -277,20 +277,20 @@ function normalizeGroupInstanceInfo(i) {
 
   const groupAccess = String((i && (i.groupAccessType || i.group_access_type)) || params.groupAccessType || '').toLowerCase();
   const groupAccessLabel = ({
-    public: '\u7fa4\u7ec4\u516c\u5f00',
-    members: '\u7fa4\u7ec4\u6210\u5458',
-    friends: '\u7fa4\u7ec4\u597d\u53cb',
-    private: '\u7fa4\u7ec4\u79c1\u5bc6'
-  })[groupAccess] || (groupAccess ? `\u7fa4\u7ec4 ${groupAccess}` : '');
+    public: t('group.accessPublic'),
+    members: t('group.accessMembers'),
+    friends: t('group.accessFriends'),
+    private: t('group.accessPrivate')
+  })[groupAccess] || (groupAccess ? t('group.accessOther', {name: groupAccess}) : '');
 
   let accessLabel = groupAccessLabel;
   if (!accessLabel) {
     const accessRaw = String((i && (i.accessType || i.type || i.privacy)) || '').toLowerCase();
-    if (instancePart.includes('~private') || accessRaw === 'private') accessLabel = '\u79c1\u5bc6';
-    else if (instancePart.includes('~friends+') || instancePart.includes('~hidden') || instancePart.includes('canRequestInvite')) accessLabel = '\u597d\u53cb+';
-    else if (instancePart.includes('~friends') || accessRaw === 'friends') accessLabel = '\u597d\u53cb';
-    else if (params.group) accessLabel = '\u7fa4\u7ec4';
-    else accessLabel = '\u516c\u5f00';
+    if (instancePart.includes('~private') || accessRaw === 'private') accessLabel = t('group.labelPrivate');
+    else if (instancePart.includes('~friends+') || instancePart.includes('~hidden') || instancePart.includes('canRequestInvite')) accessLabel = t('group.labelFriendsPlus');
+    else if (instancePart.includes('~friends') || accessRaw === 'friends') accessLabel = t('group.labelFriends');
+    else if (params.group) accessLabel = t('group.labelGroup');
+    else accessLabel = t('group.labelPublic');
   }
 
   const numberFrom = (...vals) => {
@@ -307,7 +307,7 @@ function normalizeGroupInstanceInfo(i) {
   const isJoinable = location.startsWith('wrld_') && !instancePart.includes('~private');
 
   return {
-    worldName: world.name || (i && i.worldName) || '\u672a\u77e5\u4e16\u754c',
+    worldName: world.name || (i && i.worldName) || t('world.unknownWorld'),
     instanceShortId,
     regionLabel,
     accessLabel,
@@ -321,7 +321,7 @@ function normalizeGroupInstanceInfo(i) {
 async function fetchGroupInstances(groupId, groupContext = null, token = null, signal = null) {
   const el = document.getElementById('gdInstances');
   if(!el) return;
-  el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">加载实例中...</div>';
+  el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">' + escHtml(t('group.loadingInstances')) + '</div>';
   try {
     const opts = signal ? { signal, noDedupe: true } : {};
     const r = await apiCall('/api/vrc/groups/' + groupId + '/instances', opts);
@@ -336,7 +336,7 @@ async function fetchGroupInstances(groupId, groupContext = null, token = null, s
     if (token && !isUiTokenCurrent(token)) return;
     if (signal && signal.aborted) return;
     if (!insts || !insts.length) {
-      el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8rem;">暂无活动实例</div>';
+      el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8rem;">' + escHtml(t('group.noActiveInstances')) + '</div>';
       return;
     }
     el.innerHTML = insts.map(i => {
@@ -347,8 +347,8 @@ async function fetchGroupInstances(groupId, groupContext = null, token = null, s
         info.accessLabel
       ].filter(Boolean);
       const joinButton = info.isJoinable
-        ? `<button class="btn btn-xs btn-primary" style="padding:4px 8px;font-size:0.7em;" onclick="inviteSelf('${escJsAttr(info.location)}')">加入</button>`
-        : `<button class="btn btn-xs btn-primary" style="padding:4px 8px;font-size:0.7em;" disabled>加入</button>`;
+        ? `<button class="btn btn-xs btn-primary" style="padding:4px 8px;font-size:0.7em;" onclick="inviteSelf('${escJsAttr(info.location)}')">${escHtml(t('group.join'))}</button>`
+        : `<button class="btn btn-xs btn-primary" style="padding:4px 8px;font-size:0.7em;" disabled>${escHtml(t('group.join'))}</button>`;
       return `<div class="group-instance-card">
         <div class="inst-info">
           <div class="inst-name">${escHtml(info.worldName)}</div>
@@ -361,14 +361,14 @@ async function fetchGroupInstances(groupId, groupContext = null, token = null, s
   } catch(e) {
     if (token && !isUiTokenCurrent(token)) return;
     if (signal && signal.aborted) return;
-    el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">无法加载实例: ' + escHtml(e.message) + '</div>';
+    el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">' + escHtml(t('group.instancesLoadFail', {msg: e.message})) + '</div>';
   }
 }
 
 async function fetchGroupMembers(groupId, token = null, signal = null) {
   const el = document.getElementById('gdMembers');
   if(!el) return;
-  el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">加载成员中...</div>';
+  el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">' + escHtml(t('group.loadingMembers')) + '</div>';
   try {
     // Note: VRChat API limit is 100 per page. We'll just fetch the first page for now.
     const opts = signal ? { signal, noDedupe: true } : {};
@@ -380,7 +380,7 @@ async function fetchGroupMembers(groupId, token = null, signal = null) {
     if (token && !isUiTokenCurrent(token)) return;
     if (signal && signal.aborted) return;
     if (!members || !members.length) {
-      el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8rem;">暂无可见成员</div>';
+      el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8rem;">' + escHtml(t('group.noVisibleMembers')) + '</div>';
       return;
     }
     el.innerHTML = members.map(m => {
@@ -398,7 +398,7 @@ async function fetchGroupMembers(groupId, token = null, signal = null) {
   } catch(e) {
     if (token && !isUiTokenCurrent(token)) return;
     if (signal && signal.aborted) return;
-    el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">无法加载成员: ' + escHtml(e.message) + '</div>';
+    el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">' + escHtml(t('group.membersLoadFail', {msg: e.message})) + '</div>';
   }
 }
 
@@ -410,7 +410,7 @@ async function fetchInstanceOccupancy(loc, token = null, signal = null) {
   if (loc.indexOf(':') < 0) return;
   // loc is already "worldId:instanceId(+params)" — the instance endpoint accepts it as-is
   const instancePath = loc;
-  el.innerHTML = '<span style="font-size:0.72em;color:var(--text-muted);">读取在线人数...</span>';
+  el.innerHTML = '<span style="font-size:0.72em;color:var(--text-muted);">' + escHtml(t('group.loadingOccupancy')) + '</span>';
   try {
     const opts = signal ? { signal, noDedupe: true } : {};
     const r = await apiCall('/api/vrc/instances/' + instancePath, opts);
@@ -426,17 +426,17 @@ async function fetchInstanceOccupancy(loc, token = null, signal = null) {
     const userCount = (ins.userCount != null ? ins.userCount : ins.n_users);
     if (userCount != null) {
       const cap = ins.capacity != null ? ('/' + ins.capacity) : '';
-      parts.push(pill('<i class="fa-solid fa-user-group"></i> ', '在线', userCount + cap));
+      parts.push(pill('<i class="fa-solid fa-user-group"></i> ', t('group.online'), userCount + cap));
     }
-    if (ins.queueSize) parts.push(pill('<i class="fa-solid fa-hourglass-half"></i> ', '排队', ins.queueSize));
+    if (ins.queueSize) parts.push(pill('<i class="fa-solid fa-hourglass-half"></i> ', t('group.queue'), ins.queueSize));
     if (ins.platforms) {
       if (ins.platforms.standalonewindows) parts.push(pill('🖥️', 'PC', ins.platforms.standalonewindows));
       if (ins.platforms.android) parts.push(pill('<i class="fa-solid fa-mobile-screen"></i> ', 'Quest', ins.platforms.android));
       if (ins.platforms.ios) parts.push(pill('<i class="fa-brands fa-apple"></i> ', 'iOS', ins.platforms.ios));
     }
-    if (ins.full) parts.push('<span style="font-size:0.72em;padding:3px 9px;border-radius:999px;background:rgba(239,68,68,0.18);color:#fca5a5;">已满</span>');
+    if (ins.full) parts.push('<span style="font-size:0.72em;padding:3px 9px;border-radius:999px;background:rgba(239,68,68,0.18);color:#fca5a5;">' + escHtml(t('group.full')) + '</span>');
     el.innerHTML = parts.join('') ||
-      '<span style="font-size:0.72em;color:var(--text-muted);">实例为空或信息不可用</span>';
+      '<span style="font-size:0.72em;color:var(--text-muted);">' + escHtml(t('group.instanceEmpty')) + '</span>';
   } catch (e) {
     if (token && !isUiTokenCurrent(token)) return;
     if (signal && signal.aborted) return;
@@ -465,7 +465,7 @@ async function openInstanceDetail(loc) {
         <div style="padding:20px;position:relative;margin-top:-40px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;">
             <div style="flex:1;">
-              <h2 id="insWorldName" style="margin:0;font-size:1.4em;color:var(--text-primary);">加载中...</h2>
+              <h2 id="insWorldName" style="margin:0;font-size:1.4em;color:var(--text-primary);">${escHtml(t('loading'))}</h2>
               <div id="insAuthorLine" style="font-size:0.85em;color:var(--text-secondary);margin-top:2px;"></div>
             </div>
             <div id="insStats" style="text-align:right;"></div>
@@ -480,12 +480,12 @@ async function openInstanceDetail(loc) {
           <div id="insOccupancy" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px;"></div>
           
           <div style="display:flex;gap:10px;margin-bottom:20px;">
-             <button id="insBtnWorld" class="btn btn-primary" style="flex:1;"><i class="fa-solid fa-earth-americas"></i> 世界详情</button>
-             <button id="insBtnInvite" class="btn btn-success" style="flex:1;"><i class="fa-solid fa-envelope"></i> 邀请自己</button>
+             <button id="insBtnWorld" class="btn btn-primary" style="flex:1;">${t('group.worldDetails')}</button>
+             <button id="insBtnInvite" class="btn btn-success" style="flex:1;"><i class="fa-solid fa-envelope"></i> ${escHtml(t('friend.inviteSelf'))}</button>
           </div>
 
           <div style="font-size:0.85em;font-weight:700;margin-bottom:10px;color:var(--text-primary);display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border);padding-bottom:8px;">
-            <span style="font-size:1.2em;"><i class="fa-solid fa-user-group"></i> </span> 在此实例的好友
+            <span style="font-size:1.2em;"><i class="fa-solid fa-user-group"></i> </span> ${escHtml(t('group.friendsInInstance'))}
           </div>
           <div id="insFriendList" style="display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto;padding-right:4px;"></div>
         </div>
@@ -512,7 +512,7 @@ async function openInstanceDetail(loc) {
   } else {
     inviteBtn.style.display = 'none';
   }
-  document.getElementById('insWorldName').textContent = '加载中...';
+  document.getElementById('insWorldName').textContent = t('loading');
   document.getElementById('insAuthorLine').innerHTML = '';
   document.getElementById('insDesc').textContent = '';
   document.getElementById('insStats').innerHTML = '';
@@ -520,7 +520,7 @@ async function openInstanceDetail(loc) {
   document.getElementById('insLoc').textContent = loc;
   const _occEl = document.getElementById('insOccupancy');
   if (_occEl) _occEl.innerHTML = '';
-  document.getElementById('insFriendList').innerHTML = '<div style="text-align:center;padding:20px;opacity:0.5;">同步中...</div>';
+  document.getElementById('insFriendList').innerHTML = '<div style="text-align:center;padding:20px;opacity:0.5;">' + escHtml(t('group.syncing')) + '</div>';
 
   try {
     const wResp = await apiCall('/api/vrc/worlds/' + worldId, { signal: detailCtrl.signal, noDedupe: true });
@@ -530,7 +530,7 @@ async function openInstanceDetail(loc) {
       document.getElementById('insWorldName').textContent = w.name;
       document.getElementById('insBanner').style.backgroundImage = `url(${proxyImg(w.imageUrl)})`;
       document.getElementById('insAuthorLine').innerHTML = `by <a href="#" onclick="openFriendProfileById('${escJsAttr(w.authorId)}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${escHtml(w.authorName)}</a>`;
-      document.getElementById('insDesc').textContent = w.description || '暂无世界简介';
+      document.getElementById('insDesc').textContent = w.description || t('group.noWorldDesc');
       
       const region = loc.includes('~region(') ? loc.match(/~region\((.*?)\)/)[1].toUpperCase() : 'US';
       const regionIcon = {US:'🇺🇸',EU:'🇪🇺',JP:'🇯🇵'}[region] || '<i class="fa-solid fa-globe"></i> ';
@@ -561,7 +561,7 @@ async function openInstanceDetail(loc) {
 
     const listEl = document.getElementById('insFriendList');
     if (!friendsInIns.length) {
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;opacity:0.5;font-size:0.85em;">当前没有其他在线好友在此实例</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;opacity:0.5;font-size:0.85em;">' + escHtml(t('group.noFriendsInInstance')) + '</div>';
     } else {
       listEl.innerHTML = friendsInIns.map(f => {
         const trust = getTrustInfo(f.tags||[]);
@@ -573,7 +573,7 @@ async function openInstanceDetail(loc) {
           <div style="flex:1;">
             <div style="font-size:0.95em;font-weight:600;color:${trust.color};display:flex;align-items:center;gap:6px;">
               ${escHtml(f.displayName)}
-              ${f.isSelf ? '<span style="font-size:0.7em;background:rgba(255, 255, 255, 0.3);color:#d4d4d8;padding:2px 6px;border-radius:4px;"><i class="fa-solid fa-location-dot"></i> 我自己</span>' : ''}
+              ${f.isSelf ? '<span style="font-size:0.7em;background:rgba(255, 255, 255, 0.3);color:#d4d4d8;padding:2px 6px;border-radius:4px;">' + t('group.myself') + '</span>' : ''}
             </div>
             <div style="font-size:0.75em;opacity:0.7;color:var(--text-muted);">${getStatusLabel(f)}</div>
           </div>
@@ -584,12 +584,12 @@ async function openInstanceDetail(loc) {
   } catch(e) {
     if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('instanceDetail', detailCtrl)) return;
     console.error('Instance detail error', e);
-    document.getElementById('insWorldName').textContent = '加载失败';
+    document.getElementById('insWorldName').textContent = t('group.loadFailedShort');
     // Don't leave the friend list spinning forever ("同步中...") when the
     // initial fetch throws — replace with an error indicator so the user
     // knows to retry instead of staring at it.
     const _flEl = document.getElementById('insFriendList');
-    if (_flEl) _flEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--error);font-size:0.85em;">加载失败: ${escHtml(e.message || '网络错误')}</div>`;
+    if (_flEl) _flEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--error);font-size:0.85em;">${escHtml(t('toast.loadFailMsg', {msg: (e.message || t('group.networkError'))}))}</div>`;
   }
 }
 
@@ -612,7 +612,7 @@ function closeInstanceDetail() {
 async function fetchMutualGroups(userId, containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">加载中...</span>';
+  el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('loading')) + '</span>';
   try {
     if (!myGroupsCache) {
       const meResp = await apiCall('/api/vrc/auth/user');
@@ -624,7 +624,7 @@ async function fetchMutualGroups(userId, containerId) {
     const theirGroups = await r2.json();
     const myIds = new Set((myGroupsCache||[]).map(g => g.groupId||g.id));
     const mutual = (theirGroups||[]).filter(g => myIds.has(g.groupId||g.id));
-    if (!mutual.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">暂无共同群组</span>'; return; }
+    if (!mutual.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('group.noMutualGroups')) + '</span>'; return; }
     el.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + mutual.map(g => 
       '<div onclick="openGroupDetail(' + JSON.stringify(g.groupId||g.id) + ')" style="background:var(--bg-glass);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75em;display:flex;align-items:center;gap:6px;">' +
         '<img src="' + escHtml(proxyImg(g.iconUrl||'')) + '" style="width:18px;height:18px;border-radius:3px;" onerror="this.style.display=\'none\'">' +
@@ -632,7 +632,7 @@ async function fetchMutualGroups(userId, containerId) {
       '</div>'
     ).join('') + '</div>';
   } catch(e) {
-    el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">加载失败</span>';
+    el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('group.loadFailedShort')) + '</span>';
   }
 }
 
@@ -666,7 +666,7 @@ function getUserThumbUrl(u) {
 async function fetchMutualFriends(userId, containerId, seq) {
   const el = document.getElementById(containerId);
   if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">加载中...</span>';
+  el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('loading')) + '</span>';
   try {
     let offset = 0;
     const list = [];
@@ -693,7 +693,7 @@ async function fetchMutualFriends(userId, containerId, seq) {
     }
     
     if (!list.length) {
-      el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">暂无共同好友</span>';
+      el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('group.noMutualFriends')) + '</span>';
       return;
     }
     const renderUser = u => {
@@ -710,12 +710,12 @@ async function fetchMutualFriends(userId, containerId, seq) {
         </div>`;
     };
     el.innerHTML = `
-      <div style="font-size:0.72em;font-weight:700;color:var(--text-muted);margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:0.05em;">共同好友 (${list.length})</div>
+      <div style="font-size:0.72em;font-weight:700;color:var(--text-muted);margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:0.05em;">${escHtml(t('group.mutualFriendsCount', {count: list.length}))}</div>
       <div class="group-member-list">
         ${list.map(renderUser).join('')}
       </div>`;
   } catch(e) {
-    el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">加载失败: ' + escHtml(e.message) + '</span>';
+    el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</span>';
   }
 }
 
@@ -757,13 +757,13 @@ async function fetchMutualFriendsFallback(userId, el) {
 
   if (colocated.length) {
     el.innerHTML = `
-      <div style="font-size:0.72em;font-weight:700;color:var(--text-muted);margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:0.05em;">同在此实例的好友 (${colocated.length})</div>
+      <div style="font-size:0.72em;font-weight:700;color:var(--text-muted);margin:0 0 10px 4px;text-transform:uppercase;letter-spacing:0.05em;">${escHtml(t('group.colocatedFriendsCount', {count: colocated.length}))}</div>
       <div class="group-member-list">
         ${colocated.map(renderUser).join('')}
       </div>`;
   } else {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:0.8em;line-height:1.6;padding:8px 0;">ℹ️ VRChat 正在逐步向所有用户开放共同好友功能（/users/{id}/mutuals 端点），你的账号可能暂未激活此功能<br>' +
-      (targetLoc && targetLoc.startsWith('wrld_') ? '此用户当前不在你任何好友所在的实例。' : '此用户不在线或位置不可见。') + '</div>';
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:0.8em;line-height:1.6;padding:8px 0;">' + escHtml(t('group.mutualFriendsRollout')) + '<br>' +
+      (targetLoc && targetLoc.startsWith('wrld_') ? escHtml(t('group.userNotInFriendInstance')) : escHtml(t('group.userOfflineOrHidden'))) + '</div>';
   }
 }
 

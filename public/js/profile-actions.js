@@ -5,20 +5,20 @@
 
 async function inviteSelf(locationId) {
   if (!locationId || locationId === 'private' || locationId === 'offline') {
-    friendLogMsg('<i class="fa-solid fa-xmark"></i> 无法发送邀请 (私有或离线)', 'error');
+    friendLogMsg(t('log.inviteSelfFail'), 'error');
     return;
   }
   try {
-    friendLogMsg(`<i class="fa-solid fa-envelope"></i> 正在发送邀请到 ${locationId}...`, 'info');
+    friendLogMsg(t('log.inviteSelfSending', {loc: locationId}), 'info');
     const r = await apiCall(`/api/vrc/invite/myself/to/${locationId}`, { method: 'POST' });
     if (r.ok) {
-      friendLogMsg('<i class="fa-solid fa-check"></i> 邀请已发送，请在游戏内查收', 'success');
+      friendLogMsg(t('log.inviteSelfSent'), 'success');
     } else {
       const err = await r.json();
-      throw new Error(err.error?.message || '发送失败');
+      throw new Error(err.error?.message || t('error.sendFail'));
     }
   } catch(e) {
-    friendLogMsg(`<i class="fa-solid fa-xmark"></i> 邀请失败: ${e.message}`, 'error');
+    friendLogMsg(t('log.inviteSelfError', {msg: e.message}), 'error');
   }
 }
 
@@ -28,7 +28,7 @@ async function renderModerationLog() {
   try {
     const logs = await idb.getAllLogs('mod_logs');
     if (!logs || !logs.length) {
-      container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无管理记录</div>';
+      container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">'+t('modlog.empty')+'</div>';
       return;
     }
     // Sort by timestamp descending
@@ -40,9 +40,9 @@ async function renderModerationLog() {
       if (log.type === 'mute')  { icon = '<i class="fa-solid fa-volume-xmark"></i> '; color = '#f59e0b'; }
       if (log.type === 'avatar') { icon = log.action === 'show' ? '👁️' : '<i class="fa-solid fa-glasses"></i> '; color = '#10b981'; }
       const actionText = {
-        block: '屏蔽', unblock: '解除屏蔽',
-        mute: '静音', unmute: '解除静音',
-        show: '开启模型显示', hide: '关闭模型显示'
+        block: t('modlog.block'), unblock: t('modlog.unblock'),
+        mute: t('modlog.mute'), unmute: t('modlog.unmute'),
+        show: t('modlog.show'), hide: t('modlog.hide')
       }[log.action] || log.action;
       return `
         <div class="glass-card" style="padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:12px;">
@@ -59,12 +59,12 @@ async function renderModerationLog() {
     }).join('');
   } catch(e) {
     if (isAbortError(e)) return;
-    container.innerHTML = `<div style="color:var(--text-danger);text-align:center;padding:20px;">加载失败: ${e.message}</div>`;
+    container.innerHTML = '<div style="color:var(--text-danger);text-align:center;padding:20px;">'+t('modlog.loadFail', {msg: escHtml(e.message)})+'</div>';
   }
 }
 
 async function clearModerationLog() {
-  if (!confirm('确定要清空所有管理记录吗？此操作不可撤销。')) return;
+  if (!confirm(t('confirm.clearModlog'))) return;
   await idb.clearLogs('mod_logs');
   renderModerationLog();
 }
@@ -98,7 +98,7 @@ async function fetchMyModerations() {
 async function openEditProfileModal() {
   const u = myProfileData;
   if (!u) {
-    showToast('正在加载个人资料，请稍后再试', 'info');
+    showToast(t('toast.loadingProfile'), 'info');
     return;
   }
   
@@ -127,11 +127,11 @@ async function openEditProfileModal() {
   modal.innerHTML = `
     <div class="modal-content glass" style="max-width:500px;padding:24px;width:90%;border:1px solid var(--border);border-radius:16px;">
       <h3 style="margin-bottom:20px;display:flex;align-items:center;gap:10px;font-size:1.1em;">
-        <span>✏️</span> 编辑个人资料
+        <span>✏️</span> ${t('profile.editTitle')}
       </h3>
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-size:0.85em;color:var(--text-secondary);">在线状态 (Status)</label>
+          <label style="font-size:0.85em;color:var(--text-secondary);">${t('profile.statusLabel')}</label>
           <select id="editProfileStatus" class="glass-input" style="width:100%;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);outline:none;">
             <option value="active" ${u.status === 'active' ? 'selected' : ''} style="background:var(--bg-card);color:var(--text-primary);">Online (🟢 Active)</option>
             <option value="join me" ${u.status === 'join me' ? 'selected' : ''} style="background:var(--bg-card);color:var(--text-primary);">Join Me (🔵 Join)</option>
@@ -140,20 +140,20 @@ async function openEditProfileModal() {
           </select>
         </div>
         <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-size:0.85em;color:var(--text-secondary);">社交状态文字 (Status Description)</label>
-          <input type="text" id="editStatusDesc" class="glass-input" style="width:100%;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);" value="${escHtml(u.statusDescription || '')}" placeholder="我在忙...">
+          <label style="font-size:0.85em;color:var(--text-secondary);">${t('profile.statusDescLabel')}</label>
+          <input type="text" id="editStatusDesc" class="glass-input" style="width:100%;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);" value="${escHtml(u.statusDescription || '')}" placeholder="${escHtml(t('profile.statusDescPlaceholder'))}">
         </div>
         <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-size:0.85em;color:var(--text-secondary);">人称代词 (Pronouns)</label>
+          <label style="font-size:0.85em;color:var(--text-secondary);">${t('profile.pronounsLabel')}</label>
           <input type="text" id="editPronouns" class="glass-input" style="width:100%;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);" value="${escHtml(u.pronouns || '')}" placeholder="He/Him, She/Her...">
         </div>
         <div class="form-group" style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-size:0.85em;color:var(--text-secondary);">个人简介 (Bio)</label>
+          <label style="font-size:0.85em;color:var(--text-secondary);">${t('profile.bioLabel')}</label>
           <textarea id="editBio" class="glass-input" style="width:100%;height:140px;resize:none;padding:10px;border-radius:8px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);font-family:inherit;font-size:0.9em;line-height:1.5;">${escHtml(u.bio || '').replace(/\\n/g, '\n')}</textarea>
         </div>
         <div style="display:flex;gap:12px;margin-top:10px;">
-          <button class="btn btn-primary" style="flex:1;padding:12px;" id="btnUpdateProfile">保存修改</button>
-          <button class="btn btn-secondary" style="flex:1;padding:12px;" id="btnCancelEditProfile">取消</button>
+          <button class="btn btn-primary" style="flex:1;padding:12px;" id="btnUpdateProfile">${t('profile.save')}</button>
+          <button class="btn btn-secondary" style="flex:1;padding:12px;" id="btnCancelEditProfile">${t('btn.cancel')}</button>
         </div>
       </div>
     </div>`;
@@ -165,7 +165,7 @@ async function openEditProfileModal() {
   document.getElementById('btnUpdateProfile').onclick = async () => {
     const btn = document.getElementById('btnUpdateProfile');
     btn.disabled = true;
-    btn.textContent = '保存中...';
+    btn.textContent = t('profile.saving');
     try {
       const payload = {
         status: document.getElementById('editProfileStatus').value,
@@ -181,18 +181,18 @@ async function openEditProfileModal() {
         // two click-to-dismiss dialogs.
         modal.remove();
         cleanup();
-        showToast('<i class="fa-solid fa-check"></i> 资料已更新', 'success');
+        showToast(t('toast.profileUpdated'), 'success');
         fetchMyProfile(true);
       } else {
         const err = await r.json().catch(() => ({}));
-        showToast('更新失败: ' + (err.error?.message || ('HTTP ' + r.status)), 'error');
+        showToast(t('toast.profileUpdateFail', {msg: err.error?.message || ('HTTP ' + r.status)}), 'error');
         btn.disabled = false;
-        btn.textContent = '保存修改';
+        btn.textContent = t('profile.save');
       }
     } catch(e) {
-      showToast('发生错误: ' + e.message, 'error');
+      showToast(t('toast.errorOccurred', {msg: e.message}), 'error');
       btn.disabled = false;
-      btn.textContent = '保存修改';
+      btn.textContent = t('profile.save');
     }
   };
 }

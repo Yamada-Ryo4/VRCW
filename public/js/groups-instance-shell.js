@@ -18,7 +18,7 @@ function _callGroupsInstance(name, args) {
     return fn.apply(window, args);
   }).catch(err => {
     console.error(err);
-    showToast('群组/实例模块加载失败: ' + err.message, 'error');
+    showToast(t('toast.groupsInstanceModuleLoadFail', {msg: err.message}), 'error');
   });
 }
 

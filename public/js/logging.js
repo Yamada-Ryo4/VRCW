@@ -14,7 +14,7 @@ function logMsg(msg, type = "info") {
   // Use innerHTML so callers can pass Font Awesome icon markup (<i class="fa-...">).
   // Timestamp is locally generated (safe). msg is expected to be trusted HTML
   // from hardcoded strings in feature modules — never pass raw user input here.
-  span.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  span.innerHTML = `[${new Date().toLocaleTimeString(getLocale())}] ${msg}`;
   el.appendChild(span);
   el.scrollTop = el.scrollHeight;
   while (el.children.length > 500) el.removeChild(el.firstChild);

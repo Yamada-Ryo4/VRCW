@@ -18,7 +18,7 @@ function _callFriendProfile(name, args) {
     return fn.apply(window, args);
   }).catch(err => {
     console.error(err);
-    showToast('玩家详情模块加载失败: ' + err.message, 'error');
+    showToast(t('toast.friendProfileModuleLoadFail', {msg: err.message}), 'error');
   });
 }
 

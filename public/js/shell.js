@@ -117,7 +117,7 @@ async function syncAllFavoriteIds() {
     avatarFavoriteIndexByGroup = nextAvatarFavoriteIndexByGroup;
     worldFavoriteIndexByGroup = nextWorldFavoriteIndexByGroup;
 
-    logMsg(`<i class="fa-solid fa-check"></i> 已同步收藏状态 (模型:${favoriteIdMap.size} 世界:${worldFavoriteIdMap.size} 好友:${friendFavoriteIdMap.size})`, "info");
+    logMsg(t('log.favoritesSynced', {avatar: favoriteIdMap.size, world: worldFavoriteIdMap.size, friend: friendFavoriteIdMap.size}), "info");
     return true;
   } catch (e) {
     console.warn("Failed to sync favorite IDs", e);
@@ -184,7 +184,7 @@ function renderFriendFavGroupButtons() {
   const container = document.getElementById('friendFavGroupList');
   if (!container) return;
   if (!friendFavGroups.length) {
-    container.innerHTML = '<div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">无收藏分组</div>';
+    container.innerHTML = `<div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">${t('shell.noFavGroups')}</div>`;
     return;
   }
   container.innerHTML = friendFavGroups.map(g =>
@@ -366,8 +366,8 @@ async function _fetchWorldBasicsByIds(ids, seqToken) {
     const chunk = ids.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(chunk.map((wid) =>
       apiCall(`/api/vrc/worlds/${wid}`, { noAbort: true }).then(async (res) => {
-        if (res.status === 404 || res.status === 403) return { id: wid, name: '失效世界 (Invalid World)', isInvalid: true };
-        return res.ok ? res.json() : { id: wid, name: '加载失败', isInvalid: true };
+        if (res.status === 404 || res.status === 403) return { id: wid, name: t('shell.invalidWorld'), isInvalid: true };
+        return res.ok ? res.json() : { id: wid, name: t('shell.loadFail'), isInvalid: true };
       })
     ));
     results.forEach((r) => { if (r.status === 'fulfilled') all.push(r.value); });
@@ -557,7 +557,7 @@ function renderFavoriteGroupButtons() {
   const btnLocal = document.createElement("button");
   btnLocal.className = "btn btn-secondary btn-block cat-btn";
   btnLocal.id = "cat-local";
-  btnLocal.innerHTML = '<i class="fa-solid fa-star"></i> 本地收藏';
+  btnLocal.innerHTML = t('shell.localFavoritesBtn');
   btnLocal.onclick = () => switchCategory("local");
   container.appendChild(btnLocal);
 }
@@ -661,7 +661,7 @@ function startUpload() {
     return VRCW.modules.upload.startUpload();
   }).catch(err => {
     console.error(err);
-    showToast('上传模块加载失败: ' + err.message, 'error');
+    showToast(t('toast.uploadModuleLoadFail', {msg: err.message}), 'error');
   });
 }
 
@@ -683,11 +683,20 @@ function switchTab(tab) {
   // declarative anchor.
   document.querySelectorAll('[data-tab="' + tab + '"]').forEach(b => b.classList.add("active"));
 
-  const panels = { download:'downloadPanel', upload:'uploadPanel', search:'searchPanel', friends:'friendsPanel', worlds:'worldsPanel', groups:'groupsPanel', assets:'assetsPanel', settings:'settingsPanel' };
+  const panels = { download:'downloadPanel', upload:'uploadPanel', search:'searchPanel', friends:'friendsPanel', worlds:'worldsPanel', groups:'groupsPanel', assets:'assetsPanel', settings:'settingsPanel', dating:'datingPanel' };
   Object.entries(panels).forEach(([key, id]) => {
       const el = document.getElementById(id);
       if (el) {
           el.classList.toggle('active', tab === key);
+          if (id === 'datingPanel') {
+              el.style.display = (tab === key) ? 'flex' : 'none';
+              if (tab === key) {
+                  const iframe = document.getElementById('datingIframe');
+                  if (iframe && iframe.contentWindow) {
+                      iframe.contentWindow.postMessage({ type: 'tabActivated' }, '*');
+                  }
+              }
+          }
       }
   });
   const sp = document.getElementById('settingsPanel');
@@ -696,8 +705,14 @@ function switchTab(tab) {
   const targetPanel = document.getElementById(panels[tab]);
   const btn = document.getElementById('mobileSidebarBtn');
   if (btn && targetPanel) {
-      const hasSidebar = targetPanel.querySelector('.sidebar') !== null;
+      const hasSidebar = tab === 'dating' || targetPanel.querySelector('.sidebar') !== null;
       btn.style.visibility = hasSidebar ? 'visible' : 'hidden';
+      // Reset icon when switching away from dating
+      if (tab !== 'dating') {
+          btn.dataset.datingOpen = 'false';
+          btn.innerHTML = '<i class="fa-solid fa-bars"></i>';
+          btn.classList.remove('active');
+      }
   }
 
   // If already on this tab, skip the abort+reload dance entirely
@@ -743,7 +758,7 @@ function switchTab(tab) {
 }
 
 function switchSettingsPage(page) {
-  ['cache', 'join', 'about'].forEach(p => {
+  ['cache', 'join', 'dating', 'about'].forEach(p => {
     const el = document.getElementById('setPage' + p.charAt(0).toUpperCase() + p.slice(1));
     if (el) el.style.display = p === page ? '' : 'none';
     const btn = document.getElementById('setCat' + p.charAt(0).toUpperCase() + p.slice(1));
@@ -751,24 +766,149 @@ function switchSettingsPage(page) {
   });
   if (page === 'cache') loadCacheStats();
   if (page === 'join') loadJoinPrefs();
+  if (page === 'dating') loadDatingSettings();
 }
 
 // ── Join Preferences (localStorage) ──
 const PREF_TYPE   = 'vrcw_default_instance_type';
 const PREF_REGION = 'vrcw_default_region';
 
+// ── Dating System Logic ──
+let datingAgeVerified = false;
+
+async function initDatingSettings() {
+  if (!window.myProfileData) return;
+  const vrcId = window.myProfileData.id;
+  
+  // 1. Fetch D1 setting
+  try {
+    const res = await apiCall(`/api/dating/settings?vrc_id=${vrcId}`);
+    if (res.ok) {
+      const data = await res.json();
+      datingAgeVerified = data.age_verified === 1;
+    }
+  } catch(e) {}
+
+  const navItem = document.getElementById('navItemDating');
+  const navIcon = document.getElementById('navIconDating');
+  const toggle = document.getElementById('settingEnableDating');
+  
+  const isVrc18init = window.myProfileData?.ageVerificationStatus === '18+'
+                   || window.myProfileData?.ageVerified === true;
+
+  if (datingAgeVerified || isVrc18init) {
+    // Already verified (either via DB or VRChat 18+)
+    if (navItem) navItem.style.display = 'flex';
+    if (navIcon) navIcon.style.display = 'flex';
+    if (toggle) toggle.checked = true;
+  } else {
+    // Not verified
+    if (navItem) navItem.style.display = 'none';
+    if (navIcon) navIcon.style.display = 'none';
+    if (toggle) toggle.checked = false;
+  }
+}
+
+function loadDatingSettings() {
+  const toggle = document.getElementById('settingEnableDating');
+  const prompt = document.getElementById('datingAgePrompt');
+  const isVrc18 = window.myProfileData?.ageVerificationStatus === '18+'
+                || window.myProfileData?.ageVerified === true;
+
+  if (toggle) toggle.checked = datingAgeVerified || isVrc18;
+  if (prompt) prompt.style.display = 'none';
+
+  // If VRC 18+ certified, show a note
+  const noteEl = document.getElementById('datingVrcVerifiedNote');
+  if (noteEl) noteEl.style.display = isVrc18 ? 'block' : 'none';
+}
+
+function toggleDatingFeature() {
+  const toggle = document.getElementById('settingEnableDating');
+  const prompt = document.getElementById('datingAgePrompt');
+  const navItem = document.getElementById('navItemDating');
+  const navIcon = document.getElementById('navIconDating');
+
+  if (toggle.checked) {
+    const isVrc18toggle = window.myProfileData?.ageVerificationStatus === '18+'
+                       || window.myProfileData?.ageVerified === true;
+    if (datingAgeVerified || isVrc18toggle) {
+      // Allow turning on without prompt if already verified
+      if (navItem) navItem.style.display = 'flex';
+      if (navIcon) navIcon.style.display = 'flex';
+      prompt.style.display = 'none';
+      saveDatingSettings(true, null);
+    } else {
+      // Require DOB input
+      prompt.style.display = 'block';
+    }
+  } else {
+    prompt.style.display = 'none';
+    if (navItem) navItem.style.display = 'none';
+    if (navIcon) navIcon.style.display = 'none';
+    // If they manually turn it off, we might want to un-verify them or just hide it.
+    // For now, let's just let them hide it. We won't clear their age_verified.
+  }
+}
+
+async function verifyDatingAge() {
+  const dob = document.getElementById('datingDobInput').value;
+  if (!dob) return alert(t('alert.enterDob'));
+  
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+  }
+  
+  if (age < 18) {
+    alert(t('alert.datingUnderage'));
+    document.getElementById('settingEnableDating').checked = false;
+    document.getElementById('datingAgePrompt').style.display = 'none';
+    return;
+  }
+  
+  datingAgeVerified = true;
+  document.getElementById('datingAgePrompt').style.display = 'none';
+  
+  const navItem = document.getElementById('navItemDating');
+  const navIcon = document.getElementById('navIconDating');
+  if (navItem) navItem.style.display = 'flex';
+  if (navIcon) navIcon.style.display = 'flex';
+  
+  await saveDatingSettings(true, dob);
+  alert(t('alert.datingVerified'));
+}
+
+async function saveDatingSettings(verified, dob) {
+  if (!window.myProfileData) return;
+  try {
+    // vrc_id is intentionally omitted — the server resolves the caller's
+    // identity from X-VRC-Auth (R12). Sending it would be misleading dead data.
+    await apiCall('/api/dating/settings', {
+      method: 'POST',
+      json: {
+        age_verified: verified,
+        dob: dob
+      }
+    });
+  } catch(e) {}
+}
+
 const INSTANCE_TYPE_LABELS = {
-  hidden:     'Friends+ (好友加)',
-  public:     '公开 (Public)',
-  friends:    '仅好友 (Friends Only)',
-  invite:     '邀请 (Invite Only)',
-  inviteplus: '邀请加 (Invite+)',
+  hidden:     t('shell.instanceType.hidden'),
+  public:     t('shell.instanceType.public'),
+  friends:    t('shell.instanceType.friends'),
+  invite:     t('shell.instanceType.invite'),
+  inviteplus: t('shell.instanceType.inviteplus'),
 };
 const REGION_LABELS = {
-  use: '🇺🇸 美国东 (US East)',
-  usw: '🇺🇸 美国西 (US West)',
-  eu:  '🇪🇺 欧洲 (Europe)',
-  jp:  '🇯🇵 日本 (Japan)',
+  use: t('shell.region.use'),
+  usw: t('shell.region.usw'),
+  eu:  t('shell.region.eu'),
+  jp:  t('shell.region.jp'),
 };
 
 function loadJoinPrefs() {
@@ -810,19 +950,19 @@ function saveJoinPrefs() {
 async function loadCacheStats() {
   const container = document.getElementById('cacheStatsContainer');
   if (!container) return;
-  container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85em;padding:12px;text-align:center;">正在读取...</div>';
+  container.innerHTML = `<div style="color:var(--text-muted);font-size:0.85em;padding:12px;text-align:center;">${t('shell.loadingCache')}</div>`;
 
   await idb.init();
   let allKeys = [];
   try { allKeys = await idb.keys(); } catch(_) {}
 
   const CATEGORIES = [
-    { id: 'friend',  label: '好友数据',        emoji: '<i class="fa-solid fa-users"></i> ', desc: '好友列表缓存',          match: k => k === 'friend_basics' },
-    { id: 'profile', label: '我的资料',        emoji: '<i class="fa-solid fa-id-badge"></i> ', desc: '个人资料缓存',           match: k => k === 'my_profile' },
-    { id: 'avatar',  label: '模型缓存',        emoji: '<i class="fa-solid fa-masks-theater"></i> ', desc: '模型列表与收藏夹数据',   match: k => k.startsWith('avatar') || k.startsWith('avatars_') },
-    { id: 'world',   label: '世界缓存',        emoji: '<i class="fa-solid fa-earth-americas"></i> ', desc: '世界列表与收藏夹数据',   match: k => k.startsWith('world') || k.startsWith('worlds_') },
-    { id: 'names',   label: '名称映射',        emoji: '<i class="fa-solid fa-clipboard"></i> ', desc: '模型 ID → 名称映射',    match: k => k === 'persistent_avatar_names' },
-    { id: 'other',   label: '其他数据',        emoji: '<i class="fa-solid fa-box"></i> ', desc: '其他本地缓存',           match: k => true },
+    { id: 'friend',  label: t('shell.cache.friend.label'),  emoji: '<i class="fa-solid fa-users"></i> ', desc: t('shell.cache.friend.desc'),  match: k => k === 'friend_basics' },
+    { id: 'profile', label: t('shell.cache.profile.label'), emoji: '<i class="fa-solid fa-id-badge"></i> ', desc: t('shell.cache.profile.desc'), match: k => k === 'my_profile' },
+    { id: 'avatar',  label: t('shell.cache.avatar.label'),  emoji: '<i class="fa-solid fa-masks-theater"></i> ', desc: t('shell.cache.avatar.desc'), match: k => k.startsWith('avatar') || k.startsWith('avatars_') },
+    { id: 'world',   label: t('shell.cache.world.label'),   emoji: '<i class="fa-solid fa-earth-americas"></i> ', desc: t('shell.cache.world.desc'), match: k => k.startsWith('world') || k.startsWith('worlds_') },
+    { id: 'names',   label: t('shell.cache.names.label'),   emoji: '<i class="fa-solid fa-clipboard"></i> ', desc: t('shell.cache.names.desc'), match: k => k === 'persistent_avatar_names' },
+    { id: 'other',   label: t('shell.cache.other.label'),   emoji: '<i class="fa-solid fa-box"></i> ', desc: t('shell.cache.other.desc'), match: k => true },
   ];
 
   const catKeys = {};
@@ -857,9 +997,9 @@ async function loadCacheStats() {
         <span style="font-size:1.5em;">${cat.emoji}</span>
         <div style="flex:1;">
           <div style="font-weight:600;font-size:0.9em;">${cat.label}</div>
-          <div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;">${cat.desc} · ${keys.length} 条记录</div>
+          <div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;">${t('shell.cacheRecords', {desc: cat.desc, count: keys.length})}</div>
         </div>
-        <button onclick="clearCacheCategory(${JSON.stringify(keys.map(k=>k))})" class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;flex-shrink:0;">清除</button>
+        <button onclick="clearCacheCategory(${JSON.stringify(keys.map(k=>k))})" class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;flex-shrink:0;">${t('shell.clearBtn')}</button>
       </div>`;
   }
 
@@ -869,22 +1009,22 @@ async function loadCacheStats() {
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;">
         <span style="font-size:1.5em;"><i class="fa-solid fa-image"></i> </span>
         <div style="flex:1;">
-          <div style="font-weight:600;font-size:0.9em;">图片缓存 (Blob)</div>
-          <div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;">本地图片 Blob 缓存 · ${imageCount} 张</div>
+          <div style="font-weight:600;font-size:0.9em;">${t('shell.cache.imageBlob.label')}</div>
+          <div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;">${t('shell.cache.imageBlob.desc', {count: imageCount})}</div>
         </div>
-        <button onclick="clearImageCache()" class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;flex-shrink:0;">清除</button>
+        <button onclick="clearImageCache()" class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;flex-shrink:0;">${t('shell.clearBtn')}</button>
       </div>`;
   }
 
   if (!html) {
-    html = '<div style="color:var(--text-muted);font-size:0.85em;padding:20px;text-align:center;background:var(--bg-card);border-radius:12px;"><i class="fa-solid fa-check"></i> 缓存为空，无需清除</div>';
+    html = `<div style="color:var(--text-muted);font-size:0.85em;padding:20px;text-align:center;background:var(--bg-card);border-radius:12px;">${t('shell.cacheEmpty')}</div>`;
   }
 
   container.innerHTML = html;
 }
 
 async function clearCacheCategory(keys) {
-  if (!confirm(`确定清除这 ${keys.length} 条缓存记录？`)) return;
+  if (!confirm(t('confirm.clearCacheCategory', {count: keys.length}))) return;
   await idb.init();
   await new Promise(r => {
     const tx = idb.db.transaction('cache','readwrite');
@@ -897,11 +1037,11 @@ async function clearCacheCategory(keys) {
     });
   });
   loadCacheStats();
-  showToast(`已清除 ${keys.length} 条缓存`, 'success');
+  showToast(t('toast.cacheCleared', {count: keys.length}), 'success');
 }
 
 async function clearImageCache() {
-  if (!confirm('确定清除所有图片 Blob 缓存？')) return;
+  if (!confirm(t('confirm.clearImageCache'))) return;
   await idb.init();
   await new Promise(r => {
     const tx = idb.db.transaction('images','readwrite');
@@ -909,16 +1049,16 @@ async function clearImageCache() {
     tx.oncomplete = r; tx.onerror = r;
   });
   loadCacheStats();
-  showToast('已清除图片缓存', 'success');
+  showToast(t('toast.imageCacheCleared'), 'success');
 }
 
 async function clearAllCacheNow() {
-  if (!confirm('确定要清除所有本地缓存吗？（包括图片 Blob）')) return;
+  if (!confirm(t('confirm.clearAllCache'))) return;
   await idb.init();
   await new Promise(r => { const tx = idb.db.transaction('cache','readwrite'); tx.objectStore('cache').clear(); tx.oncomplete=r; tx.onerror=r; });
   await new Promise(r => { const tx = idb.db.transaction('images','readwrite'); tx.objectStore('images').clear(); tx.oncomplete=r; tx.onerror=r; });
   loadCacheStats();
-  showToast('已清除所有缓存', 'success');
+  showToast(t('toast.allCacheCleared'), 'success');
 }
 
 // ── Refresh All Persistent Cache ──
@@ -927,17 +1067,17 @@ async function clearAllCacheNow() {
 // and just overwrites stale data with fresh API responses.
 async function refreshAllPersistentCache() {
   const btn = document.getElementById('btnRefreshAllCache');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 正在刷新...'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = t('shell.refreshing'); }
   const log = (msg) => logMsg(msg, 'info');
 
   try {
     // 1. Re-sync favorite IDs + group counts
-    log('<i class="fa-solid fa-rotate-right"></i> 正在同步收藏 ID...');
+    log(t('log.syncingFavIds'));
     await syncAllFavoriteIds();
 
     // 2. Re-fetch all avatar favorite groups
     if (favoriteGroups.length > 0) {
-      log(`<i class="fa-solid fa-rotate-right"></i> 正在刷新 ${favoriteGroups.length} 个模型收藏组...`);
+      log(t('log.refreshingAvatarFavGroups', {count: favoriteGroups.length}));
       for (const g of favoriteGroups) {
         try {
           let offset = 0, all = [];
@@ -962,7 +1102,7 @@ async function refreshAllPersistentCache() {
           all.forEach(av => {
             if (av.id && av.name && av.name !== 'Unknown') window._localNameMap.set(av.id, av.name);
           });
-          log(`  ✓ ${g.displayName || g.name}: ${all.length} 个模型`);
+          log(t('log.avatarFavGroupCount', {name: g.displayName || g.name, count: all.length}));
         } catch (e) {
           log(`  ✗ ${g.name}: ${e.message}`);
         }
@@ -971,7 +1111,7 @@ async function refreshAllPersistentCache() {
     }
 
     // 3. Re-fetch "my avatars"
-    log('<i class="fa-solid fa-rotate-right"></i> 正在刷新我的模型...');
+    log(t('log.refreshingMyAvatars'));
     try {
       let offset = 0, myAll = [];
       while (true) {
@@ -995,13 +1135,13 @@ async function refreshAllPersistentCache() {
       myAll.forEach(av => {
         if (av.id && av.name) window._localNameMap.set(av.id, av.name);
       });
-      log(`  ✓ 我的模型: ${myAll.length} 个`);
+      log(t('log.myAvatarsCount', {count: myAll.length}));
     } catch (e) {
-      log(`  ✗ 我的模型: ${e.message}`);
+      log(t('log.myAvatarsFail', {msg: e.message}));
     }
 
     // 4. Re-fetch friends
-    log('<i class="fa-solid fa-rotate-right"></i> 正在刷新好友列表...');
+    log(t('log.refreshingFriends'));
     try {
       let offset = 0, friendAll = [];
       while (true) {
@@ -1024,9 +1164,9 @@ async function refreshAllPersistentCache() {
       }));
       await idb.set('friend_basics', friendBasics);
       await idb.set('friend_basics_age', Date.now());
-      log(`  ✓ 好友: ${friendAll.length} 位`);
+      log(t('log.friendsCount', {count: friendAll.length}));
     } catch (e) {
-      log(`  ✗ 好友: ${e.message}`);
+      log(t('log.friendsFail', {msg: e.message}));
     }
 
     // 5. Persist the name map
@@ -1034,15 +1174,15 @@ async function refreshAllPersistentCache() {
       const exportMap = {};
       window._localNameMap.forEach((v, k) => { exportMap[k] = v; });
       await idb.set('persistent_avatar_names', exportMap);
-      log(`  ✓ 名称映射: ${window._localNameMap.size} 条`);
+      log(t('log.nameMapCount', {count: window._localNameMap.size}));
     }
 
-    log('<i class="fa-solid fa-check"></i> 所有持久化缓存已刷新完成');
-    showToast('<i class="fa-solid fa-check"></i> 所有持久化缓存已刷新', 'success');
+    log(t('log.allCacheRefreshed'));
+    showToast(t('toast.allCacheRefreshed'), 'success');
   } catch (e) {
-    showToast('刷新缓存失败: ' + e.message, 'error');
+    showToast(t('toast.refreshCacheFail', {msg: e.message}), 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> 刷新所有缓存（从 API 重新拉取）'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = t('shell.refreshAllCacheBtn'); }
     loadCacheStats();
   }
 }

@@ -158,11 +158,11 @@ function _avatarBasicFromItem(a) {
 }
 
 function _markAvatarInvalidFromCache(av, status) {
-  const name = av?.name && !String(av.name).startsWith('失效模型') ? av.name : (av?.lastKnownName || '');
+  const name = av?.name && !String(av.name).startsWith(t('fav.invalidPrefix')) ? av.name : (av?.lastKnownName || '');
   const thumb = av?.thumbnailImageUrl || av?.imageUrl || av?.lastKnownThumbnailImageUrl || av?.lastKnownImageUrl || '';
   return Object.assign({}, av || {}, {
     id: av?.id,
-    name: name || '失效模型 (Invalid / Deleted)',
+    name: name || t('avatar.invalidAvatar'),
     releaseStatus: 'unavailable',
     isInvalid: true,
     invalidReason: status ? `HTTP ${status}` : 'unavailable',
@@ -230,7 +230,7 @@ async function _verifyFavoriteAvatarCache(groupName, seq, opts = {}) {
     avatars = next.map(_avatarBasicFromItem).filter(Boolean);
     applyFilters();
     const invalidCount = avatars.filter(_isAvatarInvalid).length;
-    if (invalidCount > 0) logMsg(`⚠ 发现 ${invalidCount} 个失效模型，已更新缓存`, 'error');
+    if (invalidCount > 0) logMsg(t('avatar.foundInvalid', {count: invalidCount}), 'error');
   }
 }
 
@@ -257,7 +257,7 @@ async function fetchAvatars(forceRefresh = false) {
       avatars = cachedBasics;
       applyFilters();
       renderedFromCache = true;
-      if (!forceRefresh) logMsg(`Loaded ${avatars.length} cached avatars${cacheIsFresh ? '（缓存有效跳过 API）' : ''}`, "info");
+      if (!forceRefresh) logMsg(`Loaded ${avatars.length} cached avatars${cacheIsFresh ? t('avatar.cacheFreshSkipApi') : ''}`, "info");
       // Favorite groups are IDB-first: startup/background index sync updates
       // stale favorite caches only when their remote ID index changes. "Mine"
       // has no cheap index endpoint, so it keeps the TTL-driven refresh path.
@@ -267,7 +267,7 @@ async function fetchAvatars(forceRefresh = false) {
       }
       if (!forceRefresh && currentCategory === "mine" && cacheIsFresh) return;
     } else if (grid) {
-      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:rgba(255,255,255,0.4);">加载中...</div>`;
+      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:rgba(255,255,255,0.4);">${t('avatar.loadingShort')}</div>`;
     }
   } catch(e) {}
 
@@ -600,12 +600,12 @@ function _buildAvatarCard(av) {
 
   card.innerHTML = `<div class="avatar-thumb-wrapper ${isCached ? '' : 'img-loading'}">
     ${imgHtml}
-    <div class="avatar-name-overlay">${escHtml(av.name || "失效模型 (Invalid / Deleted)")}</div>
+    <div class="avatar-name-overlay">${escHtml(av.name || t('avatar.invalidAvatar'))}</div>
     <div class="card-tl-overlay">
-      <div class="card-checkbox ${selectedIds.has(av.id) ? 'on' : ''}" onclick="event.stopPropagation(); toggleSelect('${escJsAttr(av.id)}')" title="选中/取消选中">${selectedIds.has(av.id) ? '✓' : ''}</div>
+      <div class="card-checkbox ${selectedIds.has(av.id) ? 'on' : ''}" onclick="event.stopPropagation(); toggleSelect('${escJsAttr(av.id)}')" title="${t('avatar.selectToggle')}">${selectedIds.has(av.id) ? '✓' : ''}</div>
     </div>
     <div class="card-tr-overlay">
-      <div class="card-fav-quick" onclick="event.stopPropagation(); _avatarQuickFav('${escJsAttr(av.id)}','${escJsAttr(av.name || '')}',event,this)" title="${isFaved ? '已收藏' : '添加到收藏'}">${isFaved ? '<i class="fa-solid fa-star"></i> ' : '☆'}</div>
+      <div class="card-fav-quick" onclick="event.stopPropagation(); _avatarQuickFav('${escJsAttr(av.id)}','${escJsAttr(av.name || '')}',event,this)" title="${isFaved ? t('fav.favorited') : t('avatar.addToFav')}">${isFaved ? '<i class="fa-solid fa-star"></i> ' : '☆'}</div>
     </div>
     ${releaseBadge}
   </div>`;
@@ -703,8 +703,8 @@ function renderGrid(list) {
     imageQueue.length = 0; 
     grid.innerHTML = `<div style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:rgba(255,255,255,0.4);gap:12px;">
       <div style="font-size:3em;"><i class="fa-solid fa-masks-theater"></i> </div>
-      <div style="font-size:1.1em;">暂无模型 / No avatars found</div>
-      <div style="font-size:0.85em;">点击「刷新」按钮重新加载 / Click Refresh to reload</div>
+      <div style="font-size:1.1em;">${t('avatar.noAvatars')}</div>
+      <div style="font-size:0.85em;">${t('avatar.clickRefresh')}</div>
     </div>`;
     avatarCardElements.clear();
     const statEl = document.getElementById("statTotal");
@@ -789,7 +789,7 @@ async function unfavorite(avatarId, avatarName) {
     logMsg(`⚠ Cannot unfavorite ${avatarName}: favoriteId not found`, "error");
     return;
   }
-  if (!confirm(`⚠️ 即将移出收藏夹\n\n「${avatarName}」\n\n此操作不可撤销，确定继续吗？`)) return;
+  if (!confirm(t('confirm.unfavorite', {name: avatarName}))) return;
   try {
     logMsg(`Removing ${avatarName} from favorites...`, "info");
     let resp = await apiCall(`/api/vrc/favorites/${favoriteId}`, { method: "DELETE" });
@@ -846,14 +846,14 @@ async function unfavorite(avatarId, avatarName) {
 // ── Batch Unfavorite Selected ──
 async function unfavoriteSelected() {
   if (selectedIds.size === 0) {
-    logMsg("未选择任何模型 (No avatars selected)", "error");
+    logMsg(t('avatar.noneSelected'), "error");
     return;
   }
   const count = selectedIds.size;
-  if (!confirm(`确定要将选中的 ${count} 个模型移出收藏夹吗？\nRemove ${count} selected avatar(s) from favorites?`)) return;
+  if (!confirm(t('confirm.unfavoriteSelected', {count: count}))) return;
 
   const ids = [...selectedIds];
-  logMsg(`开始批量移除 ${count} 个收藏...`, "info");
+  logMsg(t('avatar.batchRemoveStart', {count: count}), "info");
   let successCount = 0, failCount = 0;
 
   for (const avatarId of ids) {
@@ -882,7 +882,7 @@ async function unfavoriteSelected() {
       }
       successCount++;
     } catch (e) {
-      logMsg(`✗ 移除失败: ${e.message}`, "error");
+      logMsg(t('avatar.batchRemoveFail', {msg: e.message}), "error");
       // Drop from the selection even on failure — leaving it selected makes the
       // next "selected count" UI lie and confuses the user about which row is
       // pending. The card still exists in `avatars` so they can retry manually.
@@ -901,7 +901,7 @@ async function unfavoriteSelected() {
   // Reflect the *real* remaining selection size — hard-coding 0 hid bugs where
   // the loop forgot to delete from the set.
   document.getElementById("statSelected").textContent = selectedIds.size;
-  logMsg(`✓ 批量移除完成: 成功 ${successCount}, 失败 ${failCount}`, successCount > 0 ? "success" : "error");
+  logMsg(t('avatar.batchRemoveDone', {success: successCount, fail: failCount}), successCount > 0 ? "success" : "error");
 }
 
 // ── Shared Cleanup Modal ─────────────────────────────────────────────────────
@@ -987,10 +987,10 @@ function _showCleanupModal(opts) {
       const cancelBtn = document.getElementById('cuCancel');
       if (cancelBtn) {
         cancelBtn.disabled = true;
-        cancelBtn.textContent = '正在停止...';
+        cancelBtn.textContent = t('avatar.stopping');
       }
       const prog = document.getElementById('cuProgress');
-      if (prog) prog.textContent = '正在停止，当前请求结束后会退出';
+      if (prog) prog.textContent = t('avatar.stoppingHint');
       return;
     }
     modal.remove();
@@ -1009,7 +1009,7 @@ function _showCleanupModal(opts) {
     document.getElementById('cuConfirm').disabled = true;
     document.getElementById('cuClose').disabled = true;
     const cancelBtn = document.getElementById('cuCancel');
-    if (cancelBtn) cancelBtn.textContent = '停止';
+    if (cancelBtn) cancelBtn.textContent = t('avatar.stop');
     const prog = document.getElementById('cuProgress');
     const bar = document.getElementById('cuProgressBar');
     const fill = document.getElementById('cuProgressFill');
@@ -1051,16 +1051,16 @@ async function cleanInvalidFavorites() {
   );
 
   if (!invalid.length && !privateNonOwn.length) {
-    logMsg('<i class="fa-solid fa-check"></i> 当前收藏夹没有需要清理的内容', 'success');
+    logMsg(t('avatar.nothingToClean'), 'success');
     return;
   }
 
   // Show rich cleanup modal
   _showCleanupModal({
-    title: '<i class="fa-solid fa-broom"></i> 清理收藏模型',
+    title: t('avatar.cleanFavTitle'),
     invalidItems: invalid,
     privateNonOwnItems: privateNonOwn,
-    invalidLabel: item => item.name || '失效/无名模型',
+    invalidLabel: item => item.name || t('avatar.invalidOrNameless'),
     onConfirm: async (toDelete, ctx) => {
       let success = 0, fail = 0, done = 0;
       for (const av of toDelete) {
@@ -1091,7 +1091,7 @@ async function cleanInvalidFavorites() {
         await new Promise(r => setTimeout(r, 200));
       }
       const cancelled = ctx?.isCancelled?.();
-      logMsg(`${cancelled ? '⏹ 已停止清理' : '<i class="fa-solid fa-check"></i> 清理完毕'}：成功移除 ${success} 个，失败 ${fail} 个`, success > 0 ? 'success' : (cancelled ? 'info' : 'error'));
+      logMsg(cancelled ? t('avatar.cleanStopped', {success: success, fail: fail}) : t('avatar.cleanDone', {success: success, fail: fail}), success > 0 ? 'success' : (cancelled ? 'info' : 'error'));
       try {
         await idb.set('avatar_basics_' + currentCategory, avatars.map(_avatarBasicFromItem).filter(Boolean));
         await idb.set('avatar_basics_age_' + currentCategory, Date.now());
@@ -1213,7 +1213,7 @@ function onEditThumbSelected(input) {
   // Revoke previous blob URL if one existed
   if (preview && preview.src && preview.src.startsWith('blob:')) URL.revokeObjectURL(preview.src);
   if (preview) preview.src = URL.createObjectURL(file);
-  if (note) note.textContent = `✓ ${file.name} (${(file.size / 1024).toFixed(0)} KB) — 保存时上传 / will upload on save`;
+  if (note) note.textContent = t('avatar.willUpload', {name: file.name, size: (file.size / 1024).toFixed(0)});
 }
 
 function closeEditModal() {
@@ -1250,12 +1250,12 @@ async function saveEditAvatar() {
     let newImageUrl = null;
     const thumbInput = document.getElementById("editThumbInput");
     if (thumbInput && thumbInput.files.length > 0) {
-      btn.innerHTML = `<div class="btn-spinner" style="margin-right:6px;"></div> 图片上传中...`;
+      btn.innerHTML = t('avatar.uploadingImage');
       logMsg(`🖼️ Uploading new thumbnail for ${name}...`, "info");
       newImageUrl = await uploadImageToVRChat(thumbInput.files[0], name);
     }
 
-    btn.innerHTML = `<div class="btn-spinner" style="margin-right:6px;"></div> 保存中...`;
+    btn.innerHTML = t('avatar.saving');
     logMsg(`✏️ Updating ${name}...`, "info");
     const payload = {
       name,

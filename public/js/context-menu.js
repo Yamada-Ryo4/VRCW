@@ -20,17 +20,17 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCtxMenu
 function showOwnedAvatarMenu(e, avtrId, name) {
   e.stopPropagation();
   buildCtxMenu([
-    { label: name || '我的模型', items: [
-      { icon:'<i class="fa-solid fa-bolt"></i> ', label:'切换为当前模型', action: () => switchAvatar(avtrId) },
-      { icon:'<i class="fa-solid fa-person"></i> ', label:'设为后备模型 (Fallback)', action: () => setFallbackAvatar(avtrId, name) },
+    { label: name || t('ctx.myAvatar'), items: [
+      { icon:'<i class="fa-solid fa-bolt"></i> ', label:t('ctx.switchAvatar'), action: () => switchAvatar(avtrId) },
+      { icon:'<i class="fa-solid fa-person"></i> ', label:t('ctx.setFallback'), action: () => setFallbackAvatar(avtrId, name) },
     ]},
-    { label:'Impostor (移动端替身)', items: [
-      { icon:'<i class="fa-solid fa-wand-magic-sparkles"></i> ', label:'生成 Impostor', action: () => enqueueImpostor(avtrId, name) },
-      { icon:'🗑️', label:'删除 Impostor', action: () => deleteImpostor(avtrId, name) },
+    { label:t('ctx.impostor'), items: [
+      { icon:'<i class="fa-solid fa-wand-magic-sparkles"></i> ', label:t('ctx.genImpostor'), action: () => enqueueImpostor(avtrId, name) },
+      { icon:'🗑️', label:t('ctx.delImpostor'), action: () => deleteImpostor(avtrId, name) },
     ]},
     { items: [
-      { icon:'<i class="fa-solid fa-link"></i> ', label:'打开 VRChat 主页', action: () => window.open(`https://vrchat.com/home/avatar/${avtrId}`, '_blank') },
-      { icon:'<i class="fa-solid fa-clipboard"></i> ', label:'复制模型 ID', action: () => copyToClipboard(avtrId, '模型 ID') },
+      { icon:'<i class="fa-solid fa-link"></i> ', label:t('ctx.openVrcHome'), action: () => window.open(`https://vrchat.com/home/avatar/${avtrId}`, '_blank') },
+      { icon:'<i class="fa-solid fa-clipboard"></i> ', label:t('ctx.copyAvatarId'), action: () => copyToClipboard(avtrId, t('label.copyAvatarIdToast')) },
     ]},
   ]);
   positionCtxMenu(e, _ctxMenuEl);
@@ -112,7 +112,7 @@ function showFriendContextMenu(e) {
 
   const sections = [
     { items: [
-      { icon:'<i class="fa-solid fa-rotate-right"></i> ', label:'刷新资料', action: async () => {
+      { icon:'<i class="fa-solid fa-rotate-right"></i> ', label:t('ctx.refreshProfile'), action: async () => {
         // Re-fetch from API for up-to-date data
         try {
           const r = await apiCall(`/api/vrc/users/${id}`);
@@ -120,47 +120,47 @@ function showFriendContextMenu(e) {
             const fresh = await r.json();
             currentFriendProfile = fresh;
             _renderFriendProfileUI(fresh, document.getElementById('friendProfileModal'));
-            logMsg('<i class="fa-solid fa-check"></i> 资料已刷新', 'success');
+            logMsg(t('log.profileRefreshed'), 'success');
           } else {
             // Fall back to re-open using the proper profile-by-id route
             openFriendProfileById(id);
           }
         } catch { openFriendProfileById(id); }
       }},
-      { icon:'<i class="fa-solid fa-clipboard"></i> ', label:'复制 ID', action: () => navigator.clipboard.writeText(id).then(() => logMsg('ID 已复制', 'info')) },
-      { icon:'<i class="fa-solid fa-link"></i> ', label:'分享 VRChat 主页', action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
+      { icon:'<i class="fa-solid fa-clipboard"></i> ', label:t('ctx.copyId'), action: () => navigator.clipboard.writeText(id).then(() => logMsg(t('log.idCopied'), 'info')) },
+      { icon:'<i class="fa-solid fa-link"></i> ', label:t('ctx.shareVrcHome'), action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
     ]},
-    { label:'位置互动', items: [
-      !isSelf && !isBlocked && isFriend && isJoinable ? { icon:'<i class="fa-solid fa-rocket"></i> ', label:'申请加入实例', action: () => friendRequestJoin(id, name) } : null,
-      !isSelf && !isBlocked && isFriend && isOnline ? { icon:'<i class="fa-solid fa-envelope"></i> ', label:'请求邀请', action: () => requestInvite(id, name) } : null,
-      !isSelf && !isBlocked && isFriend && isOnline ? { icon:'<i class="fa-solid fa-envelope-open-text"></i> ', label:'发送邀请', action: () => sendInvite(id, name) } : null,
-      !isSelf && !isBlocked && isFriend ? { icon:'<i class="fa-solid fa-hand"></i> ', label:'发送戳一戳...', action: () => {
+    { label:t('ctx.sectionLocation'), items: [
+      !isSelf && !isBlocked && isFriend && isJoinable ? { icon:'<i class="fa-solid fa-rocket"></i> ', label:t('ctx.requestJoin'), action: () => friendRequestJoin(id, name) } : null,
+      !isSelf && !isBlocked && isFriend && isOnline ? { icon:'<i class="fa-solid fa-envelope"></i> ', label:t('ctx.requestInvite'), action: () => requestInvite(id, name) } : null,
+      !isSelf && !isBlocked && isFriend && isOnline ? { icon:'<i class="fa-solid fa-envelope-open-text"></i> ', label:t('ctx.sendInvite'), action: () => sendInvite(id, name) } : null,
+      !isSelf && !isBlocked && isFriend ? { icon:'<i class="fa-solid fa-hand"></i> ', label:t('ctx.sendBoop'), action: () => {
           setTimeout(() => showBoopMenu(e, id, name), 10);
       }} : null,
     ].filter(Boolean)},
-    { label:'模型控制', items: [
-      !isSelf && !isBlocked ? { icon:'👁️', label: isShown ? '取消强制显示模型' : '显示该玩家模型', action: () => isShown ? resetAvatarModeration(id, name, 'showAvatar') : showAvatarUser(id, name) } : null,
-      !isSelf && !isBlocked ? { icon:'🙈', label: isHidden ? '取消隐藏模型' : '隐藏该玩家模型', action: () => isHidden ? resetAvatarModeration(id, name, 'hideAvatar') : hideAvatarUser(id, name) } : null,
-      !isSelf && !isBlocked ? { icon:'<i class="fa-solid fa-handshake"></i> ', label: isInteractOff ? '打开模型互动 (PhysBones)' : '关闭模型互动', action: () => isInteractOff ? resetAvatarModeration(id, name, 'interactOff') : disableAvatarInteraction(id, name) } : null,
-      { icon:'<i class="fa-solid fa-user"></i> ', label:'查看模型信息 (官网)', action: () => {
+    { label:t('ctx.sectionAvatar'), items: [
+      !isSelf && !isBlocked ? { icon:'👁️', label: isShown ? t('ctx.resetShowAvatar') : t('ctx.showAvatar'), action: () => isShown ? resetAvatarModeration(id, name, 'showAvatar') : showAvatarUser(id, name) } : null,
+      !isSelf && !isBlocked ? { icon:'🙈', label: isHidden ? t('ctx.resetHideAvatar') : t('ctx.hideAvatar'), action: () => isHidden ? resetAvatarModeration(id, name, 'hideAvatar') : hideAvatarUser(id, name) } : null,
+      !isSelf && !isBlocked ? { icon:'<i class="fa-solid fa-handshake"></i> ', label: isInteractOff ? t('ctx.resetInteractOff') : t('ctx.interactOff'), action: () => isInteractOff ? resetAvatarModeration(id, name, 'interactOff') : disableAvatarInteraction(id, name) } : null,
+      { icon:'<i class="fa-solid fa-user"></i> ', label:t('ctx.viewAvatarInfo'), action: () => {
         const avId = f.currentAvatarId; if (avId) window.open(`https://vrchat.com/home/avatar/${avId}`, '_blank');
-        else showToast('该好友模型 ID 不可访问', 'info');
+        else showToast(t('toast.avatarIdInaccessible'), 'info');
       }},
     ].filter(Boolean)},
-    { label:'群组', items: [
-      !isSelf && !isBlocked && isFriend ? { icon:'🏠', label:'邀请加入群组', action: (ev) => showGroupInviteMenu(ev, id, name) } : null,
+    { label:t('ctx.sectionGroup'), items: [
+      !isSelf && !isBlocked && isFriend ? { icon:'🏠', label:t('ctx.inviteGroup'), action: (ev) => showGroupInviteMenu(ev, id, name) } : null,
     ]},
-    { label:'管理', items: [
-      isFriend ? { icon:'<i class="fa-solid fa-star"></i> ', label: isFriendFaved ? '针对该好友移除收藏' : '收藏到分组', action: (ev) => isFriendFaved ? toggleFriendFavorite(id, name) : toggleFriendFavMenu(ev, id) } : null,
-      isFriend ? { icon:'<i class="fa-solid fa-pen-to-square"></i> ', label:'编辑备注', action: () => showUserNoteDialog(id, name) } : null,
-      !isSelf && !isFriend && !isBlocked && !friendRequestPending ? { icon:'<i class="fa-solid fa-plus"></i> ', label:'添加好友', action: () => sendFriendRequest(id, name) } : null,
-      !isSelf && !isFriend && friendRequestPending ? { icon:'<i class="fa-solid fa-hourglass-half"></i> ', label:'取消好友请求', action: () => cancelFriendRequest(id, name) } : null,
-      !isSelf ? { icon:'<i class="fa-solid fa-volume-xmark"></i> ', label: isBlocked ? '解除屏蔽' : '屏蔽', action: () => isBlocked ? unblockUser(id, name) : blockUser(id, name) } : null,
-      !isSelf ? { icon:'🔕', label: isMuted ? '解除静音' : '静音', action: () => isMuted ? unmuteUser(id, name) : muteUser(id, name) } : null,
-      !isSelf ? { icon:'<i class="fa-solid fa-flag"></i> ', label:'举报该用户', action: () => showReportUserDialog(id, name) } : null,
+    { label:t('ctx.sectionManage'), items: [
+      isFriend ? { icon:'<i class="fa-solid fa-star"></i> ', label: isFriendFaved ? t('ctx.favRemove') : t('ctx.favAdd'), action: (ev) => isFriendFaved ? toggleFriendFavorite(id, name) : toggleFriendFavMenu(ev, id) } : null,
+      isFriend ? { icon:'<i class="fa-solid fa-pen-to-square"></i> ', label:t('ctx.editNote'), action: () => showUserNoteDialog(id, name) } : null,
+      !isSelf && !isFriend && !isBlocked && !friendRequestPending ? { icon:'<i class="fa-solid fa-plus"></i> ', label:t('ctx.addFriend'), action: () => sendFriendRequest(id, name) } : null,
+      !isSelf && !isFriend && friendRequestPending ? { icon:'<i class="fa-solid fa-hourglass-half"></i> ', label:t('ctx.cancelFriendReq'), action: () => cancelFriendRequest(id, name) } : null,
+      !isSelf ? { icon:'<i class="fa-solid fa-volume-xmark"></i> ', label: isBlocked ? t('ctx.unblock') : t('ctx.block'), action: () => isBlocked ? unblockUser(id, name) : blockUser(id, name) } : null,
+      !isSelf ? { icon:'🔕', label: isMuted ? t('ctx.unmute') : t('ctx.mute'), action: () => isMuted ? unmuteUser(id, name) : muteUser(id, name) } : null,
+      !isSelf ? { icon:'<i class="fa-solid fa-flag"></i> ', label:t('ctx.report'), action: () => showReportUserDialog(id, name) } : null,
     ]},
     { items: [
-      isFriend ? { icon:'🗑️', label:'删除好友', danger: true, action: () => deleteFriend(id, name) } : null,
+      isFriend ? { icon:'🗑️', label:t('ctx.deleteFriend'), danger: true, action: () => deleteFriend(id, name) } : null,
     ]},
   ].map(section => Object.assign({}, section, { items: section.items.filter(Boolean) }))
    .filter(section => section.items.length > 0);
@@ -177,7 +177,7 @@ async function showGroupInviteMenu(ev, userId, userName) {
     // VRChat API: GET /users/{userId}/groups to list groups for a user
     // Use currentUserId (actual user ID, not 'me')
     const uid = currentUserId || (myProfileData && myProfileData.id);
-    if (!uid) { showToast('无法获取用户 ID，请先登录', 'error'); return; }
+    if (!uid) { showToast(t('toast.uidMissing'), 'error'); return; }
     const r = await apiCall(`/api/vrc/users/${uid}/groups?n=50`);
     if (r.ok) groups = await r.json();
     // VRChat returns array of LimitedGroup objects with id, name, memberCount, etc.
@@ -187,7 +187,7 @@ async function showGroupInviteMenu(ev, userId, userName) {
   } catch {}
 
   if (!groups.length) {
-    showToast('未找到您管理的群组，请先在游戏内创建或加入群组', 'info');
+    showToast(t('toast.noManagedGroup'), 'info');
     return;
   }
 
@@ -200,16 +200,16 @@ async function showGroupInviteMenu(ev, userId, userName) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
   modal.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:24px;min-width:min(320px,92vw);max-width:480px;max-height:70vh;display:flex;flex-direction:column;gap:12px;">
-      <div style="font-weight:600;font-size:1em;">选择要邀请 ${escHtml(userName)} 加入的群组</div>
+      <div style="font-weight:600;font-size:1em;">${t('ctx.inviteGroupTitle', {name: escHtml(userName)})}</div>
       <div id="_groupPickerList" style="overflow-y:auto;display:flex;flex-direction:column;gap:8px;max-height:50vh;">
         ${groups.map(g => `
           <button onclick="doGroupInvite('${escJsAttr(g.id)}','${escJsAttr(g.name)}','${escJsAttr(userId)}','${escJsAttr(userName)}')"
             style="text-align:left;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 14px;cursor:pointer;color:#fff;">
             <div style="font-weight:500;">${escHtml(g.name)}</div>
-            <div style="font-size:0.75em;color:rgba(255,255,255,0.4);"><i class="fa-solid fa-user-group"></i> ${g.memberCount || 0} 成员</div>
+            <div style="font-size:0.75em;color:rgba(255,255,255,0.4);">${t('ctx.groupMembers', {count: g.memberCount || 0})}</div>
           </button>`).join('')}
       </div>
-      <button onclick="document.getElementById('_groupInvitePickerModal')?.remove()" style="background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:8px;cursor:pointer;color:#fff;">取消</button>
+      <button onclick="document.getElementById('_groupInvitePickerModal')?.remove()" style="background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:8px;cursor:pointer;color:#fff;">${t('btn.cancel')}</button>
     </div>`;
   document.body.appendChild(modal);
   // Stack above whatever modal opened it; modalZTop() stays below the toast (99999).
@@ -224,12 +224,12 @@ async function doGroupInvite(groupId, groupName, userId, userName) {
       method: 'POST',
       json: { userId }
     });
-    if (r.ok) logMsg(`<i class="fa-solid fa-check"></i> 已邀请 ${userName} 加入群组「${groupName}」`, 'success');
+    if (r.ok) logMsg(t('log.invitedToGroup', {name: userName, group: groupName}), 'success');
     else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 邀请失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.inviteFail', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(e) { showToast('失败: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.failMsg', {msg: e.message}), 'error'); }
 }
 
 function showReportUserDialog(userId, userName) {
@@ -241,13 +241,13 @@ function showReportUserDialog(userId, userName) {
     'inappropriate_avatar', 'inappropriate_content', 'other'
   ];
   const reasonLabels = {
-    tos_violation: '违反服务条款',
-    threatening_language: '威胁性语言',
-    harassment: '骚扰行为',
-    spam: '垃圾信息',
-    inappropriate_avatar: '不当模型',
-    inappropriate_content: '不当内容',
-    other: '其他'
+    tos_violation: t('report.tos'),
+    threatening_language: t('report.threatening'),
+    harassment: t('report.harassment'),
+    spam: t('report.spam'),
+    inappropriate_avatar: t('report.badAvatar'),
+    inappropriate_content: t('report.badContent'),
+    other: t('report.other')
   };
 
   const modal = document.createElement('div');
@@ -255,18 +255,18 @@ function showReportUserDialog(userId, userName) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
   modal.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:24px;min-width:min(340px,92vw);max-width:480px;display:flex;flex-direction:column;gap:12px;">
-      <div style="font-weight:600;"><i class="fa-solid fa-flag"></i> 举报 ${escHtml(userName)}</div>
-      <div style="font-size:0.85em;color:rgba(255,255,255,0.5);">选择举报原因：</div>
+      <div style="font-weight:600;">${t('ctx.reportTitle', {name: escHtml(userName)})}</div>
+      <div style="font-size:0.85em;color:rgba(255,255,255,0.5);">${t('ctx.reportSelectReason')}</div>
       <select id="_reportReason" style="background:#111827;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;color:#fff;">
         ${reasons.map(r => `<option value="${r}">${reasonLabels[r]}</option>`).join('')}
       </select>
-      <textarea id="_reportDesc" placeholder="描述（可选）" maxlength="512"
+      <textarea id="_reportDesc" placeholder="${t('label.reportDesc')}" maxlength="512"
         style="background:#111827;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;color:#fff;resize:none;height:80px;"></textarea>
       <div style="display:flex;gap:8px;">
         <button id="_reportSubmitBtn" onclick="submitUserReport('${escJsAttr(userId)}','${escJsAttr(userName)}')"
-          style="flex:1;background:#ef4444;border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;font-weight:600;">提交举报</button>
+          style="flex:1;background:#ef4444;border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;font-weight:600;">${t('btn.submitReport')}</button>
         <button onclick="document.getElementById('_reportUserModal')?.remove()"
-          style="flex:1;background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;">取消</button>
+          style="flex:1;background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;">${t('btn.cancel')}</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -278,7 +278,7 @@ async function submitUserReport(userId, userName) {
   const reason = document.getElementById('_reportReason')?.value || 'other';
   const description = document.getElementById('_reportDesc')?.value || '';
   const btn = document.getElementById('_reportSubmitBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '提交中...'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('btn.submitting'); }
   try {
     // Real moderation report via VRChat API (same endpoint VRCX uses):
     // POST /feedback/{userId}/user  { contentType, reason, type }
@@ -293,20 +293,20 @@ async function submitUserReport(userId, userName) {
     });
     if (r.ok) {
       document.getElementById('_reportUserModal')?.remove();
-      showToast(`已举报 ${userName}`, 'success');
-      logMsg(`<i class="fa-solid fa-flag"></i> 已提交对 ${userName} 的举报 (原因: ${reason})`, 'success');
+      showToast(t('toast.reported', {name: userName}), 'success');
+      logMsg(t('log.reportSubmitted', {name: userName, reason}), 'success');
     } else {
       const err = await r.json().catch(() => ({}));
       // Fallback to official site if the API rejects (e.g. not permitted for this content)
       const msg = err.error?.message || ('HTTP ' + r.status);
-      if (confirm(`API 举报失败：${msg}\n\n是否打开 VRChat 官网手动举报？`)) {
+      if (confirm(t('confirm.reportFailApi', {msg}))) {
         window.open(`https://vrchat.com/home/user/${userId}`, '_blank');
       }
-      if (btn) { btn.disabled = false; btn.textContent = '提交举报'; }
+      if (btn) { btn.disabled = false; btn.textContent = t('btn.submitReport'); }
     }
   } catch(e) {
-    showToast('举报失败: ' + e.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '提交举报'; }
+    showToast(t('toast.reportFailMsg', {msg: e.message}), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = t('btn.submitReport'); }
   }
 }
 
@@ -318,7 +318,7 @@ function toggleFriendFavMenu(event, userId) {
   if (!menu) return;
   
   toggleFavMenuGeneric(event, menu, null, () => {
-    if (friendFavGroups.length === 0) return `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载好友分组</div>`;
+    if (friendFavGroups.length === 0) return `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">${t('ctx.noFavGroups')}</div>`;
     return friendFavGroups.map(g =>
       `<button class="avtrdb-fav-group-btn" onclick="addFriendToFavorite('${escJsAttr(userId)}','${escJsAttr(g.name)}',this)">${escHtml(g.displayName || g.name)}</button>`
     ).join("");
@@ -345,7 +345,7 @@ async function addFriendToFavorite(userId, groupName, btn) {
       } else {
         friendFavoriteIdMap.set(userId, { favoriteId: res.id, tags: [groupName] });
       }
-      logMsg(`<i class="fa-solid fa-check"></i> 已将好友添加到分组: ${groupName}`, "success");
+      logMsg(t('log.addedToFavGroup', {group: groupName}), "success");
       // Refresh the open friend profile so the <i class="fa-solid fa-star"></i> button text updates.
       const modal = document.getElementById('friendProfileModal');
       if (currentFriendProfile && modal && !modal.classList.contains('hidden')) {
@@ -353,9 +353,9 @@ async function addFriendToFavorite(userId, groupName, btn) {
       }
     } else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 收藏失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.favAddFail', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(e) { showToast('错误: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
   finally { if (btn) btn.disabled = false; }
 }
 
@@ -365,22 +365,22 @@ async function toggleFriendFavorite(userId, name) {
     // entry is { favoriteId, tags } since the unified shape; tolerate the old
     // bare-string layout in case any persisted state wasn't migrated.
     const favId = (entry && typeof entry === 'object') ? entry.favoriteId : entry;
-    if (!favId) { showToast('收藏 ID 缺失，请刷新好友列表后重试', 'error'); return; }
-    if (!confirm(`确定要为 ${name} 移除好友收藏吗？`)) return;
+    if (!favId) { showToast(t('toast.favIdMissing'), 'error'); return; }
+    if (!confirm(t('confirm.removeFav', {name}))) return;
     try {
       const r = await apiCall(`/api/vrc/favorites/${favId}`, {method:'DELETE'});
       if (r.ok) {
         friendFavoriteIdMap.delete(userId);
-        logMsg(`<i class="fa-solid fa-check"></i> 已移除好友 ${name} 的收藏`, "info");
+        logMsg(t('log.favRemoved', {name}), "info");
         // Refresh the open friend profile so the <i class="fa-solid fa-star"></i> button text updates.
         const modal = document.getElementById('friendProfileModal');
         if (currentFriendProfile && modal && !modal.classList.contains('hidden')) {
           _renderFriendProfileUI(currentFriendProfile, modal);
         }
       } else {
-        showToast(`<i class="fa-solid fa-xmark"></i> 移除失败: ${r.status}`, 'error');
+        showToast(t('toast.favRemoveFail', {status: r.status}), 'error');
       }
-    } catch(e) { showToast('错误: ' + e.message, 'error'); }
+    } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
   }
 }
 
@@ -402,15 +402,15 @@ async function showUserNoteDialog(userId, userName) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
   modal.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:24px;min-width:min(320px,92vw);max-width:460px;display:flex;flex-direction:column;gap:12px;">
-      <div style="font-weight:600;"><i class="fa-solid fa-pen-to-square"></i> 备注 ${escHtml(userName)}</div>
-      <div style="font-size:0.8em;color:rgba(255,255,255,0.5);">仅你自己可见，会显示在 VRChat 客户端的该用户资料里。</div>
-      <textarea id="_userNoteText" maxlength="256" placeholder="输入备注..."
+      <div style="font-weight:600;">${t('ctx.noteTitle', {name: escHtml(userName)})}</div>
+      <div style="font-size:0.8em;color:rgba(255,255,255,0.5);">${t('ctx.noteHint')}</div>
+      <textarea id="_userNoteText" maxlength="256" placeholder="${t('label.userNotePlaceholder')}"
         style="background:#111827;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;color:#fff;resize:none;height:90px;font-family:inherit;">${escHtml(existing)}</textarea>
       <div style="display:flex;gap:8px;">
         <button id="_userNoteSaveBtn" onclick="saveUserNote('${escJsAttr(userId)}','${escJsAttr(userName)}')"
-          style="flex:1;background:var(--accent,#52525b);border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;font-weight:600;">保存</button>
+          style="flex:1;background:var(--accent,#52525b);border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;font-weight:600;">${t('btn.save')}</button>
         <button onclick="document.getElementById('_userNoteModal')?.remove()"
-          style="flex:1;background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;">取消</button>
+          style="flex:1;background:rgba(255,255,255,0.08);border:none;border-radius:8px;padding:10px;cursor:pointer;color:#fff;">${t('btn.cancel')}</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -422,7 +422,7 @@ async function showUserNoteDialog(userId, userName) {
 async function saveUserNote(userId, userName) {
   const note = document.getElementById('_userNoteText')?.value || '';
   const btn = document.getElementById('_userNoteSaveBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('btn.saving'); }
   try {
     const r = await apiCall('/api/vrc/userNotes', {
       method: 'POST',
@@ -434,16 +434,16 @@ async function saveUserNote(userId, userName) {
       const af = allFriends.find(f => f.id === userId);
       if (af) af.note = note;
       document.getElementById('_userNoteModal')?.remove();
-      showToast(`已保存对 ${userName} 的备注`, 'success');
-      logMsg(`<i class="fa-solid fa-pen-to-square"></i> 已更新 ${userName} 的备注`, 'success');
+      showToast(t('toast.noteSaved', {name: userName}), 'success');
+      logMsg(t('log.noteUpdated', {name: userName}), 'success');
     } else {
       const err = await r.json().catch(() => ({}));
-      showToast(`保存失败: ${err.error?.message || r.status}`, 'error');
-      if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+      showToast(t('toast.noteSaveFail', {msg: err.error?.message || r.status}), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = t('btn.save'); }
     }
   } catch(e) {
-    showToast('保存失败: ' + e.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+    showToast(t('toast.noteSaveFail', {msg: e.message}), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = t('btn.save'); }
   }
 }
 
@@ -451,20 +451,20 @@ async function saveUserNote(userId, userName) {
 // FRIEND STATUS / CANCEL OUTGOING REQUEST
 // ═══════════════════════════════════════════════════════════
 async function cancelFriendRequest(userId, name) {
-  if (!confirm(`确定取消向 ${name} 发送的好友请求吗？`)) return;
+  if (!confirm(t('confirm.cancelFriendReq', {name}))) return;
   try {
     const r = await apiCall(`/api/vrc/user/${userId}/friendRequest`, { method: 'DELETE' });
     if (r.ok) {
-      showToast('已取消好友请求', 'success');
-      logMsg(`已取消向 ${name} 的好友请求`, 'info');
+      showToast(t('toast.friendReqCanceled'), 'success');
+      logMsg(t('log.friendReqCanceled', {name}), 'info');
       if (currentFriendProfile && currentFriendProfile.id === userId) {
         currentFriendProfile.friendRequestPending = false;
         _refreshFriendProfileIfOpen(userId);
       }
     } else {
-      showToast('取消失败: ' + r.status, 'error');
+      showToast(t('toast.cancelFailStatus', {status: r.status}), 'error');
     }
-  } catch(e) { showToast('错误: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function friendRequestJoin(userId, name) {
@@ -480,23 +480,23 @@ async function friendRequestJoin(userId, name) {
       f.location === 'private' ||
       f.location === 'traveling' ||
       f.location.includes('~private')) {
-    showToast('该好友当前不在可加入的公开实例中', 'info');
+    showToast(t('toast.notInPublicInstance'), 'info');
     return;
   }
   try {
     const r = await apiCall(`/api/vrc/invite/myself/to/${encodeURIComponent(f.location)}`, { method: 'POST' });
-    if (r.ok) logMsg(`<i class="fa-solid fa-check"></i> 已申请加入 ${name} 的实例`, 'success');
+    if (r.ok) logMsg(t('log.joinRequested', {name}), 'success');
     else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.failIcon', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(e) { showToast('失败: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.failMsg', {msg: e.message}), 'error'); }
 }
 
 function friendRequestJoinMsg(userId, name) {
   // Invite yourself to user's instance with a custom message isn't directly supported;
   // We just do the standard self-invite
-  if (!confirm(`向 ${name} 区请加入其当前实例?`)) return;
+  if (!confirm(t('confirm.requestJoin', {name}))) return;
   friendRequestJoin(userId, name);
 }
 
@@ -517,18 +517,18 @@ async function sendBoop(userId, name) {
   const modalHtml = `
   <div id="boopModal" class="modal" style="z-index:${z};" onclick="if(event.target===this)this.remove()">
     <div class="modal-content" style="max-width:420px;width:100%;display:flex;flex-direction:column;gap:12px;">
-      <h3 style="margin:0;"><i class="fa-solid fa-hand"></i> 戳一下 ${escHtml(name)}</h3>
-      <input id="boopSearch" type="text" class="input-field" placeholder="搜索表情 / Search emoji..."
+      <h3 style="margin:0;">${t('ctx.boopTitle', {name: escHtml(name)})}</h3>
+      <input id="boopSearch" type="text" class="input-field" placeholder="${t('label.boopSearch')}"
         oninput="_filterBoopEmojis(this.value)" style="width:100%;">
-      <div style="font-size:0.72em;color:var(--text-muted);">默认表情</div>
+      <div style="font-size:0.72em;color:var(--text-muted);">${t('ctx.defaultEmoji')}</div>
       <div id="boopDefaultGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:8px;max-height:220px;overflow-y:auto;padding:2px;">
         ${defaultGrid}
       </div>
       <div id="boopCustomWrap" style="display:none;">
-        <div style="font-size:0.72em;color:var(--text-muted);margin-bottom:6px;">我的自定义表情 (VRC+)</div>
+        <div style="font-size:0.72em;color:var(--text-muted);margin-bottom:6px;">${t('ctx.customEmoji')}</div>
         <div id="boopCustomGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px;max-height:160px;overflow-y:auto;padding:2px;"></div>
       </div>
-      <button class="btn btn-secondary" style="width:100%;" onclick="document.getElementById('boopModal').remove()">取消</button>
+      <button class="btn btn-secondary" style="width:100%;" onclick="document.getElementById('boopModal').remove()">${t('btn.cancel')}</button>
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend', modalHtml);
@@ -578,15 +578,15 @@ async function submitBoop(userId, emojiId) {
     const json = emojiId ? { emojiId } : {};
     const r = await apiCall(`/api/vrc/users/${userId}/boop`, { method: 'POST', json });
     if (r.ok) {
-      logMsg(`<i class="fa-solid fa-check"></i> 已戳一下对方`, 'success');
-      showToast('已发送戳一下 <i class="fa-solid fa-hand"></i> ', 'success');
+      logMsg(t('log.boopSent'), 'success');
+      showToast(t('toast.boopSent'), 'success');
     } else {
       const err = await r.json().catch(() => ({}));
       const msg = err.error?.message || ('HTTP ' + r.status);
       // 403/400 usually means the other side has booping disabled
-      showToast(`<i class="fa-solid fa-xmark"></i> 失败: ${msg}`, 'error');
+      showToast(t('toast.boopFail', {msg}), 'error');
     }
-  } catch(e) { showToast('失败: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.failMsg', {msg: e.message}), 'error'); }
 }
 
 async function sendPoke(userId, name, emojiId = 'default_heart') {
@@ -598,12 +598,12 @@ async function sendPoke(userId, name, emojiId = 'default_heart') {
         emojiId: emojiId 
       }
     });
-    if (r.ok) logMsg(`<i class="fa-solid fa-check"></i> 已向 ${name} 发送戳一戳`, 'success');
+    if (r.ok) logMsg(t('log.pokeSent', {name}), 'success');
     else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.failIcon', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(e) { showToast('失败: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.failMsg', {msg: e.message}), 'error'); }
 }
 
 function showBoopMenu(e, userId, name) {
@@ -621,7 +621,7 @@ function showBoopMenu(e, userId, name) {
   };
 
   const menu = buildCtxMenu([
-    { label: `戳一戳: ${name}`, items: menuItems }
+    { label: t('ctx.boopMenuLabel', {name}), items: menuItems }
   ]);
   positionCtxMenu(fakeEvent, menu);
 }
@@ -633,50 +633,50 @@ async function requestInvite(userId, name) {
       method: 'POST',
       json: { platform: 'standalonewindows', rsvp: false }
     });
-    if (r.ok) logMsg(`<i class="fa-solid fa-check"></i> 已向 ${name} 发送请求邀请`, 'success');
+    if (r.ok) logMsg(t('log.requestInviteSent', {name}), 'success');
     else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.failIcon', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(e) { showToast('失败: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.failMsg', {msg: e.message}), 'error'); }
 }
 
 async function sendInvite(userId, name) {
   // POST /api/1/invite/{userId} — invite user to YOUR current instance
   try {
     const meResp = await apiCall('/api/vrc/auth/user');
-    if (!meResp.ok) throw new Error('无法获取当前状态');
+    if (!meResp.ok) throw new Error(t('err.cannotGetStatus'));
     const me = await meResp.json();
     if (!me.location || me.location === 'offline' || me.location === 'private') {
-      showToast('你目前不在公共实例或处于离线状态，无法发送邀请。', 'info');
+      showToast(t('toast.notInPublicForInvite'), 'info');
       return;
     }
     const r = await apiCall(`/api/vrc/invite/${userId}`, {
       method: 'POST',
       json: { instanceId: me.location }
     });
-    if (r.ok) logMsg(`<i class="fa-solid fa-check"></i> 已向 ${name} 发送邀请`, 'success');
+    if (r.ok) logMsg(t('log.inviteSent', {name}), 'success');
     else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.failIcon', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(e) { showToast('失败: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('toast.failMsg', {msg: e.message}), 'error'); }
 }
 
 async function blockUser(userId, name) {
-  if (!confirm(`确认屏蔽 ${name}?`)) return;
+  if (!confirm(t('confirm.block', {name}))) return;
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'block'}});
     if (r.ok) {
       // Optimistic update — immediately reflect in menu on next open
       myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'block'));
       myModerations.push({ moderated: userId, type: 'block' });
-      logMsg(`<i class="fa-solid fa-check"></i> 已屏蔽 ${name}`, 'success');
+      logMsg(t('log.blocked', {name}), 'success');
       logModerationAction(userId, name, 'block', 'block');
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations(); // background sync
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 屏蔽失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.blockFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 // Helper: re-render the friend profile modal if it's open and showing this user.
@@ -696,27 +696,27 @@ async function unblockUser(userId, name) {
     const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type:'block'}});
     if (r.ok) {
       myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'block'));
-      logMsg(`<i class="fa-solid fa-check"></i> 已解除屏蔽 ${name}`, 'success');
+      logMsg(t('log.unblocked', {name}), 'success');
       logModerationAction(userId, name, 'block', 'unblock');
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations();
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 解除失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.unblockFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function muteUser(userId, name) {
-  if (!confirm(`确认静音 ${name}?`)) return;
+  if (!confirm(t('confirm.mute', {name}))) return;
   try {
     const r = await apiCall(`/api/vrc/auth/user/playermoderations`, {method:'POST', json:{moderated:userId, type:'mute'}});
     if (r.ok) {
       myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'mute'));
       myModerations.push({ moderated: userId, type: 'mute' });
-      logMsg(`<i class="fa-solid fa-check"></i> 已静音 ${name}`, 'success');
+      logMsg(t('log.muted', {name}), 'success');
       logModerationAction(userId, name, 'mute', 'mute');
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations();
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 静音失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.muteFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function unmuteUser(userId, name) {
@@ -724,12 +724,12 @@ async function unmuteUser(userId, name) {
     const r = await apiCall(`/api/vrc/auth/user/unplayermoderate`, {method:'PUT', json:{moderated:userId, type:'mute'}});
     if (r.ok) {
       myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'mute'));
-      logMsg(`<i class="fa-solid fa-check"></i> 已解除静音 ${name}`, 'success');
+      logMsg(t('log.unmuted', {name}), 'success');
       logModerationAction(userId, name, 'mute', 'unmute');
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations();
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 解除失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.unmuteFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function showAvatarUser(userId, name) {
@@ -739,12 +739,12 @@ async function showAvatarUser(userId, name) {
       // Remove conflicting hideAvatar, add showAvatar
       myModerations = myModerations.filter(m => !(m.moderated === userId && (m.type === 'showAvatar' || m.type === 'hideAvatar')));
       myModerations.push({ moderated: userId, type: 'showAvatar' });
-      logMsg(`<i class="fa-solid fa-check"></i> 已强制显示 ${name} 的模型`, 'success');
+      logMsg(t('log.showAvatar', {name}), 'success');
       logModerationAction(userId, name, 'avatar', 'show');
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations();
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 操作失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.opFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function hideAvatarUser(userId, name) {
@@ -754,12 +754,12 @@ async function hideAvatarUser(userId, name) {
       // Remove conflicting showAvatar, add hideAvatar
       myModerations = myModerations.filter(m => !(m.moderated === userId && (m.type === 'showAvatar' || m.type === 'hideAvatar')));
       myModerations.push({ moderated: userId, type: 'hideAvatar' });
-      logMsg(`<i class="fa-solid fa-check"></i> 已隐藏 ${name} 的模型`, 'success');
+      logMsg(t('log.hideAvatar', {name}), 'success');
       logModerationAction(userId, name, 'avatar', 'hide');
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations();
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 操作失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.opFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function disableAvatarInteraction(userId, name) {
@@ -768,12 +768,12 @@ async function disableAvatarInteraction(userId, name) {
     if (r.ok) {
       myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === 'interactOff'));
       myModerations.push({ moderated: userId, type: 'interactOff' });
-      logMsg(`<i class="fa-solid fa-check"></i> 已关闭 ${name} 的模型互动`, 'success');
+      logMsg(t('log.interactOff', {name}), 'success');
       logModerationAction(userId, name, 'avatar', 'disableInteraction');
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations();
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 操作失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.opFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function resetAvatarModeration(userId, name, type) {
@@ -782,22 +782,22 @@ async function resetAvatarModeration(userId, name, type) {
     if (r.ok) {
       // Remove the specific moderation entry
       myModerations = myModerations.filter(m => !(m.moderated === userId && m.type === type));
-      const typeText = { showAvatar:'强制显示', hideAvatar:'隐藏', interactOff:'关闭互动' }[type] || type;
-      logMsg(`<i class="fa-solid fa-check"></i> 已重置 ${name} 的${typeText}设置`, 'success');
+      const typeText = { showAvatar:t('label.avatarModeration.showAvatar'), hideAvatar:t('label.avatarModeration.hideAvatar'), interactOff:t('label.avatarModeration.interactOff') }[type] || type;
+      logMsg(t('log.resetModeration', {name, type: typeText}), 'success');
       logModerationAction(userId, name, 'avatar', 'reset_' + type);
       _refreshFriendProfileIfOpen(userId);
       fetchMyModerations();
-    } else logMsg(`<i class="fa-solid fa-xmark"></i> 重置失败: ${r.status}`, 'error');
-  } catch(e) { showToast('发生错误: ' + e.message, 'error'); }
+    } else logMsg(t('log.resetFail', {status: r.status}), 'error');
+  } catch(e) { showToast(t('toast.errorMsg', {msg: e.message}), 'error'); }
 }
 
 async function fetchSharedInstances(userId) {
   try {
     const r = await apiCall(`/api/vrc/user/${userId}/instances`);
     const data = r.ok ? await r.json() : null;
-    if (!data || !data.length) { showToast('暂无共同进入过的房间记录', 'info'); return; }
-    alert('共同进入过的房间:\n' + data.slice(0,10).map(i=>i.worldName||i.world||i).join('\n'));
-  } catch(e) { showToast('加载失败: ' + e.message, 'error'); }
+    if (!data || !data.length) { showToast(t('toast.noSharedRooms'), 'info'); return; }
+    alert(t('alert.sharedRooms', {list: data.slice(0,10).map(i=>i.worldName||i.world||i).join('\n')}));
+  } catch(e) { showToast(t('toast.loadFailMsg', {msg: e.message}), 'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -813,32 +813,32 @@ function showSelfContextMenu(e) {
 
   const menu = buildCtxMenu([
     { items: [
-      { icon:'<i class="fa-solid fa-rotate-right"></i> ', label:'刷新我的资料', action: () => {
+      { icon:'<i class="fa-solid fa-rotate-right"></i> ', label:t('ctx.refreshMyProfile'), action: () => {
         myProfileData = null;
-        fetchMyProfile(true).then(() => logMsg('<i class="fa-solid fa-check"></i> 资料已刷新', 'success'));
+        fetchMyProfile(true).then(() => logMsg(t('log.profileRefreshed'), 'success'));
       }},
-      { icon:'<i class="fa-solid fa-link"></i> ', label:'打开 VRChat 主页', action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
-      { icon:'<i class="fa-solid fa-clipboard"></i> ', label:'复制我的 ID', action: () => navigator.clipboard.writeText(id).then(() => logMsg('<i class="fa-solid fa-check"></i> ID 已复制', 'info')) },
+      { icon:'<i class="fa-solid fa-link"></i> ', label:t('ctx.openVrcHome'), action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },
+      { icon:'<i class="fa-solid fa-clipboard"></i> ', label:t('ctx.copyMyId'), action: () => navigator.clipboard.writeText(id).then(() => logMsg(t('log.idCopiedIcon'), 'info')) },
     ]},
-    { label:'快速切换状态', items: [
+    { label:t('ctx.quickStatus'), items: [
       { icon: curStatus === 'active'  ? '<i class="fa-solid fa-check"></i> ' : statusDots['active'],  label:'Online (Active)',        action: () => quickSetStatus('active') },
       { icon: curStatus === 'join me' ? '<i class="fa-solid fa-check"></i> ' : statusDots['join me'], label:'Join Me',                action: () => quickSetStatus('join me') },
       { icon: curStatus === 'ask me'  ? '<i class="fa-solid fa-check"></i> ' : statusDots['ask me'],  label:'Ask Me',                 action: () => quickSetStatus('ask me') },
-      { icon: curStatus === 'busy'    ? '<i class="fa-solid fa-check"></i> ' : statusDots['busy'],    label:'Busy (勿扰)',             action: () => quickSetStatus('busy') },
+      { icon: curStatus === 'busy'    ? '<i class="fa-solid fa-check"></i> ' : statusDots['busy'],    label:t('ctx.statusBusy'),             action: () => quickSetStatus('busy') },
     ]},
-    { label:'模型信息', items: [
-      { icon:'<i class="fa-solid fa-user"></i> ', label:'显示当前模型信息', action: () => {
+    { label:t('ctx.sectionAvatarInfo'), items: [
+      { icon:'<i class="fa-solid fa-user"></i> ', label:t('ctx.showCurrentAvatar'), action: () => {
         const avId = u.currentAvatarId || u.currentAvatar;
-        if (!avId) { showToast('模型 ID 不可用', 'error'); return; }
+        if (!avId) { showToast(t('toast.avatarIdUnavailable'), 'error'); return; }
         openAvtrdbDetail({ vrc_id: avId, name: u.currentAvatarName || avId,
           image_url: u.currentAvatarThumbnailImageUrl || '' });
       }},
-      { icon:'<i class="fa-solid fa-user"></i> ', label:'显示备用模型信息', action: () => showFallbackAvatarInfo() },
-      { icon:'🖼️', label:'前往我的模型库', action: () => switchTab('download') },
+      { icon:'<i class="fa-solid fa-user"></i> ', label:t('ctx.showFallbackAvatar'), action: () => showFallbackAvatarInfo() },
+      { icon:'🖼️', label:t('ctx.goToAvatars'), action: () => switchTab('download') },
     ]},
-    { label:'个人账号', items: [
-      { icon:'✏️', label:'编辑 Bio / 状态文字', action: () => openEditProfileModal() },
-      { icon:'<i class="fa-solid fa-lock"></i> ', label:'切换模型克隆权限', action: () => toggleAvatarCopying() },
+    { label:t('ctx.sectionAccount'), items: [
+      { icon:'✏️', label:t('ctx.editBio'), action: () => openEditProfileModal() },
+      { icon:'<i class="fa-solid fa-lock"></i> ', label:t('ctx.toggleClone'), action: () => toggleAvatarCopying() },
     ]},
   ]);
   positionCtxMenu(e, menu);
@@ -852,13 +852,13 @@ async function quickSetStatus(newStatus) {
     const r = await apiCall(`/api/vrc/users/${u.id}`, { method: 'PUT', json: { status: newStatus } });
     if (r.ok) {
       myProfileData.status = newStatus;
-      logMsg(`<i class="fa-solid fa-check"></i> 状态已切换为 ${labels[newStatus] || newStatus}`, 'success');
+      logMsg(t('log.statusSwitched', {status: labels[newStatus] || newStatus}), 'success');
       fetchMyProfile(true);
     } else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 切换失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.statusSwitchFail', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(ex) { showToast('失败: ' + ex.message, 'error'); }
+  } catch(ex) { showToast(t('toast.failMsg', {msg: ex.message}), 'error'); }
 }
 
 async function showFallbackAvatarInfo() {
@@ -866,7 +866,7 @@ async function showFallbackAvatarInfo() {
   if (!u) return;
   const fallbackId = u.fallbackAvatar;
   if (!fallbackId) {
-    alert('未设置备用模型\n\n需要在游戏内将一个 PC+Quest 双端、Good 评级以上的模型设置为 Fallback Avatar。');
+    alert(t('alert.noFallback'));
     return;
   }
   try {
@@ -884,25 +884,25 @@ async function showFallbackAvatarInfo() {
       created_at: av.created_at || av.createdAt,
       updated_at: av.updated_at || av.updatedAt,
     });
-  } catch(ex) { showToast('无法加载备用模型信息: ' + ex.message, 'error'); }
+  } catch(ex) { showToast(t('toast.fallbackLoadFail', {msg: ex.message}), 'error'); }
 }
 
 async function toggleAvatarCopying() {
   const u = myProfileData;
   if (!u || !u.id) return;
   const newVal = !u.allowAvatarCopying;
-  if (!confirm(`确认将「允许克隆模型」设置为 ${newVal ? '允许' : '不允许'}？`)) return;
+  if (!confirm(t('confirm.toggleClone', {val: newVal ? t('label.cloneAllowed') : t('label.cloneDisallowed')}))) return;
   try {
     const r = await apiCall(`/api/vrc/users/${u.id}`, { method: 'PUT', json: { allowAvatarCopying: newVal } });
     if (r.ok) {
       myProfileData.allowAvatarCopying = newVal;
-      logMsg(`<i class="fa-solid fa-check"></i> 模型克隆权限已设置为 ${newVal ? '允许' : '不允许'}`, 'success');
+      logMsg(t('log.cloneSet', {val: newVal ? t('label.cloneAllowed') : t('label.cloneDisallowed')}), 'success');
       fetchMyProfile(true);
     } else {
       const err = await r.json().catch(() => ({}));
-      showToast(`<i class="fa-solid fa-xmark"></i> 失败: ${err.error?.message || r.status}`, 'error');
+      showToast(t('toast.failIcon', {msg: err.error?.message || r.status}), 'error');
     }
-  } catch(ex) { showToast('失败: ' + ex.message, 'error'); }
+  } catch(ex) { showToast(t('toast.failMsg', {msg: ex.message}), 'error'); }
 }
 
 

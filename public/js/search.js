@@ -108,14 +108,14 @@ function _buildFavGroupListHtml(favList, id, opts = {}) {
   let html = '';
   // Local favorites row
   if (isLocalFaved) {
-    html += `<button class="avtrdb-fav-group-btn avtrdb-fav-group-active" onclick="removeFromLocalFavorite('${escJsAttr(id)}'); _refreshDetailAfterFavChange('${escJsAttr(id)}');">✓ <i class="fa-solid fa-box"></i> 本地收藏</button>`;
+    html += `<button class="avtrdb-fav-group-btn avtrdb-fav-group-active" onclick="removeFromLocalFavorite('${escJsAttr(id)}'); _refreshDetailAfterFavChange('${escJsAttr(id)}');">${t('label.localFav')}</button>`;
   } else {
-    html += `<button class="avtrdb-fav-group-btn" style="color:var(--secondary);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:4px;" onclick="${localSaveAction}">+ <i class="fa-solid fa-box"></i> 保存到本地 (200槽位)</button>`;
+    html += `<button class="avtrdb-fav-group-btn" style="color:var(--secondary);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:4px;" onclick="${localSaveAction}">${t('search.saveToLocalSlots')}</button>`;
   }
 
   // Cloud groups
   if (favoriteGroups.length === 0) {
-    html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">请先加载收藏夹</div>`;
+    html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">${escHtml(t('search.loadFavGroupsFirst'))}</div>`;
   } else {
     html += favoriteGroups.map(g => {
       const isFavedInGroup = favedGroups.has(g.name);
@@ -147,7 +147,7 @@ function _setFavGroupCountState(favList, groupName, count, id) {
   }
   if (btn && !isFavedInGroup) {
     btn.disabled = full;
-    btn.title = full ? '收藏夹已满' : '';
+    btn.title = full ? t('world.favGroupFull') : '';
   }
 }
 
@@ -182,12 +182,12 @@ function onSearchCategoryChange() {
 
   // Update placeholder text based on category
   const placeholders = {
-    avatars: "搜索模型 / Search avatars...",
-    users:   "搜索玩家 / Search users...",
-    worlds:  "搜索世界 / Search worlds...",
-    groups:  "搜索群组 / Search groups...",
+    avatars: t('search.placeholder.avatars'),
+    users:   t('search.placeholder.users'),
+    worlds:  t('search.placeholder.worlds'),
+    groups:  t('search.placeholder.groups'),
   };
-  if (searchInput) searchInput.placeholder = placeholders[cat] || "搜索 / Search...";
+  if (searchInput) searchInput.placeholder = placeholders[cat] || t('search.placeholder.default');
 
   // Only trigger search if there's a query
   if (searchInput?.value.trim()) doAvtrdbSearch();
@@ -240,11 +240,10 @@ async function doAvtrdbSearch() {
   grid.classList.remove('search-user-grid', 'search-group-grid', 'search-world-grid');
   const searchGridClass = cat === 'users' ? 'search-user-grid' : cat === 'groups' ? 'search-group-grid' : cat === 'worlds' ? 'search-world-grid' : '';
   if (searchGridClass) grid.classList.add(searchGridClass);
-  grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,255,255,0.4);">搜索中...</div>`;
+  grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,255,255,0.4);">${escHtml(t('search.searching'))}</div>`;
   document.getElementById("avtrdbStats").textContent = "";
   const btnSearch = document.getElementById("btnSearchMain");
   const btnIcon = btnSearch?.querySelector('.search-btn-icon');
-  const originalIcon = btnIcon?.textContent || '<i class="fa-solid fa-magnifying-glass"></i> ';
   
   if (btnSearch) {
     btnSearch.disabled = true;
@@ -260,7 +259,7 @@ async function doAvtrdbSearch() {
   } finally {
     if (btnSearch) {
       btnSearch.disabled = false;
-      if (btnIcon) btnIcon.textContent = originalIcon;
+      if (btnIcon) btnIcon.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> `;
     }
   }
 }
@@ -280,11 +279,11 @@ async function vrcdbFetch(cat, query, signal) {
     const data = await resp.json();
     
     if (!data || data.length === 0) {
-      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,0.4);padding:40px;">未找到结果 (No results)</div>';
+      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,0.4);padding:40px;">${escHtml(t('search.noResults'))}</div>`;
       return;
     }
-    stats.textContent = `找到 ${data.length} 个结果`;
-    
+    stats.textContent = t('search.resultsFound', {count: data.length});
+
     // Filter by platform if applicable
     const plat = document.getElementById("avtrdbPlatform")?.value || "";
     let filteredData = data;
@@ -294,7 +293,7 @@ async function vrcdbFetch(cat, query, signal) {
         const wPlats = w.platforms || (w.unityPackages ? w.unityPackages.map(p => p.platform) : []);
         return required.every(p => wPlats.includes(p));
       });
-      stats.textContent = `找到 ${data.length} 个结果 (过滤后 ${filteredData.length})`;
+      stats.textContent = t('search.resultsFoundFiltered', {count: data.length, filtered: filteredData.length});
     }
 
     if (cat === 'users') {
@@ -325,10 +324,10 @@ async function vrcdbFetch(cat, query, signal) {
           ${isCached
             ? `<img class="avatar-thumb" src="${escHtml(thumb)}" alt="">`
             : `<img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(thumb)}" alt="">`}
-          <div class="avatar-name-overlay">${escHtml(w.name||'未知世界')}</div>
+          <div class="avatar-name-overlay">${escHtml(w.name||t('world.unknownWorld'))}</div>
           <div style="position:absolute;bottom:6px;left:6px;z-index:10;">
             <div data-fav-btn="${escHtml(w.id)}" onclick="quickWorldFav('${escJsAttr(w.id)}',event)"
-              style="width:26px;height:26px;border-radius:6px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85em;" title="${isFaved?'取消收藏':'添加到收藏夹'}">${isFaved?'\u2b50':'\u2606'}</div>
+              style="width:26px;height:26px;border-radius:6px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85em;" title="${isFaved?t('world.unfavorite'):t('world.addToFavorites')}">${isFaved?'\u2b50':'\u2606'}</div>
           </div>
           <div style="position:absolute;bottom:8px;right:8px;display:flex;gap:4px;z-index:5;">
             ${(w.occupants||0)>0 ? `<div class="world-player-badge" style="position:static;margin:0;">\u{1f465} ${w.occupants}</div>` : ''}
@@ -356,7 +355,7 @@ async function vrcdbFetch(cat, query, signal) {
       }).join('');
     }
   } catch(e) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--error);padding:40px;">搜索失败: ${escHtml(String(e.message || e))}</div>`;
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--error);padding:40px;">${escHtml(t('search.searchFailed', {msg: String(e.message || e)}))}</div>`;
   }
 }
 
@@ -415,7 +414,7 @@ function authorLinkHtml(authorName, authorId) {
     return `<span class="link-like" onclick="event.stopPropagation(); openFriendProfileById('${escJsAttr(authorId)}')">${escHtml(name)}</span>`;
   }
   if (name && name !== "Unknown") {
-    return `<span class="link-like" title="解析作者资料" onclick="event.stopPropagation(); openAuthorProfileByName('${escJsAttr(name)}')">${escHtml(name)}</span>`;
+    return `<span class="link-like" title="${t('search.resolveAuthorProfile')}" onclick="event.stopPropagation(); openAuthorProfileByName('${escJsAttr(name)}')">${escHtml(name)}</span>`;
   }
   return escHtml(name);
 }
@@ -435,10 +434,10 @@ async function openAuthorProfileByName(authorName) {
     if (hit?.id) {
       openFriendProfileById(hit.id);
     } else {
-      showToast('找不到作者资料: ' + name, 'error');
+      showToast(t('toast.authorNotFound', {name: name}), 'error');
     }
   } catch (e) {
-    showToast('作者资料解析失败: ' + (e.message || e), 'error');
+    showToast(t('toast.authorResolveFail', {msg: e.message || e}), 'error');
   }
 }
 
@@ -466,7 +465,7 @@ function _collectAvatar(av) {
   const richness = o => ((o.unityPackages && o.unityPackages.length) ? 2 : 0)
     + ((o.performance && Object.keys(o.performance).length > 2) ? 1 : 0)
     + (o.image_url || o.imageUrl ? 1 : 0)
-    + (o.name && o.name !== '未知模型' ? 1 : 0);
+    + (o.name && o.name !== t('avatar.unknownAvatar') ? 1 : 0);
   if (richness(av) > richness(existing)) {
     dedupMap.set(id, Object.assign({}, existing, av));
     _refreshAvtrdbCard(dedupMap.get(id));
@@ -524,20 +523,20 @@ function _updateAvtrdbStats() {
   const stats = document.getElementById("avtrdbStats");
   if (!stats) return;
   const platLabelMap = { pc: "PC", android: "Quest", ios: "Apple", "pc+android": "PC + Quest", "pc+android+ios": "PC + Quest + Apple" };
-  const platLabel = avtrdbCurrentPlatform ? (platLabelMap[avtrdbCurrentPlatform] || avtrdbCurrentPlatform) : "全平台";
-  const sortLabel = { relevance: '相关度', newest: '最新', name: '名称', arrival: '到达顺序' }[avtrdbSortMode] || '到达顺序';
-  const fieldLabel = { all: '全部字段', title: '标题', author: '作者', tags: 'Tag', desc: '描述' }[avtrdbMatchField] || '全部字段';
+  const platLabel = avtrdbCurrentPlatform ? (platLabelMap[avtrdbCurrentPlatform] || avtrdbCurrentPlatform) : t('search.allPlatforms');
+  const sortLabel = { relevance: t('search.sortRelevance'), newest: t('search.sortNewest'), name: t('search.sortName'), arrival: t('search.sortArrival') }[avtrdbSortMode] || t('search.sortArrival');
+  const fieldLabel = { all: t('search.field.all'), title: t('search.field.title'), author: t('search.field.author'), tags: t('search.field.tags'), desc: t('search.field.desc') }[avtrdbMatchField] || t('search.field.all');
   const indexed = _avtrdbDedupMap.size;
   const rendered = _avtrdbRenderedCount;
   let suffix;
   if (_avtrdbBgDriverFailedPage >= 0) {
-    suffix = ` · avtrdb 拉取中断 (第 ${_avtrdbBgDriverFailedPage} 页失败)`;
+    suffix = t('search.fetchInterrupted', {page: _avtrdbBgDriverFailedPage});
   } else if (_avtrdbBgDriverRunning || _avtrdbHasMore) {
-    suffix = ` · 后台拉取中...`;
+    suffix = t('search.bgFetching');
   } else {
-    suffix = ` · 全部加载完毕`;
+    suffix = t('search.allLoaded');
   }
-  stats.textContent = `已显示 ${rendered} / 已索引 ${indexed}（${platLabel} · ${fieldLabel} · ${sortLabel}）${suffix}`;
+  stats.textContent = t('search.statsLine', {rendered: rendered, indexed: indexed, plat: platLabel, field: fieldLabel, sort: sortLabel, suffix: suffix});
 }
 
 // Called when one search source (avtrdb or a community DB) finishes — success
@@ -563,7 +562,7 @@ function _avtrdbSourceDone(signal) {
     const grid = document.getElementById('avtrdbGrid');
     const spinner = document.getElementById('avtrdb-loading-spinner');
     if (grid && spinner) {
-      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:40px;">未找到匹配的模型，或所有数据源暂时不可用，请稍后重试。</div>`;
+      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:40px;">${escHtml(t('search.noMatchRetry'))}</div>`;
     }
     _updateAvtrdbStats();
   }
@@ -635,7 +634,7 @@ function _buildAvtrdbCard(av) {
   const card = document.createElement("div");
   card.className = "avatar-card";
   card.style.cursor = "pointer";
-  card.title = "点击查看详情";
+  card.title = t('search.clickForDetails');
   card.setAttribute('data-avid', id);
   card.addEventListener("click", () => openAvtrdbDetail(av));
   _avtrdbRenderMap.set(id, card);
@@ -655,7 +654,7 @@ function _buildAvtrdbCard(av) {
   card.innerHTML = `
     <div class="avatar-thumb-wrapper ${thumb && !isCached ? 'img-loading' : ''}">
       ${imgHtml}
-      <div class="avatar-name-overlay">${escHtml(av.name || "未知模型")}</div>
+      <div class="avatar-name-overlay">${escHtml(av.name || t('avatar.unknownAvatar'))}</div>
     </div>
     <div style="padding:8px 6px 4px;font-size:0.7em;color:rgba(255,255,255,0.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
       by ${authorLinkHtml(av.author?.name || av.authorName || "Unknown", av.author?.id || av.authorId || "")}
@@ -1030,7 +1029,7 @@ async function avtrdbFetch(append, _signal) {
   if (!append) {
     grid.innerHTML = `<div id="avtrdb-loading-spinner" style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;gap:16px;color:rgba(255,255,255,0.5);">
       <div style="width:48px;height:48px;border:3px solid rgba(255,255,255,0.15);border-top-color:rgba(255,255,255,0.7);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-      <div style="font-size:0.85em;">正在从 5 个数据库流式搜索...</div>
+      <div style="font-size:0.85em;">${escHtml(t('search.streamingSearch'))}</div>
     </div>`;
   }
 
@@ -1074,7 +1073,7 @@ async function avtrdbFetch(append, _signal) {
             _collectAvatar({ ...av, vrc_id: av.id, image_url: av.imageUrl || av.thumbnailImageUrl || "",
               author: { name: av.authorName || "Unknown", id: av.authorId }, unityPackages: av.unityPackages || [] });
           } else {
-            _collectAvatar({ vrc_id: av.id, name: av.name || av.avatarName || "未知模型",
+            _collectAvatar({ vrc_id: av.id, name: av.name || av.avatarName || t('avatar.unknownAvatar'),
               author: { name: av.authorName || "Unknown", id: av.authorId },
               image_url: av.imageUrl || av.thumbnailImageUrl || "",
               performance: av.performance || {},
@@ -1128,7 +1127,7 @@ function displayAvatarDetail(av, opts = {}) {
   if (authorEl) authorEl.innerHTML = `by ${authorLinkHtml(author, authorId)}`;
   document.getElementById("avtrdbDetailId").textContent = id;
 
-  const fmt = d => d ? new Date(d).toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "-";
+  const fmt = d => d ? new Date(d).toLocaleString(getLocale(), { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "-";
   document.getElementById("avtrdbDetailCreated").textContent = fmt(createdAt);
   document.getElementById("avtrdbDetailUpdated").textContent = fmt(updatedAt);
 
@@ -1164,7 +1163,7 @@ function displayAvatarDetail(av, opts = {}) {
   if (relRow && relEl) {
     const rs = av.releaseStatus || av.release_status || "";
     if (av.isInvalid || rs === 'unavailable' || rs === 'hidden') {
-      relEl.innerHTML = '<i class="fa-solid fa-ban"></i> 已失效';
+      relEl.innerHTML = t('avatar.invalidBadge');
       relEl.style.background = 'var(--error)';
       relEl.style.color = '#fff';
       relRow.style.display = '';
@@ -1196,10 +1195,10 @@ function displayAvatarDetail(av, opts = {}) {
   const isCloudFaved = favoriteIdMap.has(id);
 
   if (isCloudFaved || isLocalFaved) {
-     favBtn.innerHTML = '<i class="fa-solid fa-star"></i> 已收藏';
+     favBtn.innerHTML = t('avatar.favoritedBtn');
      favBtn.className = "btn btn-success-full";
   } else {
-     favBtn.innerHTML = '<i class="fa-solid fa-star"></i> 收藏';
+     favBtn.innerHTML = t('avatar.favoriteBtn');
      favBtn.className = "btn btn-secondary";
   }
   // Always open the group selector — for adding or removing
@@ -1231,26 +1230,26 @@ function displayAvatarDetail(av, opts = {}) {
     const copyIdBtn = document.createElement("button");
     copyIdBtn.className = "btn btn-secondary";
     copyIdBtn.style.cssText = "flex:1;font-size:0.82em;";
-    copyIdBtn.innerHTML = '<i class="fa-solid fa-copy"></i> 复制 ID';
+    copyIdBtn.innerHTML = t('avatar.copyId');
     copyIdBtn.onclick = () => {
       navigator.clipboard.writeText(id).then(() => {
-        showToast("模型 ID 已复制", "success");
-        copyIdBtn.innerHTML = '<i class="fa-solid fa-check"></i> 已复制';
-        setTimeout(() => { copyIdBtn.innerHTML = '<i class="fa-solid fa-copy"></i> 复制 ID'; }, 2000);
-      }).catch(() => showToast("复制失败，请手动复制", "error"));
+        showToast(t('toast.avatarIdCopied'), "success");
+        copyIdBtn.innerHTML = t('avatar.copied');
+        setTimeout(() => { copyIdBtn.innerHTML = t('avatar.copyId'); }, 2000);
+      }).catch(() => showToast(t('toast.copyManualFail'), "error"));
     };
 
     const copyLinkBtn = document.createElement("button");
     copyLinkBtn.className = "btn btn-secondary";
     copyLinkBtn.style.cssText = "flex:1;font-size:0.82em;";
-    copyLinkBtn.innerHTML = '<i class="fa-solid fa-link"></i> 复制链接';
+    copyLinkBtn.innerHTML = t('avatar.copyLink');
     copyLinkBtn.onclick = () => {
       const url = `https://vrchat.com/home/avatar/${id}`;
       navigator.clipboard.writeText(url).then(() => {
-        showToast("VRChat 模型链接已复制", "success");
-        copyLinkBtn.innerHTML = '<i class="fa-solid fa-check"></i> 已复制';
-        setTimeout(() => { copyLinkBtn.innerHTML = '<i class="fa-solid fa-link"></i> 复制链接'; }, 2000);
-      }).catch(() => showToast("复制失败，请手动复制", "error"));
+        showToast(t('toast.avatarLinkCopied'), "success");
+        copyLinkBtn.innerHTML = t('avatar.copied');
+        setTimeout(() => { copyLinkBtn.innerHTML = t('avatar.copyLink'); }, 2000);
+      }).catch(() => showToast(t('toast.copyManualFail'), "error"));
     };
 
     copyRow.appendChild(copyIdBtn);
@@ -1315,7 +1314,7 @@ async function openAvtrdbDetail(av) {
         if (created && !av.created_at) av.created_at = created;
         if (updated && !av.updated_at) av.updated_at = updated;
         // Re-render dates in the open modal
-        const fmt = d => d ? new Date(d).toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "-";
+        const fmt = d => d ? new Date(d).toLocaleString(getLocale(), { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "-";
         const elC = document.getElementById("avtrdbDetailCreated");
         const elU = document.getElementById("avtrdbDetailUpdated");
         if (elC) elC.textContent = fmt(av.created_at || av.createdAt);
@@ -1377,7 +1376,7 @@ async function openLocalDetail(id) {
           isInvalid: true,
           releaseStatus: 'unavailable',
           invalidReason: `HTTP ${r.status}`,
-          name: (cached?.name || cached?.avatarName || av.name || av.lastKnownName || '失效模型 (Invalid / Deleted)'),
+          name: (cached?.name || cached?.avatarName || av.name || av.lastKnownName || t('avatar.invalidAvatar')),
           thumbnailImageUrl: cached?.thumbnailImageUrl || cached?.imageUrl || cached?.image_url || av.thumbnailImageUrl || av.imageUrl || '',
           imageUrl: cached?.imageUrl || cached?.thumbnailImageUrl || cached?.image_url || av.imageUrl || av.thumbnailImageUrl || ''
         }
@@ -1400,7 +1399,7 @@ async function recoverInvalidAvatarDetailFromPublicSources(id, baseAv, opts = {}
     if (!candidate) return;
     const candidateId = candidate.id || candidate.vrc_id || candidate.avatarId;
     if (candidateId && candidateId !== id) return;
-    if (candidate.name && (!merged.name || merged.name.startsWith('失效模型'))) merged.name = candidate.name;
+    if (candidate.name && (!merged.name || merged.name.startsWith(t('avatar.invalidAvatarPrefix')))) merged.name = candidate.name;
     if (candidate.avatarName && !merged.name) merged.name = candidate.avatarName;
     if (candidate.thumbnailImageUrl && !merged.thumbnailImageUrl) merged.thumbnailImageUrl = candidate.thumbnailImageUrl;
     if (candidate.imageUrl && !merged.imageUrl) merged.imageUrl = candidate.imageUrl;
@@ -1432,7 +1431,7 @@ async function recoverInvalidAvatarDetailFromPublicSources(id, baseAv, opts = {}
     }
   } catch (_) {}
 
-  merged.name = merged.name || merged.avatarName || `失效模型 ${id.substring(5, 13)}`;
+  merged.name = merged.name || merged.avatarName || t('avatar.invalidAvatarId', {id: id.substring(5, 13)});
   merged.thumbnailImageUrl = merged.thumbnailImageUrl || merged.imageUrl || '';
   merged.imageUrl = merged.imageUrl || merged.thumbnailImageUrl || '';
   merged.invalidReason = merged.invalidReason || 'HTTP 404';
@@ -1537,7 +1536,7 @@ async function addToFavorite(avtrId, groupName, btn) {
   document.getElementById("avtrdbFavMenu")?.classList.add("hidden");
   const statusEl = document.getElementById("avtrdbFavStatus");
   statusEl.style.color = "var(--text-muted)";
-  statusEl.textContent = `正在收藏到 ${groupName}...`;
+  statusEl.textContent = t('world.favoritingTo', {name: groupName});
   if (btn) { btn.disabled = true; btn.style.opacity = "0.6"; }
 
   try {
@@ -1547,7 +1546,7 @@ async function addToFavorite(avtrId, groupName, btn) {
     });
     if (resp.ok) {
       statusEl.style.color = "var(--success)";
-      statusEl.textContent = `✓ 已收藏到 ${groupName}`;
+      statusEl.textContent = t('world.favoritedTo', {name: groupName});
       // Track the new favoriteId so the user can immediately unfavorite without
       // first refetching the whole favorites list. Same shape as syncAllFavoriteIds.
       const data = await resp.json().catch(() => null);
@@ -1572,7 +1571,7 @@ async function addToFavorite(avtrId, groupName, btn) {
         const fq = card.querySelector('.card-fav-quick');
         if (fq) {
           fq.innerHTML = '<i class="fa-solid fa-star"></i> ';
-          fq.title = '已收藏';
+          fq.title = t('avatar.favoritedLabel');
         }
       }
       // Refresh the detail modal button to show "已收藏" state
@@ -1580,11 +1579,11 @@ async function addToFavorite(avtrId, groupName, btn) {
     } else {
       const err = await resp.json().catch(() => ({}));
       statusEl.style.color = "var(--error)";
-      statusEl.textContent = `✗ 收藏失败：${err.error?.message || resp.status}`;
+      statusEl.textContent = t('toast.favAddFailColon', {msg: err.error?.message || resp.status});
     }
   } catch (e) {
     statusEl.style.color = "var(--error)";
-    statusEl.textContent = `✗ 网络错误：${e.message}`;
+    statusEl.textContent = t('toast.networkError', {msg: e.message});
   } finally {
     if (btn) { btn.disabled = false; btn.style.opacity = ""; }
   }
@@ -1594,7 +1593,7 @@ async function addToFavorite(avtrId, groupName, btn) {
 // Unlike the old unfavorite() which removes the avatar from the current view list,
 // this only removes the favorite link. The detail modal stays open.
 async function unfavoriteFromGroup(avtrId, groupName, btn) {
-  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; btn.textContent = '移除中...'; }
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; btn.textContent = t('avatar.removing'); }
   const statusEl = document.getElementById("avtrdbFavStatus");
   try {
     // Resolve the favoriteId for this avatar
@@ -1610,7 +1609,7 @@ async function unfavoriteFromGroup(avtrId, groupName, btn) {
     }
     const resolvedFavId = favoriteIdMap.get(avtrId);
     if (!resolvedFavId) {
-      if (statusEl) { statusEl.style.color = 'var(--error)'; statusEl.textContent = '✗ 找不到收藏记录'; }
+      if (statusEl) { statusEl.style.color = 'var(--error)'; statusEl.textContent = t('toast.favRecordNotFound'); }
       return;
     }
     const resp = await apiCall(`/api/vrc/favorites/${resolvedFavId}`, { method: 'DELETE' });
@@ -1624,19 +1623,19 @@ async function unfavoriteFromGroup(avtrId, groupName, btn) {
     const cur = avatarFavGroupCounts.get(groupName) || 0;
     avatarFavGroupCounts.set(groupName, Math.max(0, cur - 1));
     await removeAvatarFromFavoriteCache(groupName, avtrId);
-    if (statusEl) { statusEl.style.color = 'var(--success)'; statusEl.textContent = `✓ 已从 ${groupName} 移除`; }
+    if (statusEl) { statusEl.style.color = 'var(--success)'; statusEl.textContent = t('toast.removedFromGroup', {name: groupName}); }
     // Flip the card star back
     const card = document.getElementById('card-' + avtrId);
     if (card) {
       const fq = card.querySelector('.card-fav-quick');
       if (fq && !favoriteIdMap.has(avtrId) && !localAvatarIdMap.has(avtrId)) {
-        fq.textContent = '☆'; fq.title = '添加到收藏';
+        fq.textContent = '☆'; fq.title = t('world.addToFavorites');
       }
     }
     // Refresh detail modal
     _refreshDetailAfterFavChange(avtrId);
   } catch (e) {
-    if (statusEl) { statusEl.style.color = 'var(--error)'; statusEl.textContent = `✗ 取消收藏失败: ${e.message}`; }
+    if (statusEl) { statusEl.style.color = 'var(--error)'; statusEl.textContent = t('toast.unfavoriteFailMsg', {msg: e.message}); }
   } finally {
     if (btn) { btn.disabled = false; btn.style.opacity = ''; }
   }
@@ -1654,10 +1653,10 @@ function _refreshDetailAfterFavChange(avtrId) {
   const isCloudFaved = favoriteIdMap.has(avtrId);
   const isLocalFaved = localAvatarIdMap.has(avtrId);
   if (isCloudFaved || isLocalFaved) {
-    favBtn.innerHTML = '<i class="fa-solid fa-star"></i> 已收藏';
+    favBtn.innerHTML = t('avatar.favoritedBtn');
     favBtn.className = 'btn btn-success-full';
   } else {
-    favBtn.innerHTML = '<i class="fa-solid fa-star"></i> 收藏';
+    favBtn.innerHTML = t('avatar.favoriteBtn');
     favBtn.className = 'btn btn-secondary';
   }
   // Rebuild group list to reflect new checkmarks
@@ -1674,10 +1673,10 @@ function openInVRCX(avtrId) {
 
 async function switchAvatar(avtrId) {
   const btn = document.getElementById("avtrdbDetailSwitchBtn");
-  const originalText = btn ? btn.innerHTML : '<i class="fa-solid fa-bolt"></i> 切换模型';
+  const originalText = btn ? btn.innerHTML : t('avatar.switchAvatar');
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-bolt"></i> 正在切换...';
+    btn.innerHTML = t('avatar.switching');
   }
 
   try {
@@ -1686,14 +1685,14 @@ async function switchAvatar(avtrId) {
     });
     const result = await resp.json().catch(() => ({}));
     if (resp.ok && !result.error) {
-      logMsg('<i class="fa-solid fa-check"></i> 模型切换成功 (Avatar switched successfully)！', "success");
-      if (btn) btn.innerHTML = '<i class="fa-solid fa-check"></i> 已切换';
+      logMsg(t('log.avatarSwitched'), "success");
+      if (btn) btn.innerHTML = t('avatar.switched');
     } else {
-      throw new Error(result.error?.message || "未知错误");
+      throw new Error(result.error?.message || t('avatar.unknownError'));
     }
   } catch (e) {
-    logMsg(`<i class="fa-solid fa-xmark"></i> 模型切换失败 (Failed to switch): ${e.message}`, "error");
-    if (btn) btn.innerHTML = '<i class="fa-solid fa-xmark"></i> 切换失败';
+    logMsg(t('log.avatarSwitchFail', {msg: e.message}), "error");
+    if (btn) btn.innerHTML = t('avatar.switchFail');
   } finally {
     setTimeout(() => {
       if (btn) {
@@ -1708,50 +1707,50 @@ async function switchAvatar(avtrId) {
 // Fallback avatars must be public & PC-performance "Good" or better; the API
 // rejects ineligible avatars, so we surface that error to the user.
 async function setFallbackAvatar(avtrId, name) {
-  if (!confirm(`将「${name || avtrId}」设为后备模型？\n\n（后备模型需为公开且 PC 性能良好以上）`)) return;
+  if (!confirm(t('confirm.setFallback', {name: name || avtrId}))) return;
   try {
     const r = await apiCall(`/api/vrc/avatars/${avtrId}/selectFallback`, { method: 'PUT' });
     const res = await r.json().catch(() => ({}));
     if (r.ok && !res.error) {
-      showToast('已设为后备模型', 'success');
-      logMsg(`<i class="fa-solid fa-check"></i> 已将「${name || avtrId}」设为后备模型`, 'success');
+      showToast(t('toast.fallbackSet'), 'success');
+      logMsg(t('log.fallbackSet', {name: name || avtrId}), 'success');
     } else {
       throw new Error(res.error?.message || ('HTTP ' + r.status));
     }
   } catch(e) {
-    showToast('设置后备模型失败: ' + e.message, 'error');
+    showToast(t('toast.fallbackSetFail', {msg: e.message}), 'error');
   }
 }
 
 // ── Impostor generation (Quest/mobile optimized clones) ──
 async function enqueueImpostor(avtrId, name) {
-  if (!confirm(`为「${name || avtrId}」生成 Impostor？\n\nImpostor 是 VRChat 自动生成的低性能替身，方便移动端显示。生成需要排队，可能耗时数分钟。`)) return;
+  if (!confirm(t('confirm.enqueueImpostor', {name: name || avtrId}))) return;
   try {
     const r = await apiCall(`/api/vrc/avatars/${avtrId}/impostor/enqueue`, { method: 'POST' });
     const res = await r.json().catch(() => ({}));
     if (r.ok && !res.error) {
-      showToast('已加入 Impostor 生成队列', 'success');
-      logMsg(`<i class="fa-solid fa-check"></i> 已为「${name || avtrId}」排队生成 Impostor`, 'success');
+      showToast(t('toast.impostorQueued'), 'success');
+      logMsg(t('log.impostorQueued', {name: name || avtrId}), 'success');
     } else {
       throw new Error(res.error?.message || ('HTTP ' + r.status));
     }
   } catch(e) {
-    showToast('生成 Impostor 失败: ' + e.message, 'error');
+    showToast(t('toast.impostorGenFail', {msg: e.message}), 'error');
   }
 }
 
 async function deleteImpostor(avtrId, name) {
-  if (!confirm(`删除「${name || avtrId}」的 Impostor？`)) return;
+  if (!confirm(t('confirm.deleteImpostor', {name: name || avtrId}))) return;
   try {
     const r = await apiCall(`/api/vrc/avatars/${avtrId}/impostor`, { method: 'DELETE' });
     if (r.ok) {
-      showToast('已删除 Impostor', 'success');
-      logMsg(`<i class="fa-solid fa-check"></i> 已删除「${name || avtrId}」的 Impostor`, 'info');
+      showToast(t('toast.impostorDeleted'), 'success');
+      logMsg(t('log.impostorDeleted', {name: name || avtrId}), 'info');
     } else {
-      showToast('删除 Impostor 失败: HTTP ' + r.status, 'error');
+      showToast(t('toast.impostorDeleteFail', {status: r.status}), 'error');
     }
   } catch(e) {
-    showToast('错误: ' + e.message, 'error');
+    showToast(t('toast.errorMsg', {msg: e.message}), 'error');
   }
 }
 

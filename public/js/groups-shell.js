@@ -46,7 +46,7 @@ function _loadAssetsModule() {
 function switchAssetsPage(page) {
   return _loadAssetsModule().then(module => module.switchAssetsPage(page)).catch(err => {
     console.error(err);
-    showToast('资产模块加载失败: ' + err.message, 'error');
+    showToast(t('toast.assetsModuleLoadFail', {msg: err.message}), 'error');
   });
 }
 
@@ -79,10 +79,10 @@ async function loadGroupsPage(cat) {
 
   // Search sub-view has no cache — it's driven by user input.
   if (cat === 'search') {
-    area.innerHTML = '<h2 style="font-size:1.2rem;margin-bottom:12px;"><i class="fa-solid fa-magnifying-glass"></i> 搜索群组</h2>' +
+    area.innerHTML = t('group.searchTitle') +
       '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
-        '<input type="text" id="groupSearchInput" class="input-field" placeholder="输入群组名称或 shortCode..." style="flex:1;">' +
-        '<button class="btn btn-primary" onclick="searchGroups()">搜索</button>' +
+        '<input type="text" id="groupSearchInput" class="input-field" placeholder="' + escHtml(t('group.searchPlaceholder')) + '" style="flex:1;">' +
+        '<button class="btn btn-primary" onclick="searchGroups()">' + escHtml(t('group.searchBtn')) + '</button>' +
       '</div>' +
       '<div id="groupSearchResults"></div>';
     return;
@@ -114,7 +114,7 @@ async function loadGroupsPage(cat) {
   // ── Background refresh ────────────────────────────────────────────────
   // Only show the spinner when there's nothing cached to show yet.
   if (_groupsListCache.length === 0) {
-    area.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">加载中...</div>';
+    area.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">' + escHtml(t('loading')) + '</div>';
   }
 
   try {
@@ -125,7 +125,7 @@ async function loadGroupsPage(cat) {
       const me = await (await apiCall('/api/vrc/auth/user')).json();
       myId = me.id || '';
     }
-    if (!myId) throw new Error('无法获取用户 ID');
+    if (!myId) throw new Error(t('toast.uidMissing'));
 
     const r = await apiCall('/api/vrc/users/' + myId + '/groups');
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -143,7 +143,7 @@ async function loadGroupsPage(cat) {
     if (isAbortError(e)) return;
     // Keep cached content visible on transient failure (mirrors friends.js).
     if (_groupsListCache.length === 0) {
-      area.innerHTML = '<div style="color:var(--error);padding:20px;">加载失败: ' + escHtml(e.message) + '</div>';
+      area.innerHTML = '<div style="color:var(--error);padding:20px;">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</div>';
     }
   }
 }
@@ -155,14 +155,14 @@ function renderGroupsList(area, cat, groups) {
   let title = '';
   if (cat === 'mine') {
     filtered = filtered.filter(g => g.ownerId === currentUserId || g.userId === currentUserId);
-    title = '<i class="fa-solid fa-crown" style="color: gold;"></i> 我创建的群组 (' + filtered.length + ')';
+    title = t('group.mineCount', {count: filtered.length});
   } else {
     filtered = filtered.filter(g => g.ownerId !== currentUserId && g.userId !== currentUserId);
-    title = '<i class="fa-solid fa-clipboard"></i> 已加入的群组 (' + filtered.length + ')';
+    title = t('group.joinedCount', {count: filtered.length});
   }
 
   if (!filtered.length) {
-    area.innerHTML = '<h2 style="font-size:1.2rem;margin-bottom:12px;">' + title + '</h2><div style="color:var(--text-muted);">暂无群组</div>';
+    area.innerHTML = '<h2 style="font-size:1.2rem;margin-bottom:12px;">' + title + '</h2><div style="color:var(--text-muted);">' + escHtml(t('group.noGroups')) + '</div>';
     return;
   }
 
@@ -195,13 +195,13 @@ async function searchGroups() {
   if (!input || !results) return;
   const q = input.value.trim();
   if (!q) return;
-  results.innerHTML = '<div style="color:var(--text-muted);">搜索中...</div>';
+  results.innerHTML = '<div style="color:var(--text-muted);">' + escHtml(t('group.searching')) + '</div>';
   try {
     const r = await apiCall('/api/vrc/groups?query=' + encodeURIComponent(q) + '&n=20');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const groups = await r.json();
     if (!groups || !groups.length) {
-      results.innerHTML = '<div style="color:var(--text-muted);">未找到结果</div>';
+      results.innerHTML = '<div style="color:var(--text-muted);">' + escHtml(t('group.noResults')) + '</div>';
       return;
     }
     results.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">' +
@@ -217,7 +217,7 @@ async function searchGroups() {
       }).join('') +
     '</div>';
   } catch (e) {
-    results.innerHTML = '<div style="color:var(--error);">搜索失败: ' + escHtml(e.message) + '</div>';
+    results.innerHTML = '<div style="color:var(--error);">' + escHtml(t('group.searchFail', {msg: e.message})) + '</div>';
   }
 }
 

@@ -7,6 +7,24 @@
  */
 // ── Mobile Sidebar Toggle ──
 window.toggleSidebar = function (forceState) {
+  // If dating panel is active, delegate to the dating iframe
+  const datingPanel = document.getElementById('datingPanel');
+  if (datingPanel && datingPanel.classList.contains('active')) {
+    const iframe = document.getElementById('datingIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'toggleSidebar', forceState }, '*');
+      // Also toggle btn icon
+      const btn = document.getElementById('mobileSidebarBtn');
+      if (btn) {
+        const isOpening = forceState !== undefined ? forceState : btn.dataset.datingOpen !== 'true';
+        btn.dataset.datingOpen = isOpening ? 'true' : 'false';
+        btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
+        btn.classList.toggle('active', isOpening);
+      }
+    }
+    return;
+  }
+
   const activePanel = document.querySelector(".download-panel.active") || document.querySelector(".upload-panel.active");
   if (!activePanel) return;
   const sidebar = activePanel.querySelector(".sidebar");
@@ -28,6 +46,21 @@ window.toggleSidebar = function (forceState) {
   btn?.classList.toggle("active", isOpening);
   if (btn) btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
 };
+
+// Listen for sidebar state changes posted back from the dating iframe.
+// When the user closes the sidebar by tapping the overlay (inside the iframe),
+// the iframe calls toggleSidebar(false) directly, bypassing the parent wrapper,
+// so the parent's mobileSidebarBtn icon would get out of sync. This listener
+// keeps the icon correct in that scenario.
+window.addEventListener('message', (e) => {
+  if (!e.data || e.data.type !== 'sidebarStateChanged') return;
+  const btn = document.getElementById('mobileSidebarBtn');
+  if (!btn) return;
+  const isOpen = !!e.data.isOpen;
+  btn.dataset.datingOpen = isOpen ? 'true' : 'false';
+  btn.innerHTML = isOpen ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
+  btn.classList.toggle('active', isOpen);
+});
 
 // ── Login & Account Management ──
 let lastAttemptUser = "";
@@ -51,8 +84,8 @@ function renderSavedAccounts() {
     const u = escHtml(acc.username);
     const ua = escJsAttr(acc.username);
     html += `<div style="display:flex;gap:6px;align-items:stretch;">
-      <button class="btn btn-secondary" style="flex:1;padding:8px 12px;text-align:left;" onclick="loginSaved(${i})" title="登录 ${u}">${u}</button>
-      <button class="btn btn-secondary" style="padding:0 10px;" onclick="removeSavedAccount(${i}, '${ua}')" title="移除该已保存账号" aria-label="移除">×</button>
+      <button class="btn btn-secondary" style="flex:1;padding:8px 12px;text-align:left;" onclick="loginSaved(${i})" title="${escHtml(t('auth.loginSavedTitle', {name: u}))}">${u}</button>
+      <button class="btn btn-secondary" style="padding:0 10px;" onclick="removeSavedAccount(${i}, '${ua}')" title="${escHtml(t('auth.removeSavedTitle'))}" aria-label="${escHtml(t('auth.removeSavedAria'))}">×</button>
     </div>`;
   });
   html += "</div>";
@@ -62,13 +95,13 @@ function renderSavedAccounts() {
 // Remove a saved account from the local list. Doesn't sign out an active
 // session — that's `doLogout()`. We just stop showing this entry on login.
 function removeSavedAccount(idx, username) {
-  if (!confirm(`从已保存账号中移除「${username}」？\n\n（不会注销当前会话，只清除登录页的快捷入口）`)) return;
+  if (!confirm(t('confirm.removeSavedAccount', {name: username}))) return;
   let accs = JSON.parse(localStorage.getItem("vrc_accounts") || "[]");
   if (idx < 0 || idx >= accs.length) return;
   accs.splice(idx, 1);
   localStorage.setItem("vrc_accounts", JSON.stringify(accs));
   renderSavedAccounts();
-  showToast(`已移除 ${username}`, 'info');
+  showToast(t('toast.removedAccount', {name: username}), 'info');
 }
 
 window.loginSaved = async function (idx) {
@@ -137,7 +170,7 @@ async function doLogin() {
   const oldWidth = btn.offsetWidth;
   if (oldWidth) btn.style.width = oldWidth + 'px'; // prevent jitter
   btn.disabled = true;
-  btn.innerHTML = `<div class="btn-spinner" style="margin-right:6px;"></div> 登录中...`;
+  btn.innerHTML = `<div class="btn-spinner" style="margin-right:6px;"></div> ${escHtml(t('auth.signingIn'))}`;
   const errEl = document.getElementById("login-error");
   errEl.style.display = "none";
   const lpEl = document.getElementById('loginplace-section');
@@ -161,12 +194,12 @@ async function doLogin() {
     if (data.rateLimited) {
       _rateLimited = true;
       let secs = data.retryAfterSeconds || 60;
-      errEl.textContent = `VRChat 登录请求过于频繁，请等待 ${secs} 秒后重试。`;
+      errEl.textContent = t('auth.rateLimited', {secs});
       errEl.style.display = "block";
       btn.disabled = true;
       const countdown = setInterval(() => {
         secs--;
-        errEl.textContent = `VRChat 登录请求过于频繁，请等待 ${secs} 秒后重试。`;
+        errEl.textContent = t('auth.rateLimited', {secs});
         if (secs <= 0) {
           clearInterval(countdown);
           btn.disabled = false;
@@ -234,7 +267,7 @@ async function doVerify2FA() {
     _vfOldWidth = btn.offsetWidth;
     if (_vfOldWidth) btn.style.width = _vfOldWidth + 'px';
     btn.disabled = true;
-    btn.innerHTML = `<div class="btn-spinner" style="margin-right:6px;"></div> 验证中...`;
+    btn.innerHTML = `<div class="btn-spinner" style="margin-right:6px;"></div> ${escHtml(t('auth.verifying'))}`;
   }
   // Map VRChat's requiresTwoFactorAuth methods to the verify endpoint type.
   // VRChat reports "emailOtp", "totp", and/or "otp" (recovery codes).
@@ -304,6 +337,16 @@ function doLogout() {
   document.getElementById("loginPage").classList.remove("hidden");
   document.getElementById("mainApp").classList.add("hidden");
 
+  // Reset the dating iframe to purge any cached session state from the previous
+  // user — without this, switching accounts would show the old user's dating
+  // profile/matches until the page was manually refreshed (user isolation bug).
+  try {
+    const datingIframe = document.getElementById('datingIframe');
+    if (datingIframe) {
+      datingIframe.src = datingIframe.src; // force reload → clears iframe JS state
+    }
+  } catch (e) { /* best-effort */ }
+
   // Focus username so re-login is one keystroke away
   requestAnimationFrame(() => document.getElementById('username')?.focus());
 }
@@ -322,6 +365,7 @@ function showMainApp() {
       const user = await r.json();
       currentUserId = user.id || "";
       window.myProfileData = user;
+      if (typeof initDatingSettings === 'function') initDatingSettings();
     } else if (r.status === 401) {
       // Token is invalid — clear it and show login page
       vrcAuth = "";

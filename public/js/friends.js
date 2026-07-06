@@ -69,7 +69,7 @@ async function fetchMyProfile(forceRefresh = false) {
   // Show the inline view (not modal) in the right panel
   const myView = document.getElementById('friendMyProfileView');
   const listView = document.getElementById('friendListView');
-  if (myView && (!myProfileData || forceRefresh)) { myView.style.display = ''; myView.innerHTML = '<div style="text-align:center;padding:60px;color:rgba(255,255,255,0.3);">加载中...</div>'; }
+  if (myView && (!myProfileData || forceRefresh)) { myView.style.display = ''; myView.innerHTML = '<div style="text-align:center;padding:60px;color:rgba(255,255,255,0.3);">' + escHtml(t('loading')) + '</div>'; }
   if (listView) listView.style.display = 'none';
   // Highlight the nav entry
   document.querySelectorAll('#friendsPanel .cat-btn').forEach(b => b.classList.remove('active','btn-primary'));
@@ -106,11 +106,11 @@ async function fetchMyProfile(forceRefresh = false) {
           if (loc && loc !== 'offline' && loc !== 'private') {
             locRow.style.display = '';
             getLocationDisplay(loc).then(txt => {
-              locEl.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(loc)}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${txt}</a> <button onclick="inviteSelf('${escJsAttr(loc)}')" class="btn btn-xs" style="background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);padding:2px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;vertical-align:middle;"><i class="fa-solid fa-envelope"></i> 邀请自己</button>`;
+              locEl.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(loc)}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${txt}</a> <button onclick="inviteSelf('${escJsAttr(loc)}')" class="btn btn-xs" style="background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);padding:2px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;vertical-align:middle;"><i class="fa-solid fa-envelope"></i> ${t('friend.inviteSelf')}</button>`;
             }).catch(() => { locEl.textContent = loc; });
           } else if (loc === 'private') {
             locRow.style.display = '';
-            locEl.innerHTML = '<i class="fa-solid fa-lock"></i> 私人房间';
+            locEl.innerHTML = t('friend.privateRoom');
           } else {
             locRow.style.display = 'none';
           }
@@ -133,10 +133,10 @@ async function fetchMyProfile(forceRefresh = false) {
     // back to.
     if (myProfileData) {
       console.warn('fetchMyProfile refresh failed (keeping cached):', e.message);
-      try { friendLogMsg(`⚠ 资料刷新失败 (使用缓存): ${e.message}`, 'error'); } catch(_) {}
+      try { friendLogMsg(t('log.profileRefreshFailCached', {msg: e.message}), 'error'); } catch(_) {}
       return;
     }
-    if (myView) myView.innerHTML = `<div style="text-align:center;padding:60px;color:var(--error);">加载失败: ${escHtml(e.message)}</div>`;
+    if (myView) myView.innerHTML = `<div style="text-align:center;padding:60px;color:var(--error);">${escHtml(t('toast.loadFailMsg', {msg: e.message}))}</div>`;
   }
 }
 
@@ -176,7 +176,7 @@ function renderMyProfile(u) {
         </div>
         <div style="font-size:0.75em;color:var(--text-muted);">${escHtml(u.username||'')}</div>
       </div>
-      <div style="width:64px;height:64px;border-radius:10px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);flex-shrink:0;" title="当前模型">
+      <div style="width:64px;height:64px;border-radius:10px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);flex-shrink:0;" title="${t('friend.currentAvatar')}">
         <img src="${escHtml(avatarThumb)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">
       </div>
     </div>
@@ -199,47 +199,47 @@ function renderMyProfile(u) {
 
     <!-- Current location -->
     <div style="margin-bottom:12px;" id="myProfileLocRow">
-      <div class="stat-section-label">当前位置</div>
-      <div id="myProfileLocText" style="font-size:0.8em;color:var(--text-secondary);">加载中...</div>
+      <div class="stat-section-label">${t('friend.currentLocation')}</div>
+      <div id="myProfileLocText" style="font-size:0.8em;color:var(--text-secondary);">${escHtml(t('loading'))}</div>
     </div>
 
     <!-- Current avatar name -->
-    ${u.currentAvatarName?`<div style="margin-bottom:12px;"><div class="stat-section-label">正在使用的模型</div>
+    ${u.currentAvatarName?`<div style="margin-bottom:12px;"><div class="stat-section-label">${t('friend.currentAvatarInUse')}</div>
       <div style="font-size:0.8em;color:var(--text-secondary);">${escHtml(u.currentAvatarName)}</div></div>`:''}
 
     <!-- Bio -->
-    ${u.bio?`<div style="margin-bottom:12px;"><div class="stat-section-label">个人简介</div>
+    ${u.bio?`<div style="margin-bottom:12px;"><div class="stat-section-label">${t('friend.bio')}</div>
       <div style="font-size:0.8em;color:var(--text-secondary);white-space:pre-line;line-height:1.6;max-height:150px;overflow-y:auto;">${escHtml((u.bio||'').replace(/\\n/g, String.fromCharCode(10)))}</div></div>`:''}\n
-    
+
     <!-- Groups -->
     <div style="margin-bottom:12px;">
-      <div class="stat-section-label">所属群组 (Groups)</div>
-      <div id="myProfileGroups" style="font-size:0.8em;color:var(--text-secondary);">加载中 (Loading)...</div>
+      <div class="stat-section-label">${t('friend.groups')}</div>
+      <div id="myProfileGroups" style="font-size:0.8em;color:var(--text-secondary);">${escHtml(t('friend.loadingGroups'))}</div>
     </div>
 <!-- Stat grid -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
-      ${statCard('账号创建日期', escHtml(u.date_joined||''))}
-      ${statCard('最后活跃', u.last_activity?new Date(u.last_activity).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'')}
-      ${statCard('允许克隆模型', u.allowAvatarCopying?'允许':'不允许')}
-      ${u.friendCount!=null?statCard('好友数', String(u.friendCount)):''}
-      ${u.offlineFriends!=null?statCard('离线好友', String(u.offlineFriends.length||0)):''}
-      ${u.onlineFriends!=null?statCard('在线好友', String(u.onlineFriends.length||0)):''}
+      ${statCard(t('field.dateJoined'), escHtml(u.date_joined||''))}
+      ${statCard(t('field.lastActivity'), u.last_activity?new Date(u.last_activity).toLocaleString(getLocale(),{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'')}
+      ${statCard(t('field.allowClone'), u.allowAvatarCopying?t('label.cloneAllowed'):t('label.cloneDisallowed'))}
+      ${u.friendCount!=null?statCard(t('field.friendCount'), String(u.friendCount)):''}
+      ${u.offlineFriends!=null?statCard(t('field.offlineFriends'), String(u.offlineFriends.length||0)):''}
+      ${u.onlineFriends!=null?statCard(t('field.onlineFriends'), String(u.onlineFriends.length||0)):''}
     </div>
 
     <!-- Player ID -->
-    <div class="stat-section-label">玩家 ID</div>
+    <div class="stat-section-label">${t('field.playerId')}</div>
     <div style="font-size:0.72em;color:var(--text-muted);font-family:monospace;display:flex;align-items:center;gap:6px;margin-top:4px;">
       ${escHtml(u.id||'')}
-      <button onclick="navigator.clipboard.writeText('${escJsAttr(u.id||'')}').then(()=>this.textContent='✓').catch(()=>{})" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;">复制</button>
+      <button onclick="navigator.clipboard.writeText('${escJsAttr(u.id||'')}').then(()=>this.textContent='✓').catch(()=>{})" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;">${escHtml(t('btn.copy'))}</button>
     </div>
 
     <!-- Action buttons -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
-      <button class="btn btn-primary" style="padding:6px 14px;font-size:0.82em;" onclick="openEditProfileModal()">✏️ 编辑个人资料</button>
-      <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;" onclick="fetchMyProfile(true)"><i class="fa-solid fa-rotate-right"></i> 刷新资料</button>
-      <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;" onclick="showSelfContextMenu(event)">··· 操作菜单</button>
-      <button class="btn btn-secondary" style="font-size:0.82em;" onclick="window.open('https://vrchat.com/home/user/${escJsAttr(u.id||'')}','_blank')"><i class="fa-solid fa-link"></i> VRChat 主页</button>
-      <button class="btn btn-secondary" style="font-size:0.82em;" onclick="navigator.clipboard.writeText('${escJsAttr(u.id||'')}').then(()=>this.textContent='✓ 已复制').catch(()=>{})"><i class="fa-solid fa-clipboard"></i> 复制 ID</button>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:0.82em;" onclick="openEditProfileModal()">✏️ ${escHtml(t('friend.editProfile'))}</button>
+      <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;" onclick="fetchMyProfile(true)"><i class="fa-solid fa-rotate-right"></i> ${escHtml(t('friend.refreshProfile'))}</button>
+      <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82em;" onclick="showSelfContextMenu(event)">··· ${escHtml(t('friend.actionMenu'))}</button>
+      <button class="btn btn-secondary" style="font-size:0.82em;" onclick="window.open('https://vrchat.com/home/user/${escJsAttr(u.id||'')}','_blank')"><i class="fa-solid fa-link"></i> ${escHtml(t('friend.vrchatHome'))}</button>
+      <button class="btn btn-secondary" style="font-size:0.82em;" onclick="navigator.clipboard.writeText('${escJsAttr(u.id||'')}').then(()=>this.textContent='${escJsAttr(t('friend.copiedConfirm'))}').catch(()=>{})"><i class="fa-solid fa-clipboard"></i> ${escHtml(t('friend.copyId'))}</button>
     </div>
   </div>`;
 
@@ -255,7 +255,7 @@ function renderMyProfile(u) {
         }).catch(() => { if (locEl) locEl.textContent = u.location; });
       } else if (u.location === 'private') {
         locRow.style.display = '';
-        locEl.innerHTML = '<i class="fa-solid fa-lock"></i> 私人房间';
+        locEl.innerHTML = t('friend.privateRoom');
       } else {
         locRow.style.display = 'none';
       }
@@ -286,7 +286,7 @@ function renderMyProfile(u) {
               <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
               <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
             </div>
-            ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">佩戴</span>' : ''}
+            ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">' + escHtml(t('friend.representing')) + '</span>' : ''}
           </div>
         `).join('')}
       </div>`;
@@ -298,7 +298,7 @@ function renderMyProfile(u) {
       fetchGroups().then(groups => {
         const filtered = groups.filter(g => g.isRepresenting);
         if (!filtered.length) {
-          el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">暂无佩戴群组 (No represented group)</div>';
+          el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">' + escHtml(t('friend.noRepresentedGroup')) + '</div>';
           return;
         }
         filtered.sort((a, b) => (b.isRepresenting ? 1 : 0) - (a.isRepresenting ? 1 : 0));
@@ -310,7 +310,7 @@ function renderMyProfile(u) {
                 <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
                 <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
               </div>
-              ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">佩戴</span>' : ''}
+              ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">' + escHtml(t('friend.representing')) + '</span>' : ''}
             </div>
           `).join('')}
         </div>`;
@@ -320,7 +320,7 @@ function renderMyProfile(u) {
           fetchGroups().then(groups => {
             const filtered = groups.filter(g => g.isRepresenting);
             if (!filtered.length) {
-              el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">暂无佩戴群组 (No represented group)</div>';
+              el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">' + escHtml(t('friend.noRepresentedGroup')) + '</div>';
               return;
             }
             filtered.sort((a, b) => (b.isRepresenting ? 1 : 0) - (a.isRepresenting ? 1 : 0));
@@ -332,12 +332,12 @@ function renderMyProfile(u) {
                     <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
                     <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
                   </div>
-                  ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">佩戴</span>' : ''}
+                  ${g.isRepresenting ? '<span style="font-size:0.65em;background:rgba(52,211,153,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:1px 6px;border-radius:4px;font-weight:bold;">' + escHtml(t('friend.representing')) + '</span>' : ''}
                 </div>
               `).join('')}
             </div>`;
           }).catch((e) => {
-            el.innerHTML = '<div style="font-size:0.85em;color:var(--text-muted);opacity:0.6;">群组加载失败 (' + escHtml(String(e.message || e)) + ')</div>';
+            el.innerHTML = '<div style="font-size:0.85em;color:var(--text-muted);opacity:0.6;">' + escHtml(t('toast.groupsLoadFail', {msg: String(e.message || e)})) + '</div>';
           });
         }, 1500);
       });
@@ -383,13 +383,13 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
         state: b.state || 'unknown'
       }));
       filterFriends();
-      const freshLabel = cacheIsFresh ? '缓存' : `刷新中 · ${allFriends.length} 名`;
+      const freshLabel = cacheIsFresh ? t('friend.cache') : t('friend.refreshingCount', {count: allFriends.length});
       if (statsEl) statsEl.textContent = freshLabel;
       // Cache fresh enough — skip the big API loop entirely. Saves ~10-100
       // requests per tab switch when ping-ponging between tabs.
       if (cacheIsFresh) return;
     } else {
-      listEl.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">正在连接 VRChat...</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">' + escHtml(t('friend.connectingVRC')) + '</div>';
     }
   } catch (e) { console.error('IDB error:', e); }
 
@@ -497,7 +497,7 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
       if (seq !== currentGlobalFetchSeq) return;
       const freshBatch = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
       updateFriendBatch(freshBatch);
-      if (statsEl) statsEl.textContent = `刷新中... (${friendMap.size} 位就绪)`;
+      if (statsEl) statsEl.textContent = t('friend.refreshingReady', {count: friendMap.size});
     }
 
 
@@ -517,18 +517,18 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
       }
     }
 
-    if (statsEl) statsEl.textContent = `共 ${allFriends.length} 位好友`;
-    friendLogMsg(`<i class="fa-solid fa-check"></i> 好友状态已全部同步`, 'success');
+    if (statsEl) statsEl.textContent = t('friend.totalFriends', {count: allFriends.length});
+    friendLogMsg(t('log.friendsSynced'), 'success');
   } catch (e) {
     console.error('Fetch error:', e);
-    friendLogMsg(`<i class="fa-solid fa-xmark"></i> 好友同步异常`, 'error');
+    friendLogMsg(t('log.friendsSyncError'), 'error');
   }
 }
 
 async function fetchNotifications() {
   const el = document.getElementById('notificationList');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">加载中...</div>';
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">' + escHtml(t('loading')) + '</div>';
   try {
     const r = await apiCall('/api/vrc/auth/user/notifications');
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -540,7 +540,7 @@ async function fetchNotifications() {
     const activeCount = notifications.filter(n => !n.seen).length;
 
     if (!notifications || !notifications.length) {
-      el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">暂无消息通知 (No notifications)</div>';
+      el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">' + escHtml(t('friend.noNotifications')) + '</div>';
       updateNotificationBadge(0);
       return;
     }
@@ -549,24 +549,24 @@ async function fetchNotifications() {
 
     el.innerHTML = notifications.map(n => {
       const isUnread = !n.seen;
-      const date = new Date(n.created_at).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-      const sender = n.senderName || '系统';
-      
+      const date = new Date(n.created_at).toLocaleString(getLocale(), {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const sender = n.senderName || t('friend.system');
+
       let typeLabel = '';
-      let actions = `<button class="btn btn-secondary btn-xs" onclick="seeNotification('${escJsAttr(n.id)}')">标为已读</button>`;
-      
+      let actions = `<button class="btn btn-secondary btn-xs" onclick="seeNotification('${escJsAttr(n.id)}')">${escHtml(t('friend.markRead'))}</button>`;
+
       if (n.type === 'friendRequest') {
-        typeLabel = '<i class="fa-solid fa-plus"></i> 好友申请';
-        actions = `<button class="btn btn-primary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','accept')">接受</button>
-                   <button class="btn btn-secondary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','hide')">忽略</button>`;
+        typeLabel = t('friend.notifFriendRequest');
+        actions = `<button class="btn btn-primary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','accept')">${escHtml(t('friend.accept'))}</button>
+                   <button class="btn btn-secondary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','hide')">${escHtml(t('friend.ignore'))}</button>`;
       } else if (n.type === 'groupInvite') {
-        typeLabel = '🏘️ 群组邀请';
-        actions = `<button class="btn btn-primary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','accept')">接受</button>
-                   <button class="btn btn-secondary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','hide')">忽略</button>`;
+        typeLabel = t('friend.notifGroupInvite');
+        actions = `<button class="btn btn-primary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','accept')">${escHtml(t('friend.accept'))}</button>
+                   <button class="btn btn-secondary btn-xs" onclick="handleNotification('${escJsAttr(n.id)}','hide')">${escHtml(t('friend.ignore'))}</button>`;
       } else if (n.type === 'invite') {
-        typeLabel = '✉️ 房间邀请';
+        typeLabel = t('friend.notifRoomInvite');
       } else if (n.type === 'requestInvite') {
-        typeLabel = '<i class="fa-solid fa-hand"></i> 请求邀请';
+        typeLabel = t('friend.notifRequestInvite');
       }
 
       return `<div class="friend-card" style="margin-bottom:8px; border-left: 3px solid ${isUnread ? 'var(--accent)' : 'transparent'};">
@@ -575,7 +575,7 @@ async function fetchNotifications() {
             <span style="font-size:0.7em;font-weight:700;color:var(--accent-light);">${typeLabel}</span>
             <span style="font-size:0.65em;color:var(--text-muted);">${date}</span>
           </div>
-          <div style="font-size:0.85em;font-weight:500;">来自 <span style="color:var(--text-primary); cursor:pointer;" onclick="openFriendProfileById('${escJsAttr(n.senderUserId)}')">${escHtml(sender)}</span></div>
+          <div style="font-size:0.85em;font-weight:500;">${escHtml(t('friend.notifFrom'))}<span style="color:var(--text-primary); cursor:pointer;" onclick="openFriendProfileById('${escJsAttr(n.senderUserId)}')">${escHtml(sender)}</span></div>
           ${n.message ? `<div style="font-size:0.75em;color:var(--text-secondary);margin-top:4px;background:rgba(255,255,255,0.03);padding:6px;border-radius:4px;">${escHtml(n.message)}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
@@ -585,7 +585,7 @@ async function fetchNotifications() {
     }).join('');
   } catch(e) {
     if (isAbortError(e)) return;
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--error);">加载失败: ' + escHtml(e.message) + '</div>';
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--error);">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</div>';
   }
 }
 
@@ -594,11 +594,11 @@ async function handleNotification(id, action) {
     let url = `/api/vrc/auth/user/notifications/${id}/${action}`;
     const r = await apiCall(url, { method: 'PUT' });
     if (!r.ok) throw new Error(await r.text());
-    const label = action === 'accept' ? '接受' : (action === 'hide' ? '忽略' : '已读');
-    logMsg(`<i class="fa-solid fa-check"></i> 已${label}通知`, 'success');
+    const label = action === 'accept' ? t('friend.accept') : (action === 'hide' ? t('friend.ignore') : t('friend.actionRead'));
+    logMsg(t('log.notifHandled', {label: label}), 'success');
     fetchNotifications();
   } catch(e) {
-    showToast('操作失败: ' + e.message, 'error');
+    showToast(t('toast.opFailMsg', {msg: e.message}), 'error');
   }
 }
 
@@ -607,13 +607,13 @@ async function seeNotification(id) {
 }
 
 async function seeAllNotifications() {
-  if (!confirm('确定要将所有通知标记为已读吗？')) return;
+  if (!confirm(t('confirm.markAllRead'))) return;
   try {
     const r = await apiCall('/api/vrc/auth/user/notifications/clear', { method: 'PUT' });
     if (!r.ok) throw new Error('Failed to clear notifications');
     fetchNotifications();
   } catch(e) {
-     showToast('操作失败: ' + e.message, 'error');
+     showToast(t('toast.opFailMsg', {msg: e.message}), 'error');
   }
 }
 
@@ -621,9 +621,9 @@ function updateNotificationBadge(count) {
   const btn = document.getElementById('friendCatNotifications');
   if (!btn) return;
   if (count > 0) {
-    btn.innerHTML = `<i class="fa-solid fa-bell"></i> 消息通知 <span style="background:var(--error);color:white;font-size:0.7em;padding:1px 6px;border-radius:99px;margin-left:4px;">${count}</span>`;
+    btn.innerHTML = t('friend.notificationsBadge', {count: count});
   } else {
-    btn.innerHTML = `<i class="fa-solid fa-bell"></i> 消息通知`;
+    btn.innerHTML = t('friend.notifications');
   }
 }
 
@@ -667,7 +667,7 @@ async function openFriendProfileById(userId) {
   // place when /users/{id} resolves. openFriendProfile() owns _fpSeq, so this
   // wrapper uses its own request id plus the post-placeholder fpSeq.
   const reqId = (window._openFriendProfileByIdReq = (window._openFriendProfileByIdReq || 0) + 1);
-  const stubEl = { dataset: { friend: escAttrJson({ id: userId, displayName: '加载中… / Loading…', state: 'offline', _loading: true }) } };
+  const stubEl = { dataset: { friend: escAttrJson({ id: userId, displayName: t('friend.loadingName'), state: 'offline', _loading: true }) } };
   await openFriendProfile(stubEl);
   if (window._openFriendProfileByIdReq !== reqId) return;
   const fpSeq = window._fpCurrentSeq;
@@ -762,7 +762,7 @@ function renderFriendList(list) {
   const el = document.getElementById('friendList');
   if (!el) return;
   if (!list.length) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);"><i class="fa-solid fa-user"></i> ‍<i class="fa-solid fa-handshake"></i> ‍<i class="fa-solid fa-user"></i> <br><br>暂无好友</div>';
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);"><i class="fa-solid fa-user"></i> ‍<i class="fa-solid fa-handshake"></i> ‍<i class="fa-solid fa-user"></i> <br><br>' + escHtml(t('friend.noFriends')) + '</div>';
     return;
   }
   const sortBy = document.getElementById('friendSortBy')?.value || 'status';
@@ -833,16 +833,16 @@ function renderFriendList(list) {
 
   // 1. Joinable Groups
   if (joinableGroups.length) {
-    html += sectionDiv('<i class="fa-solid fa-user-group"></i> ', '好友聚集的实例', '#86efac', true);
+    html += sectionDiv('<i class="fa-solid fa-user-group"></i> ', t('friend.groupedInstances'), '#86efac', true);
     for (const [loc, friends] of joinableGroups) {
       const isMine = myLoc && loc === myLoc;
-      const isMineTag = isMine ? ' <span style="font-size:0.85em;background:rgba(255, 255, 255, 0.3);color:#d4d4d8;padding:1px 6px;border-radius:4px;"><i class="fa-solid fa-location-dot"></i> 你也在这里</span>' : '';
+      const isMineTag = isMine ? ' <span style="font-size:0.85em;background:rgba(255, 255, 255, 0.3);color:#d4d4d8;padding:1px 6px;border-radius:4px;"><i class="fa-solid fa-location-dot"></i> ' + escHtml(t('friend.youAreHere')) + '</span>' : '';
       const isPrivateLoc = loc === 'private' || loc.includes('~private');
-      const groupInviteBtn = isPrivateLoc ? '' : `<button class="btn btn-xs" onclick="event.stopPropagation();inviteSelf('${escJsAttr(loc)}')" style="padding:2px 8px;font-size:0.8em;border-radius:4px;background:#86efac22;color:#86efac;border:1px solid #86efac44;cursor:pointer;">邀请自己</button>`;
+      const groupInviteBtn = isPrivateLoc ? '' : `<button class="btn btn-xs" onclick="event.stopPropagation();inviteSelf('${escJsAttr(loc)}')" style="padding:2px 8px;font-size:0.8em;border-radius:4px;background:#86efac22;color:#86efac;border:1px solid #86efac44;cursor:pointer;">${escHtml(t('friend.inviteSelf'))}</button>`;
       
       html += `<div class="loc-group-header" id="loc_${loc.split(':')[0]}" data-loc="${escHtml(loc)}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;margin:4px 0 2px;background:rgba(134,239,172,0.06);border-left:2px solid #86efac;border-radius:0 6px 6px 0;font-size:0.75em;color:#86efac;">` +
-        `<span><i class="fa-solid fa-user-group"></i> ${friends.length} 位好友在此</span>` +
-        `<span style="opacity:0.6;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="lgn_${loc.split(':')[0]}">加载中...</span>` +
+        `<span><i class="fa-solid fa-user-group"></i> ${t('friend.friendsHere', {count: friends.length})}</span>` +
+        `<span style="opacity:0.6;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="lgn_${loc.split(':')[0]}">${escHtml(t('loading'))}</span>` +
         isMineTag + groupInviteBtn + '</div>';
       html += friends.map(f => friendCardHtml(f)).join('');
     }
@@ -850,7 +850,7 @@ function renderFriendList(list) {
 
   // 2. Joinable Solo
   if (joinableSolo.length) {
-    html += sectionDiv('<i class="fa-solid fa-gamepad"></i> ', '游戏中 · 可加入', '#60a5fa', html === '');
+    html += sectionDiv('<i class="fa-solid fa-gamepad"></i> ', t('friend.inGameJoinable'), '#60a5fa', html === '');
     for (const [loc, friends] of joinableSolo) {
       html += friends.map(f => friendCardHtml(f)).join('');
     }
@@ -858,13 +858,13 @@ function renderFriendList(list) {
 
   // 3. Private Rooms (Grouped)
   if (privateInsts.length) {
-    html += sectionDiv('<i class="fa-solid fa-lock"></i> ', '在私人房间 / 不可加入', '#fbbf24', html === '');
+    html += sectionDiv('<i class="fa-solid fa-lock"></i> ', t('friend.privateNotJoinable'), '#fbbf24', html === '');
     for (const [loc, friends] of privateInsts) {
       if (friends.length > 1) {
         // No data-loc on private headers — world name resolution is not applicable
         html += `<div class="loc-group-header" id="loc_${loc.split(':')[0]}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;margin:4px 0 2px;background:rgba(251,191,36,0.06);border-left:2px solid #fbbf24;border-radius:0 6px 6px 0;font-size:0.75em;color:#fbbf24;">` +
-          `<span><i class="fa-solid fa-user-group"></i> ${friends.length} 位好友在此</span>` +
-          `<span style="opacity:0.6;flex:1;">私人房间</span>` +
+          `<span><i class="fa-solid fa-user-group"></i> ${t('friend.friendsHere', {count: friends.length})}</span>` +
+          `<span style="opacity:0.6;flex:1;">${escHtml(t('friend.privateRoomLabel'))}</span>` +
           '</div>';
       }
       html += friends.map(f => friendCardHtml(f)).join('');
@@ -873,13 +873,13 @@ function renderFriendList(list) {
 
   // 4. Web Online
   if (webOnline.length) {
-    html += sectionDiv('<i class="fa-solid fa-globe"></i> ', '网页在线', 'var(--text-muted)', html === '');
+    html += sectionDiv('<i class="fa-solid fa-globe"></i> ', t('stat.webOnline'), 'var(--text-muted)', html === '');
     html += webOnline.map(f => friendCardHtml(f)).join('');
   }
 
   // 5. Offline
   if (offline.length) {
-    html += sectionDiv('💤', '离线', 'var(--text-muted)', false);
+    html += sectionDiv('💤', t('stat.offline'), 'var(--text-muted)', false);
     html += offline.map(f => friendCardHtml(f)).join('');
   }
 
@@ -907,12 +907,12 @@ function friendCardHtml(f) {
   const isOnline  = f.status !== 'offline';
   const statusCss = {active:'online','join me':'join-me','ask me':'ask-me',busy:'busy',offline:'offline'}[f.status] || 'online';
   const loc = parseLocation(f.location);
-  let locationText = '离线';
+  let locationText = t('stat.offline');
   const locSpanId = 'loc_' + (f.id || '').replace(/[^a-zA-Z0-9_-]/g,'');
   if (!loc.isOffline) {
-    if (loc.isPrivate) locationText = '<i class="fa-solid fa-lock"></i> 私人房间';
-    else if (loc.isTraveling) locationText = '✈️ 传送中';
-    else locationText = '加载中...';
+    if (loc.isPrivate) locationText = t('friend.privateRoom');
+    else if (loc.isTraveling) locationText = t('friend.traveling');
+    else locationText = t('loading');
   }
   const thumb = proxyImg(f.profilePicOverrideThumbnail||f.userIcon||f.currentAvatarThumbnailImageUrl||'');
   const langs = getLanguages(f.tags||[]).join('');
@@ -924,7 +924,7 @@ function friendCardHtml(f) {
       && f.location.startsWith('wrld_');
     const joinBtn = isJoinable ? `
       <div style="display:flex;gap:4px;margin-bottom:2px;">
-        <button class="btn btn-xs" onclick="event.stopPropagation();inviteSelf('${escJsAttr(f.location)}')" style="padding:2px 6px;font-size:0.7em;border-radius:4px;background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);cursor:pointer;" title="发送邀请给自己"><i class="fa-solid fa-envelope"></i> </button>
+        <button class="btn btn-xs" onclick="event.stopPropagation();inviteSelf('${escJsAttr(f.location)}')" style="padding:2px 6px;font-size:0.7em;border-radius:4px;background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);cursor:pointer;" title="${t('friend.inviteSelfTitle')}"><i class="fa-solid fa-envelope"></i> </button>
       </div>` : '';
 
     return `<div class="friend-card" onclick="openFriendProfile(this);" data-friend="${fJson}">
@@ -938,7 +938,7 @@ function friendCardHtml(f) {
           <span style="font-weight:600;color:var(--text-primary);">${getStatusLabel(f)}</span>
           <span style="opacity:0.6;">|</span>
           ${(f.location && f.location !== 'offline' && f.location !== 'private' && f.location.startsWith('wrld_'))
-              ? `<a href="#" id="${locSpanId}" onclick="openInstanceDetail('${escJsAttr(f.location)}'); event.stopPropagation(); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;" title="查看实例详情">${locationText}</a>`
+              ? `<a href="#" id="${locSpanId}" onclick="openInstanceDetail('${escJsAttr(f.location)}'); event.stopPropagation(); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;" title="${t('friend.viewInstanceDetails')}">${locationText}</a>`
               : `<span>${(f.state==='online' && f.statusDescription) ? escHtml(f.statusDescription) : locationText}</span>`}
         </div>
       </div>
