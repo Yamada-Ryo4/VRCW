@@ -2177,6 +2177,7 @@ select.input-field {
 .app-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh; /* dynamic viewport height for mobile */
   overflow: clip;
 }
 
@@ -2720,11 +2721,14 @@ select.input-field {
     flex-direction: column;
     padding-top: calc(50px + env(safe-area-inset-top));
     padding-bottom: calc(56px + env(safe-area-inset-bottom));
+    height: 100vh;
+    height: 100dvh; /* dynamic viewport height: accounts for mobile browser chrome (address bar, etc.) */
   }
 
   .main-content {
     flex-direction: column;
     height: calc(100vh - 106px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    height: calc(100dvh - 106px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 
   /* Mobile Top Bar */
