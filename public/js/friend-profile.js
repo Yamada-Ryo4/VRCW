@@ -229,47 +229,37 @@ function _renderFriendProfileUI(f, modal) {
   const isFriendFaved = fpState.isFriendFaved;
   const isOnline = fpState.isOnline;
   const friendFavBtn = isFriend
-    ? `<button class="btn ${isFriendFaved?'btn-warning':'btn-secondary'}" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="${isFriendFaved?'toggleFriendFavorite(\''+escJsAttr(id)+'\',\''+escJsAttr(name)+'\')':'toggleFriendFavMenu(event,\''+escJsAttr(id)+'\')'}">${isFriendFaved?t('friend.favoritedIcon'):t('avatar.favoriteBtn')}</button>`
+    ? `<button class="btn ${isFriendFaved?'btn-warning':'btn-secondary'}" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="${isFriendFaved?'toggleFriendFavorite(\''+escJsAttr(id)+'\',\''+escJsAttr(name)+'\')':'toggleFriendFavMenu(event,\''+escJsAttr(id)+'\')'}">${isFriendFaved?t('friend.favoritedIcon'):t('avatar.favoriteBtn')}</button>`
     : '';
-  
-  let actionButtons = `
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-      <button class="btn btn-secondary" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="showFriendContextMenu(event)">${t('friend.actionMenu')}</button>
-      ${friendFavBtn}
-      <button class="btn btn-secondary" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="window.open('https://vrchat.com/home/user/${escJsAttr(f.id||'')}','_blank')">${t('friend.vrchatHome')}</button>
-    </div>
-  `;
+
+  let actionButtons = `<div style="display:flex;flex-wrap:wrap;gap:4px;">`;
+  actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="showFriendContextMenu(event)">${t('friend.actionMenu')}</button>`;
+  actionButtons += friendFavBtn;
+  actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="window.open('https://vrchat.com/home/user/${escJsAttr(f.id||'')}','_blank')">${t('friend.vrchatHome')}</button>`;
 
   if (!isSelf) {
-    actionButtons += `<div style="display:flex;gap:6px;flex-wrap:wrap;">`;
     if (isFriend) {
       if (isBlocked) {
-        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unblock')}</button>`;
+        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unblock')}</button>`;
       } else {
-        actionButtons += `
-          <button class="btn btn-primary" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="sendBoop('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.boop')}</button>
-          ${isOnline ? `<button class="btn btn-success" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="sendInvite('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.invite')}</button>` : ''}
-          ${isOnline ? `<button class="btn btn-secondary" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="requestInvite('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.requestInvite')}</button>` : ''}
-        `;
+        actionButtons += `<button class="btn btn-primary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="sendBoop('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.boop')}</button>`;
+        if (isOnline) actionButtons += `<button class="btn btn-success" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="sendInvite('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.invite')}</button>`;
+        if (isOnline) actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="requestInvite('${escJsAttr(id)}','${escJsAttr(name)}')">${t('friend.requestInvite')}</button>`;
       }
-      if (isMuted) {
-        actionButtons += `<button class="btn btn-secondary" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unmute')}</button>`;
-      }
-      actionButtons += `<button class="btn" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="deleteFriend('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.deleteFriend')}</button>`;
+      if (isMuted) actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unmute')}</button>`;
+      actionButtons += `<button class="btn" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="deleteFriend('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.deleteFriend')}</button>`;
     } else {
       if (isBlocked) {
-        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unblock')}</button>`;
+        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="unblockUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unblock')}</button>`;
       } else if (fpState.friendRequestPending) {
-        actionButtons += `<button class="btn btn-secondary" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="cancelFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.cancelFriendRequest')}</button>`;
+        actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="cancelFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.cancelFriendRequest')}</button>`;
       } else {
-        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="sendFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.addFriend')}</button>`;
+        actionButtons += `<button class="btn" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="sendFriendRequest('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.addFriend')}</button>`;
       }
-      if (isMuted) {
-        actionButtons += `<button class="btn btn-secondary" style="font-size:0.72em;padding:4px 10px;border-radius:6px;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unmute')}</button>`;
-      }
+      if (isMuted) actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="unmuteUser('${escJsAttr(f.id||'')}','${escJsAttr(f.displayName||'')}')">${t('friend.unmute')}</button>`;
     }
-    actionButtons += `</div>`;
   }
+  actionButtons += `</div>`;
 
   document.getElementById('fpActions').innerHTML = actionButtons;
 
