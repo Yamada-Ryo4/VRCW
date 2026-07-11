@@ -2827,7 +2827,8 @@ select.input-field {
     height: 48px;
   }
 
-  /* Modal: full-screen on mobile */
+  /* Modal: bottom sheet on mobile, leave 25% space at top so the close
+     button isn't hidden behind the browser address bar / safe area. */
   .modal {
     align-items: flex-end;
     padding: 0;
@@ -2839,12 +2840,12 @@ select.input-field {
     width: 100% !important;
     border-radius: 12px 12px 0 0;
     margin: 0;
-    max-height: calc(100vh - 40px - env(safe-area-inset-top));
+    max-height: 75dvh !important;
     padding: 24px 10px calc(24px + env(safe-area-inset-bottom));
   }
 
   #friendProfileModal .modal-content {
-    max-height: calc(100vh - 20px - env(safe-area-inset-top));
+    max-height: 75dvh !important;
     border-radius: 14px 14px 0 0;
   }
 
@@ -3090,7 +3091,7 @@ select.input-field {
   /* ── World Detail Modal — Mobile Half-Screen (matches avatar/player detail style) ── */
   .world-detail-modal-content {
     max-width: 100% !important;
-    max-height: 90dvh !important;
+    max-height: 75dvh !important;
     border-radius: 16px 16px 0 0 !important;
     margin: auto 0 0 !important;
     align-self: flex-end !important;
