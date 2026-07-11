@@ -235,7 +235,6 @@ function _renderFriendProfileUI(f, modal) {
   let actionButtons = `<div style="display:flex;flex-wrap:wrap;gap:4px;">`;
   actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="showFriendContextMenu(event)">${t('friend.actionMenu')}</button>`;
   actionButtons += friendFavBtn;
-  actionButtons += `<button class="btn btn-secondary" style="font-size:0.65em;padding:3px 6px;border-radius:5px;flex:1 1 22%;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="window.open('https://vrchat.com/home/user/${escJsAttr(f.id||'')}','_blank')">${t('friend.vrchatHome')}</button>`;
 
   if (!isSelf) {
     if (isFriend) {
