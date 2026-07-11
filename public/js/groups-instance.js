@@ -457,12 +457,12 @@ async function openInstanceDetail(loc) {
   // Ensure modal exists
   if (!document.getElementById('instanceDetailModal')) {
     const html = `<div id="instanceDetailModal" class="modal hidden" onclick="if(event.target===this)closeInstanceDetail()">
-      <div class="modal-content" style="max-width:560px;padding:0;overflow:hidden;">
-        <div id="insBanner" style="height:160px;background-size:cover;background-position:center;position:relative;">
+      <div class="modal-content" style="max-width:560px;padding:0;overflow:hidden;display:flex;flex-direction:column;">
+        <div id="insBanner" style="height:160px;background-size:cover;background-position:center;position:relative;flex-shrink:0;">
           <div style="position:absolute;inset:0;background:linear-gradient(to top, var(--bg-card), transparent);"></div>
           <button onclick="closeInstanceDetail()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.5);border:none;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer;z-index:10;">×</button>
         </div>
-        <div style="padding:20px;position:relative;margin-top:-40px;">
+        <div style="padding:20px;position:relative;margin-top:-40px;overflow-y:auto;flex:1;min-height:0;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;">
             <div style="flex:1;">
               <h2 id="insWorldName" style="margin:0;font-size:1.4em;color:var(--text-primary);">${escHtml(t('loading'))}</h2>
