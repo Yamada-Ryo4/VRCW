@@ -2840,12 +2840,12 @@ select.input-field {
     width: 100% !important;
     border-radius: 12px 12px 0 0;
     margin: 0;
-    max-height: 75dvh !important;
+    max-height: 85dvh !important;
     padding: 24px 10px calc(24px + env(safe-area-inset-bottom));
   }
 
   #friendProfileModal .modal-content {
-    max-height: 75dvh !important;
+    max-height: 85dvh !important;
     border-radius: 14px 14px 0 0;
   }
 
@@ -3091,7 +3091,7 @@ select.input-field {
   /* ── World Detail Modal — Mobile Half-Screen (matches avatar/player detail style) ── */
   .world-detail-modal-content {
     max-width: 100% !important;
-    max-height: 75dvh !important;
+    max-height: 85dvh !important;
     border-radius: 16px 16px 0 0 !important;
     margin: auto 0 0 !important;
     align-self: flex-end !important;
