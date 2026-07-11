@@ -2125,25 +2125,29 @@ select.input-field {
 }
 
 #fpActions {
-  padding: 12px 20px;
+  padding: 10px 16px;
   border-top: 1px solid var(--border);
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
-  gap: 8px;
   flex-shrink: 0;
 }
 
 #fpActions > div {
-  display: contents !important;
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 #fpActions .btn {
-  width: 100%;
-  height: 40px;
-  min-height: 40px;
+  flex: 1 1 22%;
   min-width: 0;
-  padding: 8px 12px;
+  height: 30px;
+  min-height: 30px;
+  padding: 3px 6px;
+  font-size: 0.65em;
+  border-radius: 5px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 
 /* ── Friend Profile Modal sub-tabs ── */
