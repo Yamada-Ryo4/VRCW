@@ -2831,11 +2831,12 @@ select.input-field {
     height: 48px;
   }
 
-  /* Modal: bottom sheet on mobile, leave 25% space at top so the close
-     button isn't hidden behind the browser address bar / safe area. */
+  /* Modal: bottom sheet on mobile, leave space at top so the close
+     button isn't hidden behind the browser address bar / safe area.
+     Also add bottom padding so content isn't hidden behind browser chrome. */
   .modal {
     align-items: flex-end;
-    padding: 0;
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
     z-index: 1100;
   }
 
