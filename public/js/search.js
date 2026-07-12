@@ -94,6 +94,60 @@ function normalizeAvtrdbMatchField(field) {
   return allowed.has(field) ? field : 'all';
 }
 
+function normalizeWorldPlatform(platform) {
+  const value = String(platform || '').toLowerCase();
+  if (value === 'standalonewindows' || value === 'pc') return 'pc';
+  if (value === 'android' || value === 'quest') return 'android';
+  if (value === 'ios') return 'ios';
+  return value;
+}
+
+function getWorldPlatforms(world) {
+  const platforms = new Set();
+  const rawPlatforms = Array.isArray(world?.platforms) ? world.platforms : [];
+  const unityPackages = Array.isArray(world?.unityPackages) ? world.unityPackages : [];
+  const addPlatform = entry => {
+    const value = typeof entry === 'object' && entry !== null ? entry.platform : entry;
+    const normalized = normalizeWorldPlatform(value);
+    if (normalized) platforms.add(normalized);
+  };
+
+  rawPlatforms.forEach(addPlatform);
+  unityPackages.forEach(pkg => {
+    if (typeof pkg === 'object' && pkg !== null
+        && pkg.variant && pkg.variant !== 'standard' && pkg.variant !== 'security') return;
+    addPlatform(pkg);
+  });
+  return platforms;
+}
+
+function filterWorldsByPlatform(worlds, platform) {
+  const required = String(platform || '').split('+').filter(Boolean);
+  if (!required.length) return worlds.slice();
+  return worlds.filter(world => {
+    const platforms = getWorldPlatforms(world);
+    return required.every(value => platforms.has(normalizeWorldPlatform(value)));
+  });
+}
+
+function buildWorldSearchUrl(query, sortMode) {
+  const params = new URLSearchParams({ search: query, n: '50', order: 'descending' });
+  params.set('sort', sortMode === 'newest' ? 'updated' : 'relevance');
+  return `/api/vrc/worlds?${params.toString()}`;
+}
+
+function sortWorldSearchResults(worlds, sortMode) {
+  const items = worlds.slice();
+  if (sortMode === 'name') {
+    items.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+  }
+  return items;
+}
+
+function renderNoSearchResults(grid) {
+  grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,0.4);padding:40px;">${escHtml(t('search.noResults'))}</div>`;
+}
+
 // Builds the favorite group list HTML with checkmarks for groups where the avatar
 // is already favorited. Clicking a checked group unfavorites; unchecked adds.
 function _findFavGroupNode(favList, attr, groupName) {
@@ -270,7 +324,7 @@ async function vrcdbFetch(cat, query, signal) {
   try {
     let url = '';
     if (cat === 'users') url = `/api/vrc/users?search=${encodeURIComponent(query)}&n=50`;
-    else if (cat === 'worlds') url = `/api/vrc/worlds?search=${encodeURIComponent(query)}&n=50`;
+    else if (cat === 'worlds') url = buildWorldSearchUrl(query, avtrdbSortMode);
     else if (cat === 'groups') url = `/api/vrc/groups?query=${encodeURIComponent(query)}&n=50`;
     
     const resp = await apiCall(url, { signal, noDedupe: true });
@@ -279,21 +333,22 @@ async function vrcdbFetch(cat, query, signal) {
     const data = await resp.json();
     
     if (!data || data.length === 0) {
-      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,0.4);padding:40px;">${escHtml(t('search.noResults'))}</div>`;
+      renderNoSearchResults(grid);
       return;
     }
     stats.textContent = t('search.resultsFound', {count: data.length});
 
-    // Filter by platform if applicable
+    // World platform filters use VRChat's unity package names
+    // (standalonewindows/android/ios) normalized to the UI values.
     const plat = document.getElementById("avtrdbPlatform")?.value || "";
-    let filteredData = data;
-    if (plat && cat === 'worlds') {
-      const required = plat.split('+');
-      filteredData = data.filter(w => {
-        const wPlats = w.platforms || (w.unityPackages ? w.unityPackages.map(p => p.platform) : []);
-        return required.every(p => wPlats.includes(p));
-      });
-      stats.textContent = t('search.resultsFoundFiltered', {count: data.length, filtered: filteredData.length});
+    let filteredData = cat === 'worlds' ? filterWorldsByPlatform(data, plat) : data;
+    if (cat === 'worlds') {
+      filteredData = sortWorldSearchResults(filteredData, avtrdbSortMode);
+      if (plat) stats.textContent = t('search.resultsFoundFiltered', {count: data.length, filtered: filteredData.length});
+      if (!filteredData.length) {
+        renderNoSearchResults(grid);
+        return;
+      }
     }
 
     if (cat === 'users') {
@@ -372,10 +427,9 @@ let avtrdbSortMode = (function () {
   catch (_) { return 'relevance'; }
 })();
 
-// On script load, paint the saved sort onto the chip row. Without this the
-// HTML's hardcoded `<button class="sort-chip active" data-sort="relevance">`
-// would remain highlighted even when the user previously selected newest/name.
-document.addEventListener('DOMContentLoaded', () => {
+// Paint saved sort/field state when the lazy search module loads. It is often
+// loaded after DOMContentLoaded, so waiting only for that event leaves stale UI.
+function syncAvtrdbSearchControls() {
   document.querySelectorAll('#avtrdbSortBtns .sort-chip').forEach(b =>
     b.classList.toggle('active', b.dataset.sort === avtrdbSortMode));
   document.querySelectorAll('#fieldGlassSelect .glass-option').forEach(b =>
@@ -383,7 +437,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const activeField = document.querySelector(`#fieldGlassSelect .glass-option[data-field="${avtrdbMatchField}"]`);
   const fieldLabel = document.querySelector('#fieldGlassSelect .selected-label');
   if (activeField && fieldLabel) fieldLabel.textContent = activeField.textContent;
-});
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', syncAvtrdbSearchControls, { once: true });
+} else {
+  syncAvtrdbSearchControls();
+}
 
 function setAvtrdbSort(mode) {
   if (avtrdbSortMode === mode) return;
@@ -391,7 +450,11 @@ function setAvtrdbSort(mode) {
   try { localStorage.setItem('vrcw_avtrdb_sort', mode); } catch (_) {}
   document.querySelectorAll('#avtrdbSortBtns .sort-chip').forEach(b =>
     b.classList.toggle('active', b.dataset.sort === mode));
-  _rerenderAvtrdbGrid({ preserveOrder: false }); // explicit sort change may reorder
+  if (window.searchCurrentCat === 'worlds') {
+    doAvtrdbSearch();
+  } else if (window.searchCurrentCat === 'avatars') {
+    _rerenderAvtrdbGrid({ preserveOrder: false }); // explicit sort change may reorder
+  }
 }
 
 function setAvtrdbMatchField(field) {
