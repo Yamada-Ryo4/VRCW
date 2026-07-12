@@ -37,7 +37,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌐</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=156">
+    <link rel="stylesheet" href="style.css?v=177">
     <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js" defer></script>
     <script>
       // Register Service Worker for image caching — eliminates repeat Cloudflare image requests
@@ -118,7 +118,7 @@
                 <div class="global-nav-header">
                     <div class="nav-logo">
                         <span class="app-title">VRCW</span>
-                        <span class="app-version" id="appVersionBadge">v118</span>
+                        <span class="app-version" id="appVersionBadge">v177</span>
                     </div>
                     <button class="nav-collapse-btn" onclick="toggleGlobalNav()" title="收起" data-i18n-title="nav.collapse">&#8249;</button>
                 </div>
@@ -366,10 +366,10 @@
                                         <span class="chevron">▼</span>
                                     </div>
                                     <div class="glass-select-options">
-                                        <div class="glass-option selected" onclick="selectGlassOption(event, this, 'avatars', 'onSearchCategoryChange')" data-i18n="search.category.avatars">模型 (Avatar)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'users', 'onSearchCategoryChange')" data-i18n="search.category.users">玩家 (User)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'worlds', 'onSearchCategoryChange')" data-i18n="search.category.worlds">世界 (World)</div>
-                                        <div class="glass-option" onclick="selectGlassOption(event, this, 'groups', 'onSearchCategoryChange')" data-i18n="search.category.groups">群组 (Group)</div>
+                                        <div class="glass-option selected" data-value="avatars" onclick="selectGlassOption(event, this, 'avatars', 'onSearchCategoryChange')" data-i18n="search.category.avatars">模型 (Avatar)</div>
+                                        <div class="glass-option" data-value="users" onclick="selectGlassOption(event, this, 'users', 'onSearchCategoryChange')" data-i18n="search.category.users">玩家 (User)</div>
+                                        <div class="glass-option" data-value="worlds" onclick="selectGlassOption(event, this, 'worlds', 'onSearchCategoryChange')" data-i18n="search.category.worlds">世界 (World)</div>
+                                        <div class="glass-option" data-value="groups" onclick="selectGlassOption(event, this, 'groups', 'onSearchCategoryChange')" data-i18n="search.category.groups">群组 (Group)</div>
                                     </div>
                                     <input type="hidden" id="searchCategory" value="avatars">
                                 </div>
@@ -755,7 +755,7 @@
                                 <h2>关于 VRCW</h2>
                                 <p>VRChat Web Companion for managing avatars, worlds, friends, groups, and assets.</p>
                             </div>
-                            <span class="about-version-pill" data-app-version>v118</span>
+                            <span class="about-version-pill" data-app-version>v177</span>
                         </div>
 
                         <section class="about-panel">
@@ -769,7 +769,7 @@
                             <div class="about-meta-grid">
                                 <div class="about-meta-item">
                                     <span class="about-meta-label" data-i18n="about.version">版本</span>
-                                    <strong data-app-version>v118</strong>
+                                    <strong data-app-version>v177</strong>
                                 </div>
                                 <div class="about-meta-item">
                                     <span class="about-meta-label" data-i18n="about.author">作者</span>
@@ -814,37 +814,36 @@
     <div id="friendProfileModal" class="modal hidden" onclick="if(event.target===this)closeFriendProfile()">
         <div class="modal-content" style="max-width:680px;width:100%;padding:0;overflow:hidden;max-height:90vh;display:flex;flex-direction:column;">
             <!-- Header band -->
-            <div style="position:relative;height:90px;overflow:hidden;background:var(--bg-secondary);flex-shrink:0;">
+            <div style="position:relative;height:100px;overflow:hidden;background:var(--bg-secondary);flex-shrink:0;">
                 <img id="fpBannerBg" style="width:100%;height:100%;object-fit:cover;filter:brightness(0.5);display:block;" src="" alt="">
                 <div style="position:absolute;inset:0;background:linear-gradient(to top,var(--bg-primary) 0%,transparent 70%);"></div>
-                <button onclick="closeFriendProfile()" style="position:absolute;top:10px;right:12px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:1.1em;cursor:pointer;border-radius:6px;padding:4px 10px;">✕</button>
+                <button onclick="closeFriendProfile()" style="position:absolute;top:8px;right:10px;background:rgba(0,0,0,0.6);border:none;color:#fff;font-size:1em;cursor:pointer;border-radius:6px;padding:3px 8px;z-index:5;">✕</button>
                 <!-- Avatar + current avatar thumb -->
-                <div id="fpAvatarWrap" style="position:absolute;bottom:-24px;left:20px;width:72px;height:72px;border-radius:50%;overflow:hidden;border:3px solid var(--bg-primary);background:var(--bg-card);">
+                <div id="fpAvatarWrap" style="position:absolute;bottom:-20px;left:16px;width:60px;height:60px;border-radius:50%;overflow:hidden;border:3px solid var(--bg-primary);background:var(--bg-card);">
                     <img id="fpAvatar" style="width:100%;height:100%;object-fit:cover;" src="" alt="" onerror="this.parentElement.style.display='none'">
                 </div>
-                <div id="fpAvatarThumbWrap" style="position:absolute;bottom:8px;right:20px;width:56px;height:56px;border-radius:8px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);cursor:pointer;transition:transform 0.2s;" data-i18n-title="fp.viewAvatar" title="点击查看当前模型" onclick="openCurrentAvatarDetail()" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                <div id="fpAvatarThumbWrap" style="position:absolute;bottom:6px;right:16px;width:44px;height:44px;border-radius:8px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);cursor:pointer;transition:transform 0.2s;" data-i18n-title="fp.viewAvatar" title="点击查看当前模型" onclick="openCurrentAvatarDetail()" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
                     <img id="fpAvatarThumb" style="width:100%;height:100%;object-fit:cover;" src="" alt="" onerror="this.parentElement.style.display='none'">
                 </div>
             </div>
             <!-- Name row -->
-            <div style="padding:32px 20px 0;flex-shrink:0;">
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-                    <span id="fpStatusDot" class="friend-status-dot" style="position:static;width:11px;height:11px;flex-shrink:0;"></span>
-                    <span id="fpName" style="font-size:1.15em;font-weight:700;color:var(--text-primary);"></span>
+            <div style="padding:24px 16px 0;flex-shrink:0;">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:1px;">
+                    <span id="fpStatusDot" class="friend-status-dot" style="position:static;width:10px;height:10px;flex-shrink:0;"></span>
+                    <span id="fpName" style="font-size:1.05em;font-weight:700;color:var(--text-primary);"></span>
                     <span id="fpVrcPlus" style="font-size:0.68em;background:rgba(255, 255, 255, 0.2);color:#d4d4d8;border:1px solid rgba(255, 255, 255, 0.4);padding:2px 8px;border-radius:99px;font-weight:600;display:none;">VRC+</span>
                     <span id="fpPronounsEl" style="font-size:0.72em;color:var(--text-muted);"></span>
                     <span id="fpLangsEl" style="font-size:0.7em;color:var(--text-muted);margin-left:auto;"></span>
                 </div>
-                <div style="font-size:0.75em;color:var(--text-muted);margin-bottom:6px;" id="fpUsername"></div>
-                <!-- Trust + badges row -->
-                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:2px;">
+                    <span id="fpUsername" style="font-size:0.75em;color:var(--text-muted);"></span>
                     <span id="fpTrustBadge" style="font-size:0.68em;font-weight:600;padding:3px 10px;border-radius:99px;"></span>
                     <span id="fpAgeBadge" style="display:none;font-size:0.68em;background:rgba(255, 255, 255, 0.2);color:#d4d4d8;border:1px solid rgba(255, 255, 255, 0.3);padding:3px 10px;border-radius:99px;">18+</span>
                     <span id="fpModBadge" style="display:none;font-size:0.68em;font-weight:600;padding:3px 10px;border-radius:99px;"></span>
                     <span id="fpPlatformBadge" style="font-size:0.75em;color:var(--text-muted);"></span>
                 </div>
                 <!-- Showcase badges row -->
-                <div id="fpBadgesRow" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
+                <div id="fpBadgesRow" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;"></div>
                 <!-- Sub tabs -->
                 <div class="tab-nav" style="border-bottom:1px solid var(--border);">
                     <button class="tab-btn active" id="fpTabInfo" onclick="switchFriendProfileTab('info')" data-i18n="fp.tabInfo">信息</button>
@@ -1073,24 +1072,24 @@
     </div>
 
 
-    <script src="js/core.js?v=174" defer></script>
-    <script src="js/i18n.js?v=174" defer></script>
-    <script src="js/common.js?v=174" defer></script>
-    <script src="js/images.js?v=174" defer></script>
-    <script src="js/logging.js?v=174" defer></script>
-    <script src="js/auth.js?v=174" defer></script>
-    <script src="js/ui-controls.js?v=174" defer></script>
-    <script src="js/sidebar-profile.js?v=174" defer></script>
-    <script src="js/worlds-shell.js?v=174" defer></script>
-    <script src="js/groups-instance-shell.js?v=174" defer></script>
-    <script src="js/shell.js?v=174" defer></script>
-    <script src="js/avatars.js?v=174" defer></script>
-    <script src="js/friends.js?v=174" defer></script>
-    <script src="js/friend-profile-shell.js?v=174" defer></script>
-    <script src="js/groups-shell.js?v=174" defer></script>
-    <script src="js/search-shell.js?v=174" defer></script>
-    <script src="js/context-menu.js?v=174" defer></script>
-    <script src="js/profile-actions.js?v=174" defer></script>
+    <script src="js/core.js?v=177" defer></script>
+    <script src="js/i18n.js?v=177" defer></script>
+    <script src="js/common.js?v=177" defer></script>
+    <script src="js/images.js?v=177" defer></script>
+    <script src="js/logging.js?v=177" defer></script>
+    <script src="js/auth.js?v=177" defer></script>
+    <script src="js/ui-controls.js?v=177" defer></script>
+    <script src="js/sidebar-profile.js?v=177" defer></script>
+    <script src="js/worlds-shell.js?v=177" defer></script>
+    <script src="js/groups-instance-shell.js?v=177" defer></script>
+    <script src="js/shell.js?v=177" defer></script>
+    <script src="js/avatars.js?v=177" defer></script>
+    <script src="js/friends.js?v=177" defer></script>
+    <script src="js/friend-profile-shell.js?v=177" defer></script>
+    <script src="js/groups-shell.js?v=177" defer></script>
+    <script src="js/search-shell.js?v=177" defer></script>
+    <script src="js/context-menu.js?v=177" defer></script>
+    <script src="js/profile-actions.js?v=177" defer></script>
 
     <!-- ── avtrDB Avatar Detail Modal ── -->
     <div id="avtrdbDetailModal" class="modal hidden" onclick="if(event.target===this)closeAvtrdbDetail()">

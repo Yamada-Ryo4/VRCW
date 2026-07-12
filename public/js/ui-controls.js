@@ -65,15 +65,11 @@ function positionGlassSelectOptions(el) {
   const width = Math.max(r.width, 160);
   const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
 
-  // Detect if the glass-select lives inside a backdrop-filter or modal context.
-  // In Chromium, backdrop-filter creates a new containing block that breaks
-  // position:fixed (coords become relative to the filter ancestor, not viewport).
-  // The .modal overlay uses backdrop-filter:blur(4px), and .search-box-glass uses
-  // backdrop-filter:blur(12px). For these contexts, use absolute positioning
-  // anchored to the glass-select itself so the dropdown stays next to its trigger.
-  const inBackdropCtx = !!(el.closest('.modal') || (el.closest('.search-box-glass') && !isMobile));
-
-  if (inBackdropCtx) {
+  // Modal overlays use backdrop-filter, which makes position:fixed relative to
+  // the modal instead of the viewport in Chromium. Keep modal dropdowns anchored
+  // to their trigger. Search dropdowns must instead escape the clipped grid area,
+  // so portal them to body before applying fixed viewport coordinates.
+  if (el.closest('.modal')) {
     opts.style.position = 'absolute';
     opts.style.top = 'calc(100% + 6px)';
     opts.style.left = '0';
@@ -86,7 +82,7 @@ function positionGlassSelectOptions(el) {
     return;
   }
 
-  if (isMobile && el.closest('.search-box-glass')) {
+  if (el.closest('.search-box-glass')) {
     portalGlassSelectOptions(el, opts);
   }
 
@@ -178,11 +174,19 @@ function selectGlassOption(e, el, val, callbackName) {
   const select = el.closest('.glass-select') || el.parentNode.__glassSelectOwner;
   if (!select) return;
   setGlassSelectValue(select, val);
-  // Mirror the option the user clicked onto `.selected` even when its declared
-  // value did not match (setGlassSelectValue falls back to text, but the user's
-  // explicit click should always win visually).
   getGlassSelectOptions(select).querySelectorAll('.glass-option').forEach(opt => opt.classList.remove('selected'));
   el.classList.add('selected');
+
+  // The clicked option is authoritative even when legacy markup has no
+  // data-value and its translated text cannot be matched back to `val`.
+  const label = select.querySelector('.selected-label');
+  if (label) {
+    label.textContent = el.textContent;
+    const i18nKey = el.getAttribute('data-i18n');
+    if (i18nKey) label.setAttribute('data-i18n', i18nKey);
+    else label.removeAttribute('data-i18n');
+  }
+
   select.classList.remove('active');
   resetGlassSelectOptions(getGlassSelectOptions(select));
 
@@ -191,12 +195,23 @@ function selectGlassOption(e, el, val, callbackName) {
   }
 }
 
-document.addEventListener('click', () => {
-  document.querySelectorAll('.glass-select').forEach(s => {
+function closeActiveGlassSelects() {
+  document.querySelectorAll('.glass-select.active').forEach(s => {
     s.classList.remove('active');
     resetGlassSelectOptions(getGlassSelectOptions(s));
   });
-});
+}
+
+document.addEventListener('click', closeActiveGlassSelects);
+window.addEventListener('resize', closeActiveGlassSelects);
+document.addEventListener('scroll', e => {
+  if (e.target?.closest?.('.glass-select-options')) return;
+  closeActiveGlassSelects();
+}, true);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', closeActiveGlassSelects);
+  window.visualViewport.addEventListener('scroll', closeActiveGlassSelects);
+}
 
 VRCW.registerModule('uiControls', {
   toggleGlassSelect,
