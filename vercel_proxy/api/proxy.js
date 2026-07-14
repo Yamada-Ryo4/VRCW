@@ -4,17 +4,32 @@ export const config = {
     api: { bodyParser: false }
 };
 
-const STRIP_HEADERS = new Set([
+const REQUEST_STRIP_HEADERS = new Set([
     'host', 'x-proxy-secret', 'content-length',
     'cf-connecting-ip', 'cf-ray', 'cf-ipcountry',
-    'cf-visitor', 'x-forwarded-for', 'x-real-ip', 
+    'cf-visitor', 'x-forwarded-for', 'x-real-ip',
     'x-vercel-id', 'x-vercel-ip-country', 'x-vercel-ip-city',
     'x-vercel-ip-timezone', 'x-vercel-ip-latitude', 'x-vercel-ip-longitude',
     'x-forwarded-host', 'x-forwarded-proto',
     'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-    'te', 'trailer', 'transfer-encoding', 'upgrade', 'content-encoding',
-    'cdn-loop'
+    'te', 'trailer', 'transfer-encoding', 'upgrade', 'cdn-loop'
 ]);
+const RESPONSE_STRIP_HEADERS = new Set([
+    'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+    'te', 'trailer', 'transfer-encoding', 'upgrade', 'cdn-loop'
+]);
+const PROXY_ORIGIN = 'https://api.vrchat.cloud';
+
+function parseVrcPath(rawUrl) {
+    if (typeof rawUrl !== 'string' || !rawUrl.startsWith('/') || rawUrl.startsWith('//')) return null;
+    try {
+        const parsed = new URL(rawUrl, PROXY_ORIGIN);
+        if (parsed.origin !== PROXY_ORIGIN) return null;
+        return parsed.href;
+    } catch (_) {
+        return null;
+    }
+}
 const PROXY_TIMEOUT_MS = 30000;
 
 export default function handler(req, res) {
@@ -108,18 +123,21 @@ export default function handler(req, res) {
         return res.status(403).json({ error: "Forbidden: Invalid secret" });
     }
 
-    const targetUrl = 'https://api.vrchat.cloud' + req.url;
-    
+    const targetUrl = parseVrcPath(req.url);
+    if (!targetUrl) {
+        return res.status(400).json({ error: 'Invalid request URL' });
+    }
+
     const headers = {};
     for (const [key, value] of Object.entries(req.headers)) {
-        if (!STRIP_HEADERS.has(key.toLowerCase())) {
+        if (!REQUEST_STRIP_HEADERS.has(key.toLowerCase())) {
             headers[key] = value;
         }
     }
 
     const vrcReq = https.request(targetUrl, { method: req.method, headers, timeout: PROXY_TIMEOUT_MS }, (vrcRes) => {
         const resHeaders = { ...vrcRes.headers };
-        for (const h of STRIP_HEADERS) delete resHeaders[h];
+        for (const h of RESPONSE_STRIP_HEADERS) delete resHeaders[h];
         res.writeHead(vrcRes.statusCode, resHeaders);
         vrcRes.pipe(res);
     });
@@ -129,7 +147,7 @@ export default function handler(req, res) {
     });
 
     vrcReq.on('error', (err) => {
-        if (!res.headersSent) res.status(err.message === 'Upstream timeout' ? 504 : 500).json({ error: err.message });
+        if (!res.headersSent) res.status(err.message === 'Upstream timeout' ? 504 : 502).json({ error: 'Upstream unavailable' });
         else res.end();
     });
     

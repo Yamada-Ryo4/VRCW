@@ -120,6 +120,11 @@ function _worldCacheIdsMatch(category, ids) {
   return true;
 }
 
+// Cache key prefix that embeds the field schema version. Bump when the
+// cached object shape gains fields required by filtering/sorting so stale
+// IDB entries are transparently ignored on first load after a deployment.
+const WORLD_CACHE_PREFIX = 'world_basics_v2_';
+
 function _worldFavTypeForGroup(groupName) {
   return String(groupName || '').startsWith('vrcPlusWorlds') ? 'vrcPlusWorld' : 'world';
 }
@@ -136,14 +141,20 @@ function _worldBasicForWorldsCache(w) {
         occupants: w.occupants,
         releaseStatus: w.releaseStatus,
         isInvalid: !!w.isInvalid,
-        favoriteId: w.favoriteId || null   // needed to rebuild worldFavoriteIdMap from IDB cache
+        favoriteId: w.favoriteId || null,   // needed to rebuild worldFavoriteIdMap from IDB cache
+        // Platform fields required by filterWorldsByPlatform - without these,
+        // cache hits make platform filtering return empty lists.
+        platforms: w.platforms || null,
+        unityPackages: w.unityPackages || null,
+        description: w.description || '',
+        updatedAt: w.updated_at || w.updatedAt || null
     };
 }
 
 async function _saveWorldBasicsForCurrentCategory(cat = currentWorldCategory) {
     if (!cat) return;
     const basics = (allWorlds || []).map(_worldBasicForWorldsCache).filter(Boolean);
-    await idb.set('world_basics_' + cat, basics);
+    await idb.set(WORLD_CACHE_PREFIX + cat, basics);
     await idb.set('world_basics_age_' + cat, Date.now());
 }
 
@@ -166,7 +177,7 @@ async function fetchWorlds(category, forceRefresh = false) {
   const WORLDS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
   let cacheIsFresh = false;
   try {
-    const cachedBasicsRaw = await idb.get('world_basics_' + category);
+    const cachedBasicsRaw = await idb.get(WORLD_CACHE_PREFIX + category);
     const cacheExists = Array.isArray(cachedBasicsRaw);
     const cachedBasics = cacheExists ? cachedBasicsRaw : [];
     const cacheAge = await idb.get('world_basics_age_' + category) || 0;
@@ -277,7 +288,7 @@ async function fetchWorlds(category, forceRefresh = false) {
       if (onlineWorldIds.length === 0) {
         allWorlds = [];
         renderWorldGrid([]);
-        await idb.set('world_basics_' + category, []);
+        await idb.set(WORLD_CACHE_PREFIX + category, []);
         await idb.set('world_basics_age_' + category, Date.now());
         worldLogMsg(t('log.favEmptySynced'), 'success');
       }
@@ -393,6 +404,27 @@ async function cleanupInvalidWorlds() {
 }
 
 
+function _normalizeWorldPlatform(p) {
+    if (!p) return null;
+    const s = typeof p === 'string' ? p.toLowerCase() : (p.platform || '').toLowerCase();
+    if (s === 'standalonewindows' || s === 'pc') return 'pc';
+    if (s === 'android' || s === 'quest') return 'android';
+    if (s === 'ios') return 'ios';
+    return null;
+}
+
+function _getWorldPlatforms(w) {
+    if (!w) return [];
+    const set = new Set();
+    if (Array.isArray(w.platforms)) {
+        for (const p of w.platforms) { const n = _normalizeWorldPlatform(p); if (n) set.add(n); }
+    }
+    if (Array.isArray(w.unityPackages)) {
+        for (const p of w.unityPackages) { const n = _normalizeWorldPlatform(p); if (n) set.add(n); }
+    }
+    return [...set];
+}
+
 function filterWorlds() {
   const q = (document.getElementById('worldSearch')?.value||'').toLowerCase().trim();
   const plat = document.getElementById('worldFilterPlatform')?.value || 'all';
@@ -401,10 +433,7 @@ function filterWorlds() {
   if (q) list = list.filter(w => (w.name||'').toLowerCase().includes(q)||(w.description||'').toLowerCase().includes(q));
 
   if (plat !== 'all') {
-    list = list.filter(w => {
-      const wPlats = w.platforms || (w.unityPackages ? w.unityPackages.map(p => p.platform) : []);
-      return wPlats.includes(plat);
-    });
+    list = list.filter(w => _getWorldPlatforms(w).includes(plat));
   }
 
 renderWorldGrid(list);
@@ -682,7 +711,7 @@ async function unfavoriteSelectedWorlds() {
     } catch(e) { fail++; worldLogMsg(t('log.worldRemoveFail', {name: wName, msg: e.message}), 'error'); }
     await new Promise(r => setTimeout(r, 300));
   }
-  try { await idb.set('world_basics_' + currentWorldCategory, allWorlds); } catch(_) {}
+  try { await idb.set(WORLD_CACHE_PREFIX + currentWorldCategory, allWorlds); } catch(_) {}
   worldLogMsg(t('log.batchRemoveDone', {success: success, fail: fail}), success > 0 ? 'success' : 'error');
   _updateWorldActionBtns();
 }
@@ -979,7 +1008,7 @@ async function deleteCurrentWorld() {
     if (currentWorldCategory) {
       try {
         await idb.set('world_basics_age_' + currentWorldCategory, 0);
-        await idb.del('world_basics_' + currentWorldCategory);
+        await idb.del(WORLD_CACHE_PREFIX + currentWorldCategory);
       } catch(_) {}
     }
   } catch(e) {
@@ -1301,7 +1330,7 @@ async function toggleWorldFavorite() {
       if (statusEl) { statusEl.textContent=t('world.unfavorited'); statusEl.style.color='var(--text-muted)'; }
       if (currentWorldCategory && currentWorldCategory.startsWith('fav_')) {
         allWorlds = allWorlds.filter(aw => aw.id!==w.id);
-        await idb.set('world_basics_' + currentWorldCategory, allWorlds);
+        await idb.set(WORLD_CACHE_PREFIX + currentWorldCategory, allWorlds);
         filterWorlds();
       }
     } else {

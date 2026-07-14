@@ -1431,6 +1431,8 @@ const I18N = {
     "dating.ratings.commentPlaceholder": "Say something... (shown anonymously)",
     "dating.ratings.submit": "Submit Rating",
     "dating.ratings.noRatings": "No ratings yet",
+    "dating.ratings.ratingCount": "{count} ratings",
+    "dating.ratings.pinnedBadge": "Pinned",
 
     // notifications view
     "dating.notif.title": "Inbox",
@@ -3118,6 +3120,8 @@ const I18N = {
     "dating.ratings.commentPlaceholder": "随便说点什么吧... (对外匿名展示)",
     "dating.ratings.submit": "提交评价",
     "dating.ratings.noRatings": "暂无历史评价",
+    "dating.ratings.ratingCount": "{count} 人评价",
+    "dating.ratings.pinnedBadge": "主页精选",
 
     // notifications view
     "dating.notif.title": "信息中心",
@@ -4805,6 +4809,8 @@ const I18N = {
     "dating.ratings.commentPlaceholder": "何か書いてみよう... (匿名で公開)",
     "dating.ratings.submit": "評価を送信",
     "dating.ratings.noRatings": "評価履歴はまだありません",
+    "dating.ratings.ratingCount": "{count} 件の評価",
+    "dating.ratings.pinnedBadge": "ピン留め",
 
     // notifications view
     "dating.notif.title": "通知センター",
@@ -5105,6 +5111,14 @@ function setLang(lang) {
         ({ en: "EN", zh: "中文", ja: "日本語" }[lang] || "")
     )
   );
+
+  // Notify the dating iframe so it can switch language without a page reload.
+  // The iframe shares localStorage (same origin) but its in-memory currentLang
+  // won't update unless we postMessage it.
+  const iframe = document.getElementById('datingIframe');
+  if (iframe && iframe.contentWindow) {
+    iframe.contentWindow.postMessage({ type: 'langChanged', lang: lang }, location.origin);
+  }
 }
 
 // ── DOM 扫描应用 i18n ──
@@ -5117,7 +5131,29 @@ function applyI18n(root = document) {
   root.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.getAttribute("data-i18n");
     const val = t(key);
-    if (val) el.textContent = val;
+    if (!val) return;
+    // If the element has child elements (e.g. a dynamic <span id="r_name"> or
+    // a Font Awesome <i>), only replace the first text node, not all children.
+    // This prevents applyI18n from destroying dynamic spans and icon markup.
+    const hasChildElements = Array.from(el.childNodes).some(n => n.nodeType === 1);
+    if (hasChildElements) {
+      // Find and replace only the first text node, preserving element children.
+      let replaced = false;
+      for (const node of el.childNodes) {
+        if (node.nodeType === 3 && node.textContent.trim()) {
+          node.textContent = val;
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) {
+        // No existing text node found — append label after any icon children,
+        // which is the standard icon-then-label button layout convention.
+        el.appendChild(document.createTextNode(val));
+      }
+    } else {
+      el.textContent = val;
+    }
   });
   root.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     const key = el.getAttribute("data-i18n-placeholder");

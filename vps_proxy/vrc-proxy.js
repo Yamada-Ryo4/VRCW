@@ -3,14 +3,28 @@ const https = require('https');
 const PORT = 6790;
 const AUTH_SECRET = process.env.VPS_PROXY_SECRET;
 const PROXY_TIMEOUT_MS = 30000;
-const STRIP_HEADERS = new Set([
+const REQUEST_STRIP_HEADERS = new Set([
     'host', 'x-proxy-secret', 'content-length',
     'cf-connecting-ip', 'cf-ray', 'cf-ipcountry', 'cf-visitor',
     'x-forwarded-for', 'x-real-ip', 'x-forwarded-host', 'x-forwarded-proto',
     'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-    'te', 'trailer', 'transfer-encoding', 'upgrade', 'content-encoding',
-    'cdn-loop'
+    'te', 'trailer', 'transfer-encoding', 'upgrade', 'cdn-loop'
 ]);
+const RESPONSE_STRIP_HEADERS = new Set([
+    'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+    'te', 'trailer', 'transfer-encoding', 'upgrade', 'cdn-loop'
+]);
+
+function parseVrcPath(rawUrl) {
+    if (typeof rawUrl !== 'string' || !rawUrl.startsWith('/') || rawUrl.startsWith('//')) return null;
+    try {
+        const parsed = new URL(rawUrl, 'https://api.vrchat.cloud');
+        if (parsed.origin !== 'https://api.vrchat.cloud') return null;
+        return parsed.href;
+    } catch (_) {
+        return null;
+    }
+}
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');
@@ -31,11 +45,16 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: "Forbidden: Invalid secret" }));
         return;
     }
-    const targetUrl = 'https://api.vrchat.cloud' + req.url;
+    const targetUrl = parseVrcPath(req.url);
+    if (!targetUrl) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: "Invalid request URL" }));
+        return;
+    }
     console.log(`[${new Date().toISOString()}] Proxying ${req.method} ${targetUrl}`);
     const headers = {};
     for (const [key, value] of Object.entries(req.headers)) {
-        if (!STRIP_HEADERS.has(key.toLowerCase())) headers[key] = value;
+        if (!REQUEST_STRIP_HEADERS.has(key.toLowerCase())) headers[key] = value;
     }
     const vrcReq = https.request(targetUrl, {
         method: req.method,
@@ -43,7 +62,7 @@ const server = http.createServer((req, res) => {
         timeout: PROXY_TIMEOUT_MS
     }, (vrcRes) => {
         const resHeaders = { ...vrcRes.headers };
-        for (const h of STRIP_HEADERS) delete resHeaders[h];
+        for (const h of RESPONSE_STRIP_HEADERS) delete resHeaders[h];
         res.writeHead(vrcRes.statusCode, resHeaders);
         vrcRes.pipe(res);
     });
@@ -52,8 +71,8 @@ const server = http.createServer((req, res) => {
     });
     vrcReq.on('error', (err) => {
         console.error('Proxy error:', err);
-        if (!res.headersSent) res.writeHead(err.message === 'Upstream timeout' ? 504 : 500, { 'Content-Type': 'application/json' });
-        if (!res.writableEnded) res.end(JSON.stringify({ error: err.message }));
+        if (!res.headersSent) res.writeHead(err.message === 'Upstream timeout' ? 504 : 502, { 'Content-Type': 'application/json' });
+        if (!res.writableEnded) res.end(JSON.stringify({ error: 'Upstream unavailable' }));
     });
     req.pipe(vrcReq);
 });

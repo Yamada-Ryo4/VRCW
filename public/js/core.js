@@ -55,6 +55,9 @@ const VRCW = (() => {
 })();
 window.VRCW = VRCW;
 let vrcAuth = localStorage.getItem("vrc_auth") || "";
+// Any response created before login, logout, or account switching must never
+// restore its old VRChat session into the active account.
+let authSessionEpoch = 0;
 let avatars = [];
 let selectedIds = new Set();
 let uploadFiles = [];
@@ -129,10 +132,13 @@ function loadScriptOnce(src) {
     return u.pathname + u.search === versionedSrc;
   });
   if (existing) {
-    const loaded = Promise.resolve(existing);
-    VRCW.loadedScripts.set(versionedSrc, loaded);
-    renderAppVersionInfo();
-    return loaded;
+    if (existing.dataset.vrcwState === 'failed') existing.remove();
+    else if (existing.dataset.vrcwState === 'loaded') {
+      const loaded = Promise.resolve(existing);
+      VRCW.loadedScripts.set(versionedSrc, loaded);
+      renderAppVersionInfo();
+      return loaded;
+    }
   }
 
   const promise = new Promise((resolve, reject) => {
@@ -140,11 +146,15 @@ function loadScriptOnce(src) {
     script.src = versionedSrc;
     script.defer = true;
     script.dataset.vrcwLazy = '1';
+    script.dataset.vrcwState = 'loading';
     script.onload = () => {
+      script.dataset.vrcwState = 'loaded';
       renderAppVersionInfo();
       resolve(script);
     };
     script.onerror = () => {
+      script.dataset.vrcwState = 'failed';
+      script.remove();
       VRCW.loadedScripts.delete(versionedSrc);
       renderAppVersionInfo();
       reject(new Error(`Failed to load ${versionedSrc}`));
@@ -515,6 +525,27 @@ const idb = {
     tx.objectStore("local_avatars").delete(id);
   }
 };
+
+// Zero the age stamps and delete the payload of per-user IDB cache keys that
+// don't have dedicated invalidation helpers. Called from doLogout() so the
+// next account login never briefly serves the previous user's cached data.
+async function invalidateAccountCacheKeys() {
+  try {
+    const ageKeys = [
+      'friend_basics_age',
+      'avatar_basics_age_mine',
+    ];
+    const deleteKeys = [
+      'friend_basics', 'friend_favorite_map',
+      'my_profile',
+      'persistent_avatar_names', 'world_name_cache',
+      'favorite_groups_avatar', 'favorite_groups_world', 'favorite_groups_friend',
+      'avatar_basics_mine', 'avatars_mine',
+    ];
+    for (const k of ageKeys) await idb.set(k, 0);
+    for (const k of deleteKeys) await idb.del(k);
+  } catch (e) { /* best-effort */ }
+}
 
 // ── Persistent avatar name cache (id → name) ──
 // MUST be defined here in core.js, NOT in friend-profile.js, because idb.initAndLoadMap()
@@ -1115,9 +1146,28 @@ function clearApiMemoryCache() {
   inFlightGetRequests.clear();
 }
 
+function abortAllApiRequests() {
+  if (currentTabAbortController) {
+    try { currentTabAbortController.abort(); } catch (_) {}
+    currentTabAbortController = null;
+  }
+  for (const ctrl of scopedAbortControllers.values()) {
+    try { ctrl.abort(); } catch (_) {}
+  }
+  scopedAbortControllers.clear();
+}
+
+function advanceAuthSession() {
+  authSessionEpoch += 1;
+  clearApiMemoryCache();
+  return authSessionEpoch;
+}
+
 async function apiCall(path, options = {}) {
   const method = options.method || 'GET';
   const isGet = method === 'GET';
+  const requestAuthEpoch = authSessionEpoch;
+  const requestAuthBucket = _apiAuthBucket();
   const wantsNoStore = options.cache === 'no-store' || options.noCache === true;
   const noDedupe = options.noDedupe === true;
   const requestBody = options.json !== undefined ? JSON.stringify(options.json) : options.body;
@@ -1166,7 +1216,7 @@ async function apiCall(path, options = {}) {
     }
     // Update auth from response
     const newAuth = resp.headers.get("X-VRC-Auth");
-    if (newAuth) {
+    if (newAuth && requestAuthEpoch === authSessionEpoch && requestAuthBucket === _apiAuthBucket()) {
       if (newAuth !== vrcAuth) clearApiMemoryCache();
       vrcAuth = newAuth;
       localStorage.setItem("vrc_auth", vrcAuth);

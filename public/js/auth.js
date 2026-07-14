@@ -107,6 +107,8 @@ function removeSavedAccount(idx, username) {
 window.loginSaved = async function (idx) {
   const accs = JSON.parse(localStorage.getItem("vrc_accounts") || "[]");
   if (accs[idx]) {
+    advanceAuthSession();
+    abortAllApiRequests();
     vrcAuth = accs[idx].auth;
     localStorage.setItem("vrc_auth", vrcAuth);
     // Verify the saved token is still valid
@@ -296,9 +298,10 @@ async function doVerify2FA() {
 }
 
 function doLogout() {
+  advanceAuthSession();
+  abortAllApiRequests();
   vrcAuth = "";
   localStorage.removeItem("vrc_auth");
-  if (typeof clearApiMemoryCache === 'function') clearApiMemoryCache();
   // Wipe in-memory session state so a subsequent login on the same tab doesn't
   // briefly flash the previous user's friends / avatars / modals before the
   // fresh fetch comes back. Per red-line R2, we DON'T call VRChat /logout —
@@ -324,6 +327,12 @@ function doLogout() {
     if (typeof invalidateGroupsCache === 'function') invalidateGroupsCache();
     // Same for the assets tab (wallet/inventory/emoji/prints/etc).
     if (typeof invalidateAssetsCache === 'function') invalidateAssetsCache();
+    // Invalidate remaining per-user IDB cache keys that lack dedicated
+    // invalidation helpers: friend_basics, my_profile, persistent_avatar_names,
+    // world_name_cache, favorite_groups_*. Zeroing the age stamps forces a
+    // fresh API fetch on next login so the new user never sees stale data
+    // from the previous account.
+    if (typeof invalidateAccountCacheKeys === 'function') invalidateAccountCacheKeys();
   } catch (e) { /* best-effort: never block logout on a stale ref */ }
 
   // Close any open modals so they don't linger over the login page.
@@ -360,14 +369,21 @@ function showMainApp() {
   // it means the token saved in localStorage is invalid/expired (e.g. user
   // cancelled 2FA mid-way and the half-baked token was persisted). In that
   // case we force-logout back to the login page instead of showing a broken UI.
+  // Capture the epoch at call time so a late response from a previous session
+  // (after logout / account switch) cannot overwrite the new session's state.
+  const initEpoch = authSessionEpoch;
+  const initAuthBucket = _apiAuthBucket();
   apiCall("/api/vrc/auth/user").then(async (r) => {
+    if (initEpoch !== authSessionEpoch || initAuthBucket !== _apiAuthBucket()) return;
     if (r.ok) {
       const user = await r.json();
+      if (initEpoch !== authSessionEpoch || initAuthBucket !== _apiAuthBucket()) return;
       currentUserId = user.id || "";
       window.myProfileData = user;
       if (typeof initDatingSettings === 'function') initDatingSettings();
     } else if (r.status === 401) {
-      // Token is invalid — clear it and show login page
+      if (initEpoch !== authSessionEpoch) return;
+      // Token is invalid - clear it and show login page
       vrcAuth = "";
       try { localStorage.removeItem("vrc_auth"); } catch (_) {}
       document.getElementById("mainApp").classList.add("hidden");

@@ -10,8 +10,22 @@ const CACHE_NAME = 'vrcw-img-v2';
 const IMAGE_PATH = '/api/image';
 
 self.addEventListener('install', () => self.skipWaiting());
+
+async function clearImageCaches() {
+  const names = await caches.keys();
+  await Promise.all(names
+    .filter(cacheName => cacheName.startsWith('vrcw-img-'))
+    .map(cacheName => caches.delete(cacheName)));
+}
+
 self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names
+      .filter(cacheName => cacheName.startsWith('vrcw-img-') && cacheName !== CACHE_NAME)
+      .map(cacheName => caches.delete(cacheName)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', event => {
@@ -34,8 +48,9 @@ self.addEventListener('fetch', event => {
       try {
         const response = await fetch(event.request);
         if (response.ok && response.status === 200) {
-          // Clone before consuming, cache with stable key
-          cache.put(stableKey, response.clone());
+          // Clone before consuming, then wait so a terminating worker cannot
+          // silently drop the write under memory pressure.
+          await cache.put(stableKey, response.clone());
         }
         return response;
       } catch (e) {
@@ -52,8 +67,36 @@ self.addEventListener('fetch', event => {
 // Expose a way for the app to evict old image caches
 self.addEventListener('message', event => {
   if (event.data === 'clearImageCache') {
-    caches.delete(CACHE_NAME).then(() => {
+    event.waitUntil(clearImageCaches().then(() => {
       event.source?.postMessage({ type: 'imageCacheCleared' });
-    });
+    }));
   }
+});
+
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
+  const title = data.title || 'E了吗';
+  const options = {
+    body: data.body || '你有新的 E了吗 通知',
+    icon: '/icon.png',
+    badge: '/icon.png',
+    data: { url: data.url || '/dating/' }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const requestedUrl = event.notification.data && event.notification.data.url ? event.notification.data.url : '/dating/';
+  let url;
+  try {
+    const parsed = new URL(requestedUrl, self.location.origin);
+    url = parsed.origin === self.location.origin
+      ? parsed.href
+      : new URL('/dating/', self.location.origin).href;
+  } catch (_) {
+    url = new URL('/dating/', self.location.origin).href;
+  }
+  event.waitUntil(clients.openWindow(url));
 });

@@ -1048,8 +1048,28 @@ async function clearImageCache() {
     tx.objectStore('images').clear();
     tx.oncomplete = r; tx.onerror = r;
   });
+  await clearServiceWorkerImageCaches();
   loadCacheStats();
   showToast(t('toast.imageCacheCleared'), 'success');
+}
+
+async function clearServiceWorkerImageCaches() {
+  if (typeof navigator.serviceWorker !== 'undefined' && navigator.serviceWorker.controller) {
+    await new Promise(resolve => {
+      const done = () => {
+        navigator.serviceWorker.removeEventListener('message', onMessage);
+        resolve();
+      };
+      const onMessage = event => { if (event.data?.type === 'imageCacheCleared') done(); };
+      navigator.serviceWorker.addEventListener('message', onMessage);
+      navigator.serviceWorker.controller.postMessage('clearImageCache');
+      setTimeout(done, 2000);
+    });
+  } else if (typeof caches !== 'undefined') {
+    const names = await caches.keys();
+    await Promise.all(names.filter(name => name.startsWith('vrcw-img-')).map(name => caches.delete(name)));
+  }
+  if (typeof loadedImageUrls !== 'undefined' && loadedImageUrls.clear) loadedImageUrls.clear();
 }
 
 async function clearAllCacheNow() {
@@ -1057,6 +1077,7 @@ async function clearAllCacheNow() {
   await idb.init();
   await new Promise(r => { const tx = idb.db.transaction('cache','readwrite'); tx.objectStore('cache').clear(); tx.oncomplete=r; tx.onerror=r; });
   await new Promise(r => { const tx = idb.db.transaction('images','readwrite'); tx.objectStore('images').clear(); tx.oncomplete=r; tx.onerror=r; });
+  await clearServiceWorkerImageCaches();
   loadCacheStats();
   showToast(t('toast.allCacheCleared'), 'success');
 }
