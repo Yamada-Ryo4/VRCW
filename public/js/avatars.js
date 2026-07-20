@@ -346,7 +346,7 @@ async function fetchAvatars(forceRefresh = false) {
     const basics = allFetched.map(_avatarBasicFromItem).filter(Boolean);
     idb.set("avatar_basics_" + currentCategory, basics).catch(()=>{});
     idb.set("avatar_basics_age_" + currentCategory, Date.now()).catch(()=>{});
-    logMsgHtml(`<i class="fa-solid fa-check"></i> Sync complete: ${avatars.length} avatars`, "success");
+    logMsg(`<i class="fa-solid fa-check"></i> Sync complete: ${avatars.length} avatars`, "success");
 
     // Optimized: Disable background prefetch to save Cloudflare Worker requests
     // prefetchThumbnails(allFetched);

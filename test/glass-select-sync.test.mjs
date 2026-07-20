@@ -92,7 +92,7 @@ function buildEditStatusSelect() {
 }
 
 const sandbox = {
-  window: {},
+  window: { addEventListener() {} },
   document: {
     addEventListener() {},
     querySelector() { return null; },

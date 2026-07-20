@@ -116,6 +116,24 @@ function renderAppVersionInfo() {
 
 document.addEventListener('DOMContentLoaded', renderAppVersionInfo);
 
+function appendIconText(target, message, prefix = "") {
+  const text = typeof message === 'string' ? message : String(message);
+  const match = text.match(/^<i class=["']((?:fa-(?:solid|regular|brands))(?: fa-[a-z0-9-]+)+)["']><\/i>/i);
+  const nodes = [];
+
+  if (prefix) nodes.push(document.createTextNode(prefix));
+  if (match) {
+    const icon = document.createElement('i');
+    icon.setAttribute('class', match[1]);
+    icon.setAttribute('aria-hidden', 'true');
+    nodes.push(icon, document.createTextNode(text.slice(match[0].length)));
+  } else {
+    nodes.push(document.createTextNode(text));
+  }
+
+  target.replaceChildren(...nodes);
+}
+
 function scriptUrlWithVersion(src) {
   const url = new URL(src, location.href);
   if (!url.searchParams.has('v')) url.searchParams.set('v', APP_CACHE_VERSION);
@@ -808,7 +826,7 @@ function showToast(msg, type = "info", duration) {
   el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
   const bg = { info: "rgba(30,30,46,0.96)", success: "rgba(22,101,52,0.96)", error: "rgba(153,27,27,0.96)" }[type] || "rgba(30,30,46,0.96)";
   el.style.background = bg;
-  el.textContent = msg;
+  appendIconText(el, msg);
   el.style.opacity = "1";
   clearTimeout(_toastTimer);
   // Errors get longer to read (network failures often need re-attempt).

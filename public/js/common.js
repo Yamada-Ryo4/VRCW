@@ -137,7 +137,7 @@ function friendLogMsg(msg, type = 'info') {
   const el = document.getElementById('friendConsole');
   if (!el) return;
   const d = document.createElement('div'); d.className = `log-${type}`;
-  d.textContent = `[${new Date().toLocaleTimeString(getLocale())}] ${msg}`;
+  appendIconText(d, msg, `[${new Date().toLocaleTimeString(getLocale())}] `);
   el.appendChild(d); el.scrollTop = el.scrollHeight;
   while (el.children.length > 200) el.removeChild(el.firstChild);
 }
@@ -146,7 +146,7 @@ function worldLogMsg(msg, type = 'info') {
   const el = document.getElementById('worldConsole');
   if (!el) return;
   const d = document.createElement('div'); d.className = `log-${type}`;
-  d.textContent = `[${new Date().toLocaleTimeString(getLocale())}] ${msg}`;
+  appendIconText(d, msg, `[${new Date().toLocaleTimeString(getLocale())}] `);
   el.appendChild(d); el.scrollTop = el.scrollHeight;
   while (el.children.length > 200) el.removeChild(el.firstChild);
 }
