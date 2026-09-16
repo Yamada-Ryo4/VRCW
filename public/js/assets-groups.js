@@ -25,10 +25,12 @@ async function getMyId() {
 // Read a cached asset payload. Returns { data, fresh } where fresh means the
 // TTL hasn't expired (caller can skip the API entirely).
 async function readAssetsCache(page, ttlMs) {
+  const token = makeAuthSessionToken();
   try {
     const data = await idb.get('assets_' + page);
-    if (data == null) return { data: null, fresh: false };
+    if (!isAuthSessionCurrent(token) || data == null) return { data: null, fresh: false };
     const age = (await idb.get('assets_age_' + page)) || 0;
+    if (!isAuthSessionCurrent(token)) return { data: null, fresh: false };
     return { data, fresh: age > 0 && (Date.now() - age) < ttlMs };
   } catch (_) {
     return { data: null, fresh: false };
@@ -36,8 +38,10 @@ async function readAssetsCache(page, ttlMs) {
 }
 
 async function writeAssetsCache(page, data) {
+  const token = makeAuthSessionToken();
   try {
     await idb.set('assets_' + page, data);
+    if (!isAuthSessionCurrent(token)) return;
     await idb.set('assets_age_' + page, Date.now());
   } catch (_) {}
 }
@@ -61,6 +65,12 @@ function initAssetsTab() {
 }
 
 let _assetsGen = 0;  // incremented each time a sub-tab is clicked
+let _assetsSessionToken = null;
+
+function _assetsCurrent(gen) {
+  return _assetsGen === gen
+    && (!_assetsSessionToken || typeof isAuthSessionCurrent !== 'function' || isAuthSessionCurrent(_assetsSessionToken));
+}
 
 function switchAssetsPage(page) {
   document.querySelectorAll('#assetsPanel .cat-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
@@ -71,6 +81,7 @@ function switchAssetsPage(page) {
   content.innerHTML = `<div style="color:var(--text-muted);margin:20px;">${t('assets.loading')}</div>`;
 
   const gen = ++_assetsGen;  // capture current generation
+  _assetsSessionToken = typeof makeAuthSessionToken === 'function' ? makeAuthSessionToken() : null;
   if (page === 'balance') fetchBalance(content, gen);
   else if (page === 'store') fetchStore(content, gen);
   else if (page === 'tx') fetchTransactions(content, gen);
@@ -88,21 +99,21 @@ async function fetchBalance(container, gen) {
   // on every sub-page switch within half a minute.
   const { data: cached, fresh } = await readAssetsCache('balance', BALANCE_CACHE_TTL_MS);
   if (fresh && cached) {
-    if (_assetsGen !== gen) return;
+    if (!_assetsCurrent(gen)) return;
     _renderBalance(container, cached);
     return;
   }
   try {
     const myId = await getMyId();
-    if (_assetsGen !== gen) return;
+    if (!_assetsCurrent(gen)) return;
     if (!myId) throw new Error("Not logged in");
     const bal = await (await apiCall(`/api/vrc/user/${myId}/balance`, { noAbort: true })).json();
-    if (_assetsGen !== gen) return;
+    if (!_assetsCurrent(gen)) return;
     await writeAssetsCache('balance', bal);
     _renderBalance(container, bal);
   } catch(e) {
     if (isAbortError(e)) return;  // tab switch cancelled — not a real failure
-    if (_assetsGen !== gen) return;
+    if (!_assetsCurrent(gen)) return;
     // Keep stale cache visible on transient failure instead of a red error.
     if (cached) _renderBalance(container, cached);
     else container.innerHTML = `<div style="color:var(--error);">Failed to load balance: ${escHtml(String(e.message))}</div>`;
@@ -130,7 +141,7 @@ async function fetchStore(container, gen) {
       apiCall('/api/vrc/economy/balance', { noAbort: true }),
       apiCall('/api/vrc/economy/listings?n=20&offset=0', { noAbort: true })
     ]);
-    if (_assetsGen !== gen) return;
+    if (!_assetsCurrent(gen)) return;
 
     let balHtml = '';
     if (balResp.ok) {
@@ -196,10 +207,10 @@ async function fetchTransactions(container, gen) {
       tx = cached;
     } else {
       const r = await apiCall('/api/vrc/Steam/transactions');
-      if (gen != null && _assetsGen !== gen) return;
+      if (!_assetsCurrent(gen)) return;
       if (!r.ok) throw new Error('HTTP ' + r.status);
       tx = await r.json();
-      if (gen != null && _assetsGen !== gen) return;
+      if (!_assetsCurrent(gen)) return;
       await writeAssetsCache('tx', tx);
     }
     container.innerHTML = `<h2 style="margin-bottom:16px;"><i class="fa-solid fa-money-bill-transfer"></i> ${t('assets.transactions')}</h2>`;
@@ -249,7 +260,7 @@ async function fetchSubscriptions(container, gen) {
       subs = cached;
     } else {
       subs = await (await apiCall('/api/vrc/auth/user/subscription')).json();
-      if (gen != null && _assetsGen !== gen) return;
+      if (!_assetsCurrent(gen)) return;
       await writeAssetsCache('sub', subs);
     }
     container.innerHTML = `<h2 style="margin-bottom:16px;"><i class="fa-solid fa-star"></i> ${t('assets.vrcPlus')}</h2>`;
@@ -289,7 +300,7 @@ async function fetchEmoji(container, gen) {
       emojis = rEmoji.ok ? await rEmoji.json() : [];
       emojisAnim = rEmojiAnim.ok ? await rEmojiAnim.json() : [];
       stickers = rSticker.ok ? await rSticker.json() : [];
-      if (_assetsGen !== gen) return;
+      if (!_assetsCurrent(gen)) return;
       await writeAssetsCache('emoji', { emojis, emojisAnim, stickers });
     }
     const allEmojis = emojis.concat(emojisAnim);
@@ -356,7 +367,7 @@ async function fetchInventory(container, gen) {
       // Paginate (cap at a few pages to stay within request budget)
       for (let i = 0; i < 5; i++) {
         const r = await apiCall(`/api/vrc/inventory?n=100&offset=${i * 100}&order=newest`);
-        if (_assetsGen !== gen) return;
+        if (!_assetsCurrent(gen)) return;
         if (!r.ok) break;
         const j = await r.json().catch(() => ({}));
         const batch = j.data || j.items || (Array.isArray(j) ? j : []);
@@ -364,7 +375,7 @@ async function fetchInventory(container, gen) {
         items.push(...batch);
         if (batch.length < 100) break;
       }
-      if (_assetsGen !== gen) return;
+      if (!_assetsCurrent(gen)) return;
       await writeAssetsCache('inventory', items);
     }
 
@@ -439,11 +450,11 @@ async function fetchProps(container, gen) {
     } else {
       container.innerHTML = `<div style="color:var(--text-muted);margin:20px;">${t('assets.loadingProps')}</div>`;
       const myId = await getMyId();
-      if (_assetsGen !== gen) return;
+      if (!_assetsCurrent(gen)) return;
       if (!myId) throw new Error(t('assets.notLoggedIn'));
       // /props lists the current user's props (owned)
       const r = await apiCall(`/api/vrc/props?userId=${myId}&n=100`);
-      if (_assetsGen !== gen) return;
+      if (!_assetsCurrent(gen)) return;
       props = r.ok ? await r.json().catch(() => []) : [];
       if (!Array.isArray(props)) props = props.data || [];
       await writeAssetsCache('props', props);

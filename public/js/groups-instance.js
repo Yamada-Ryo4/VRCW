@@ -368,38 +368,70 @@ async function fetchGroupInstances(groupId, groupContext = null, token = null, s
 async function fetchGroupMembers(groupId, token = null, signal = null) {
   const el = document.getElementById('gdMembers');
   if(!el) return;
-  el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">' + escHtml(t('group.loadingMembers')) + '</div>';
-  try {
-    // Note: VRChat API limit is 100 per page. We'll just fetch the first page for now.
-    const opts = signal ? { signal, noDedupe: true } : {};
-    const r = await apiCall('/api/vrc/groups/' + groupId + '/members?n=50', opts);
-    if (token && !isUiTokenCurrent(token)) return;
-    if (signal && signal.aborted) return;
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const members = await r.json();
-    if (token && !isUiTokenCurrent(token)) return;
-    if (signal && signal.aborted) return;
-    if (!members || !members.length) {
+  const pageSize = 50;
+  const state = { groupId, offset: 0, members: [], loading: false, done: false, token, signal };
+  el._groupMembersLoadState = state;
+  const isCurrent = () => el._groupMembersLoadState === state
+    && (!token || isUiTokenCurrent(token))
+    && (!signal || !signal.aborted);
+  const render = () => {
+    if (!state.members.length) {
       el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8rem;">' + escHtml(t('group.noVisibleMembers')) + '</div>';
-      return;
+    } else {
+      const cards = state.members.map(m => {
+        const u = m.user || {};
+        const fJson = escAttrJson(u);
+        return `
+          <div class="group-member-card" onclick="openFriendProfile(this)" data-friend="${fJson}" style="cursor:pointer;">
+            <img src="${escHtml(getUserThumbUrl(u))}" class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
+            <div class="member-info">
+              <div class="member-name" title="${escHtml(u.displayName || '')}">${escHtml(u.displayName || 'Unknown')}</div>
+              <div class="member-role">${escHtml(m.roleNames?.[0] || 'Member')}</div>
+            </div>
+          </div>`;
+      }).join('');
+      const more = state.done ? '' : `<button type="button" class="btn btn-secondary btn-xs" data-group-members-more style="width:100%;margin-top:8px;">${escHtml(t('group.loadMoreMembers'))}</button>`;
+      el.innerHTML = cards + more;
+      const moreBtn = el.querySelector('[data-group-members-more]');
+      if (moreBtn) moreBtn.onclick = () => loadMore();
     }
-    el.innerHTML = members.map(m => {
-      const u = m.user || {};
-      const fJson = escAttrJson(u);
-      return `
-        <div class="group-member-card" onclick="openFriendProfile(this)" data-friend="${fJson}" style="cursor:pointer;">
-          <img src="${escHtml(getUserThumbUrl(u))}" class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
-          <div class="member-info">
-            <div class="member-name" title="${escHtml(u.displayName || '')}">${escHtml(u.displayName || 'Unknown')}</div>
-            <div class="member-role">${escHtml(m.roleNames?.[0] || 'Member')}</div>
-          </div>
-        </div>`;
-    }).join('');
-  } catch(e) {
-    if (token && !isUiTokenCurrent(token)) return;
-    if (signal && signal.aborted) return;
-    el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">' + escHtml(t('group.membersLoadFail', {msg: e.message})) + '</div>';
-  }
+  };
+  const loadPage = async () => {
+    if (state.loading || state.done || !isCurrent()) return;
+    state.loading = true;
+    const firstPage = state.offset === 0;
+    if (firstPage) el.innerHTML = '<div style="padding:10px;color:var(--text-muted);text-align:center;font-size:0.8em;">' + escHtml(t('group.loadingMembers')) + '</div>';
+    else {
+      const oldBtn = el.querySelector('[data-group-members-more]');
+      if (oldBtn) { oldBtn.disabled = true; oldBtn.textContent = t('group.loadingMoreMembers'); }
+    }
+    try {
+      const opts = signal ? { signal, noDedupe: true, noCache: true } : { noDedupe: true, noCache: true };
+      const r = await apiCall('/api/vrc/groups/' + groupId + '/members?n=' + pageSize + '&offset=' + state.offset, opts);
+      if (!isCurrent()) return;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const page = await r.json();
+      if (!isCurrent()) return;
+      const batch = Array.isArray(page) ? page : (page && Array.isArray(page.members) ? page.members : null);
+      if (!batch) throw new Error('Invalid members response');
+      state.members.push(...batch);
+      state.offset += batch.length;
+      state.done = batch.length < pageSize;
+      render();
+    } catch(e) {
+      if (!isCurrent()) return;
+      if (state.offset === 0) {
+        el.innerHTML = '<div style="padding:10px;color:var(--error);font-size:0.8rem;">' + escHtml(t('group.membersLoadFail', {msg: e.message})) + '</div>';
+      } else {
+        const oldBtn = el.querySelector('[data-group-members-more]');
+        if (oldBtn) { oldBtn.disabled = false; oldBtn.textContent = t('group.loadMoreMembers'); }
+      }
+    } finally {
+      if (el._groupMembersLoadState === state) state.loading = false;
+    }
+  };
+  const loadMore = () => loadPage();
+  await loadPage();
 }
 
 

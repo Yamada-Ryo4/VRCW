@@ -58,6 +58,8 @@ let vrcAuth = localStorage.getItem("vrc_auth") || "";
 // Any response created before login, logout, or account switching must never
 // restore its old VRChat session into the active account.
 let authSessionEpoch = 0;
+let authSessionCredential = vrcAuth;
+let authSessionAbortController = new AbortController();
 let avatars = [];
 let selectedIds = new Set();
 let uploadFiles = [];
@@ -413,6 +415,43 @@ function getAvatarPlatforms(av) {
 }
 
 // ── Local IndexedDB Cache ──
+// The cache store contains both public-looking payloads and account metadata.
+// Physical keys are namespaced by an async SHA-256 of the credential captured
+// before the first init await. `keys()` deliberately returns logical keys so
+// existing callers never learn the physical namespace.
+const IDB_SCOPE_SEPARATOR = '::';
+let authSessionScopeCredential = null;
+let authSessionScopePromise = null;
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(String(value || ''));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function _resetAuthSessionScope() {
+  authSessionScopeCredential = null;
+  authSessionScopePromise = null;
+}
+
+async function _authCacheScope(token) {
+  if (!isAuthSessionCurrent(token)) return null;
+  const credential = token.credential || '';
+  // Keep anonymous cache physically separate, but once auth is present use
+  // that credential for this session. A later X-VRC-Auth refresh does not move
+  // the scope because authSessionCredential remains the original credential.
+  if (authSessionScopeCredential === null || (authSessionScopeCredential === '' && credential)) {
+    authSessionScopeCredential = credential;
+    authSessionScopePromise = sha256Hex(credential).then(hex => credential ? `u:${hex}` : 'anon');
+  }
+  const scope = await authSessionScopePromise;
+  return isAuthSessionCurrent(token) ? scope : null;
+}
+
+function _scopedIdbKey(scope, key) {
+  return `${scope}${IDB_SCOPE_SEPARATOR}${String(key)}`;
+}
+
 const idb = {
   db: null,
   _initPromise: null,
@@ -444,58 +483,141 @@ const idb = {
     await this.init();
     await initLocalNameMap();
   },
-  async get(key) {
+  async _cacheKey(key, token = makeAuthSessionToken()) {
+    const scope = await _authCacheScope(token);
+    return scope && isAuthSessionCurrent(token) ? _scopedIdbKey(scope, key) : null;
+  },
+  async get(key, token = makeAuthSessionToken()) {
+    const physicalKey = await this._cacheKey(key, token);
+    if (!physicalKey) return undefined;
     await this.init();
+    if (!isAuthSessionCurrent(token)) return undefined;
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction("cache", "readonly");
-      const req = tx.objectStore("cache").get(key);
-      req.onsuccess = () => resolve(req.result);
+      const req = tx.objectStore("cache").get(physicalKey);
+      req.onsuccess = () => resolve(isAuthSessionCurrent(token) ? req.result : undefined);
       req.onerror = () => reject(req.error);
     });
   },
-  async getImage(url) {
+  async getImage(url, token = makeAuthSessionToken()) {
+    const physicalKey = await this._cacheKey(`image:${url}`, token);
+    if (!physicalKey) return null;
     await this.init();
+    if (!isAuthSessionCurrent(token)) return null;
     return new Promise((resolve) => {
       const tx = this.db.transaction("images", "readonly");
-      const req = tx.objectStore("images").get(url);
-      req.onsuccess = () => resolve(req.result);
+      const req = tx.objectStore("images").get(physicalKey);
+      req.onsuccess = () => resolve(isAuthSessionCurrent(token) ? (req.result || null) : null);
       req.onerror = () => resolve(null);
     });
   },
-  async setImage(url, blob) {
+  async setImage(url, blob, token = makeAuthSessionToken()) {
+    const physicalKey = await this._cacheKey(`image:${url}`, token);
+    if (!physicalKey) return;
     await this.init();
+    if (!isAuthSessionCurrent(token)) return;
     return new Promise((resolve) => {
       const tx = this.db.transaction("images", "readwrite");
-      const req = tx.objectStore("images").put(blob, url);
-      req.onsuccess = () => resolve();
-      req.onerror = () => resolve();
+      const req = tx.objectStore("images").put(blob, physicalKey);
+      req.onsuccess = req.onerror = () => resolve();
     });
   },
-  async set(key, value) {
+  async set(key, value, token = makeAuthSessionToken()) {
+    const physicalKey = await this._cacheKey(key, token);
+    if (!physicalKey) return;
     await this.init();
+    if (!isAuthSessionCurrent(token)) return;
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction("cache", "readwrite");
-      const req = tx.objectStore("cache").put(value, key);
+      const req = tx.objectStore("cache").put(value, physicalKey);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   },
-  async del(key) {
+  async del(key, token = makeAuthSessionToken()) {
+    const physicalKey = await this._cacheKey(key, token);
+    if (!physicalKey) return;
     await this.init();
+    if (!isAuthSessionCurrent(token)) return;
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction("cache", "readwrite");
-      const req = tx.objectStore("cache").delete(key);
+      const req = tx.objectStore("cache").delete(physicalKey);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   },
   async keys() {
+    const token = makeAuthSessionToken();
+    const scope = await _authCacheScope(token);
+    if (!scope) return [];
     await this.init();
+    if (!isAuthSessionCurrent(token)) return [];
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction("cache", "readonly");
       const req = tx.objectStore("cache").getAllKeys();
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        if (!isAuthSessionCurrent(token)) return resolve([]);
+        const prefix = `${scope}${IDB_SCOPE_SEPARATOR}`;
+        resolve(req.result.filter(k => typeof k === 'string' && k.startsWith(prefix)).map(k => k.slice(prefix.length)));
+      };
       req.onerror = () => reject(req.error);
+    });
+  },
+  async deleteKeys(keys, token = makeAuthSessionToken()) {
+    if (!isAuthSessionCurrent(token)) return;
+    const scope = await _authCacheScope(token);
+    if (!scope || !isAuthSessionCurrent(token)) return;
+    await this.init();
+    if (!isAuthSessionCurrent(token)) return;
+    await Promise.all((keys || []).map(async (key) => {
+      if (!isAuthSessionCurrent(token)) return;
+      const physicalKey = _scopedIdbKey(scope, key);
+      await new Promise((resolve) => {
+        const tx = this.db.transaction('cache', 'readwrite');
+        const req = tx.objectStore('cache').delete(physicalKey);
+        req.onsuccess = req.onerror = resolve;
+      });
+    }));
+  },
+  async clearCache() {
+    const token = makeAuthSessionToken();
+    const keys = await this.keys();
+    if (!isAuthSessionCurrent(token)) return;
+    await this.deleteKeys(keys, token);
+  },
+  async imageCount() {
+    const token = makeAuthSessionToken();
+    const scope = await _authCacheScope(token);
+    if (!scope) return 0;
+    await this.init();
+    if (!isAuthSessionCurrent(token)) return 0;
+    return new Promise(resolve => {
+      const tx = this.db.transaction('images', 'readonly');
+      const req = tx.objectStore('images').getAllKeys();
+      req.onsuccess = () => {
+        const prefix = `${scope}${IDB_SCOPE_SEPARATOR}image:`;
+        resolve(isAuthSessionCurrent(token) ? req.result.filter(k => typeof k === 'string' && k.startsWith(prefix)).length : 0);
+      };
+      req.onerror = () => resolve(0);
+    });
+  },
+  async clearImages() {
+    const token = makeAuthSessionToken();
+    const scope = await _authCacheScope(token);
+    if (!scope) return;
+    await this.init();
+    if (!isAuthSessionCurrent(token)) return;
+    const keys = await new Promise(resolve => {
+      const tx = this.db.transaction('images', 'readonly');
+      const req = tx.objectStore('images').getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve([]);
+    });
+    const prefix = `${scope}${IDB_SCOPE_SEPARATOR}image:`;
+    await new Promise(resolve => {
+      const tx = this.db.transaction('images', 'readwrite');
+      keys.filter(k => typeof k === 'string' && k.startsWith(prefix)).forEach(k => tx.objectStore('images').delete(k));
+      tx.oncomplete = tx.onerror = resolve;
     });
   },
   async addLog(store, data) {
@@ -548,6 +670,7 @@ const idb = {
 // don't have dedicated invalidation helpers. Called from doLogout() so the
 // next account login never briefly serves the previous user's cached data.
 async function invalidateAccountCacheKeys() {
+  const token = makeAuthSessionToken();
   try {
     const ageKeys = [
       'friend_basics_age',
@@ -560,8 +683,14 @@ async function invalidateAccountCacheKeys() {
       'favorite_groups_avatar', 'favorite_groups_world', 'favorite_groups_friend',
       'avatar_basics_mine', 'avatars_mine',
     ];
-    for (const k of ageKeys) await idb.set(k, 0);
-    for (const k of deleteKeys) await idb.del(k);
+    for (const k of ageKeys) {
+      if (!isAuthSessionCurrent(token)) return;
+      await idb.set(k, 0, token);
+    }
+    for (const k of deleteKeys) {
+      if (!isAuthSessionCurrent(token)) return;
+      await idb.del(k, token);
+    }
   } catch (e) { /* best-effort */ }
 }
 
@@ -1149,14 +1278,62 @@ const NO_CACHE_PATTERNS = [
 const API_MICRO_CACHE_MS = 15000;
 const API_SLOW_LOG_MS = 2500;
 
+function _newOpaqueBucket() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return 'b:' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+let authSessionBucket = _newOpaqueBucket();
+
+// These helpers are intentionally epoch-authoritative. A refreshed X-VRC-Auth
+// cookie is still the same session: it must not invalidate callers or move the
+// account's IDB namespace. Only advanceAuthSession() starts a new identity.
+function makeAuthSessionToken() {
+  // Anonymous bootstrap calls must not permanently claim the authenticated
+  // account's cache namespace. Freeze credentials only after auth exists.
+  if (!authSessionCredential && vrcAuth) authSessionCredential = vrcAuth;
+  const credential = authSessionCredential || vrcAuth || '';
+  return Object.freeze({
+    epoch: authSessionEpoch,
+    bucket: authSessionBucket,
+    credential,
+    accountId: typeof currentUserId === 'string' ? currentUserId : ''
+  });
+}
+
+function isAuthSessionCurrent(token) {
+  return !!token
+    && token.epoch === authSessionEpoch
+    && token.bucket === authSessionBucket;
+}
+
+function _staleAuthSessionError() {
+  const err = new Error('Stale auth session');
+  err.name = 'AbortError';
+  err.status = 499;
+  err.stale = true;
+  return err;
+}
+
+function _combineAbortSignals(signals) {
+  const list = signals.filter(Boolean);
+  if (!list.length) return { signal: undefined, cleanup() {} };
+  if (list.length === 1) return { signal: list[0], cleanup() {} };
+  const ctrl = new AbortController();
+  const onAbort = () => { try { ctrl.abort(); } catch (_) {} };
+  list.forEach(signal => {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return {
+    signal: ctrl.signal,
+    cleanup() { list.forEach(signal => signal.removeEventListener('abort', onAbort)); }
+  };
+}
+
 function _apiAuthBucket() {
-  const raw = vrcAuth || '';
-  if (!raw) return 'anon';
-  let hash = 0;
-  for (let i = 0; i < raw.length; i++) {
-    hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
-  }
-  return `auth:${Math.abs(hash)}`;
+  return authSessionBucket;
 }
 
 function clearApiMemoryCache() {
@@ -1173,94 +1350,114 @@ function abortAllApiRequests() {
     try { ctrl.abort(); } catch (_) {}
   }
   scopedAbortControllers.clear();
+  // Abort the captured session controller, then immediately replace it. The
+  // caller may invoke this after advanceAuthSession(); future requests must not
+  // inherit an already-aborted signal.
+  try { authSessionAbortController.abort(); } catch (_) {}
+  authSessionAbortController = new AbortController();
 }
 
 function advanceAuthSession() {
   authSessionEpoch += 1;
+  try { authSessionAbortController.abort(); } catch (_) {}
+  authSessionAbortController = new AbortController();
+  authSessionBucket = _newOpaqueBucket();
+  authSessionCredential = null;
+  _resetAuthSessionScope();
   clearApiMemoryCache();
   return authSessionEpoch;
+}
+
+function beginAuthenticatedSession() {
+  if (!vrcAuth) return makeAuthSessionToken();
+  advanceAuthSession();
+  // Freeze the credential used to establish this account. Later response
+  // refreshes update vrcAuth but deliberately do not move this namespace.
+  authSessionCredential = vrcAuth;
+  return makeAuthSessionToken();
 }
 
 async function apiCall(path, options = {}) {
   const method = options.method || 'GET';
   const isGet = method === 'GET';
-  const requestAuthEpoch = authSessionEpoch;
-  const requestAuthBucket = _apiAuthBucket();
+  // Capture all session identity before the first await. The credential is only
+  // used for the request header and private IDB digest; the cache key uses the
+  // opaque bucket.
+  const sessionToken = makeAuthSessionToken();
+  const requestAuthEpoch = sessionToken.epoch;
+  const requestAuthBucket = sessionToken.bucket;
+  const requestAuth = vrcAuth || '';
   const wantsNoStore = options.cache === 'no-store' || options.noCache === true;
   const noDedupe = options.noDedupe === true;
   const requestBody = options.json !== undefined ? JSON.stringify(options.json) : options.body;
   const cacheBodyKey = typeof requestBody === 'string' ? requestBody : '';
-  const cacheKey = `${_apiAuthBucket()}::${path}::${cacheBodyKey}`;
+  const cacheKey = `${requestAuthBucket}::${path}::${cacheBodyKey}`;
   const cacheable = isGet && !wantsNoStore && !noDedupe && !NO_CACHE_PATTERNS.some(p => path.includes(p));
+  const staleIfNeeded = () => { if (!isAuthSessionCurrent(sessionToken)) throw _staleAuthSessionError(); };
 
-  // Return from memory cache if recent to prevent burst requests when users
-  // quickly bounce between panels or detail modals on slow VRChat responses.
   if (cacheable && apiCache.has(cacheKey)) {
+    staleIfNeeded();
     const entry = apiCache.get(cacheKey);
-    if (Date.now() - entry.time < API_MICRO_CACHE_MS) {
-      return entry.resp.clone();
-    }
+    if (Date.now() - entry.time < API_MICRO_CACHE_MS) return entry.resp.clone();
+    apiCache.delete(cacheKey);
   }
   if (cacheable && inFlightGetRequests.has(cacheKey)) {
     const shared = await inFlightGetRequests.get(cacheKey);
+    staleIfNeeded();
     return shared.clone();
   }
 
   const headers = { ...(options.headers || {}) };
-  if (vrcAuth) headers["X-VRC-Auth"] = vrcAuth;
-  if (options.json !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
-  
-  // Attach current tab's abort signal unless explicitly overridden
-  const signal = options.signal || (!options.noAbort && currentTabAbortController ? currentTabAbortController.signal : undefined);
-  
+  if (requestAuth) headers["X-VRC-Auth"] = requestAuth;
+  if (options.json !== undefined) headers["Content-Type"] = "application/json";
+  const combined = _combineAbortSignals([
+    options.signal,
+    !options.noAbort && currentTabAbortController ? currentTabAbortController.signal : null,
+    authSessionAbortController.signal
+  ]);
   const startedAt = Date.now();
-  const fetchOptions = { ...options, method, headers, body: requestBody, signal };
+  const fetchOptions = { ...options, method, headers, body: requestBody, signal: combined.signal };
   delete fetchOptions.json;
   delete fetchOptions.noAbort;
   delete fetchOptions.noCache;
   delete fetchOptions.noDedupe;
   const requestPromise = fetch(`${API_BASE}${path}`, fetchOptions);
+  // Only create a dedupe promise for cacheable GETs. Attach a rejection
+  // handler to the tracked branch so a failed fetch cannot become an
+  // unhandled rejection while the original request still reports normally.
+  let trackedPromise = null;
   if (cacheable) {
-    inFlightGetRequests.set(cacheKey, requestPromise.then(resp => resp.clone()));
+    trackedPromise = requestPromise.then(resp => resp.clone());
+    trackedPromise.catch(() => {});
+    inFlightGetRequests.set(cacheKey, trackedPromise);
   }
 
   try {
     const resp = await requestPromise;
+    combined.cleanup();
+    staleIfNeeded();
     const elapsed = Date.now() - startedAt;
-    if (elapsed > API_SLOW_LOG_MS) {
-      console.debug('[api slow]', `${elapsed}ms`, path);
-    }
-    // Update auth from response
+    if (elapsed > API_SLOW_LOG_MS) console.debug('[api slow]', `${elapsed}ms`, path);
+
     const newAuth = resp.headers.get("X-VRC-Auth");
     if (newAuth && requestAuthEpoch === authSessionEpoch && requestAuthBucket === _apiAuthBucket()) {
-      if (newAuth !== vrcAuth) clearApiMemoryCache();
+      if (newAuth !== vrcAuth) apiCache.clear();
       vrcAuth = newAuth;
       localStorage.setItem("vrc_auth", vrcAuth);
     }
-    
-    // Cache GET responses
-    if (cacheable && resp.ok) {
-      apiCache.set(cacheKey, { resp: resp.clone(), time: Date.now() });
-    }
-    if (!isGet && resp.ok) {
-      apiCache.clear();
-    }
-
+    staleIfNeeded();
+    if (cacheable && resp.ok) apiCache.set(cacheKey, { resp: resp.clone(), time: Date.now() });
+    if (!isGet && resp.ok) apiCache.clear();
     return resp;
   } catch (err) {
+    combined.cleanup();
+    if (err?.stale || !isAuthSessionCurrent(sessionToken)) throw _staleAuthSessionError();
     if (err.name === 'AbortError') {
-      // Return a Response-shaped stub for aborted requests so callers that read
-      // .headers / .clone() (not just .ok / .json) don't throw.
-      return new Response(JSON.stringify({ error: 'Aborted' }), {
-        status: 499,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(JSON.stringify({ error: 'Aborted' }), { status: 499, headers: { 'Content-Type': 'application/json' } });
     }
     throw err;
   } finally {
-    if (cacheable) inFlightGetRequests.delete(cacheKey);
+    if (cacheable && inFlightGetRequests.get(cacheKey) === trackedPromise) inFlightGetRequests.delete(cacheKey);
   }
 }
 
@@ -1268,6 +1465,8 @@ VRCW.registerService('api', {
   call: apiCall,
   clearMemoryCache: clearApiMemoryCache,
   getAuthBucket: _apiAuthBucket,
+  makeAuthSessionToken,
+  isAuthSessionCurrent,
 });
 
 VRCW.registerService('ui', {

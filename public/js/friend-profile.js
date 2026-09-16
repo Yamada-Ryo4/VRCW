@@ -475,6 +475,24 @@ function updateAvatarNameInUI(listEl, avId, newName) {
   });
 }
 
+function updateAvatarPlatformsInUI(listEl, avId, data) {
+  if (!listEl || !data || (data.id && data.id !== avId)) return;
+  const avatar = window._friendAvatars?.find(item => item.id === avId);
+  if (!avatar) return;
+  Object.assign(avatar, data, { id: avId });
+  const platforms = getAvatarPlatforms(avatar);
+  const labels = { pc: 'PC', android: 'Quest', ios: 'Apple' };
+  listEl.querySelectorAll('.avatar-card').forEach(card => {
+    if (card.dataset.id !== avId) return;
+    const badges = card.querySelector('.avatar-plat-badges');
+    if (badges) {
+      badges.innerHTML = Array.from(platforms.keys(), platform =>
+        `<span class="avtrdb-badge" style="font-size:0.8em;padding:2px 6px;">${escHtml(labels[platform] || platform)}</span>`
+      ).join('');
+    }
+  });
+}
+
 async function buildLocalFavoriteNameMap() {
   const map = new Map();
   try {
@@ -621,6 +639,8 @@ async function fetchFriendAvatars(userId, seq) {
     // BACKGROUND REFRESH: Queue official verification
     allAvatars.forEach(av => {
       avatarMetadataQueue.add(av.id, (data) => {
+        if (seq != null && window._fpCurrentSeq !== seq) return;
+        if (!_isFriendProfileScopeCurrent() || window._friendAvatars !== allAvatars) return;
         updateAvatarPlatformsInUI(el, av.id, data);
       });
     });
@@ -725,7 +745,7 @@ renderAppVersionInfo();
 
 // --- Avatar Integration ---
 async function openCurrentAvatarDetail() {
-    const f = window.currentFriendProfile;
+    const f = currentFriendProfile;
     if (!f || !f.currentAvatar) {
         showToast(t('toast.noCurrentAvatarId'), 'error');
         return;

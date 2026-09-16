@@ -7,6 +7,10 @@
 const VRC_API = "https://api.vrchat.cloud/api/1";
 const API_KEY = "JlGlobalv959ay9puS6p99En0asKuAk";
 const USER_AGENT = "VRCX/1.6.4 (vrcxml@gmail.com)";
+// avatarrecovery.com explicitly bans the old VRCX-mimicking UA string above
+// ("This User-Agent is banned"), while Cloudflare fronting rejects non-VRCX
+// user agents outright. A current VRCX release string is accepted by both.
+const COMMUNITY_USER_AGENT = "VRCX/2026.09.01";
 
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -15,6 +19,11 @@ const CORS_HEADERS = {
     "Access-Control-Expose-Headers": "X-VRC-Auth",
 };
 
+function bytesToBase64Url(bytes) {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
 /**
  * SSRF guard — only allow the worker to proxy/fetch known VRChat + community
@@ -31,8 +40,12 @@ const ALLOWED_HOST_SUFFIXES = [
     ".vrcdb.com",
     ".avatarrecovery.com",
     ".cute.bet",
-    ".nekosunevr.co.uk",
-    // S3 / CDN hosts that VRChat file URLs redirect to
+    // avtr.icu is a community avatar index whose thumbnail URLs point at its
+    // own /proxy/ endpoint; it 302s to its R2-backed image cache (zuxi.dev).
+    ".avtr.icu",
+    ".zuxi.dev",
+];
+const DELIVERY_CDN_SUFFIXES = [
     ".amazonaws.com",
     ".cloudfront.net",
 ];
@@ -43,20 +56,86 @@ const ALLOWED_HOSTS = new Set([
     "vrcdb.com",
     "avatarrecovery.com",
     "cute.bet",
-    "nekosunevr.co.uk",
+    "avtr.icu",
+]);
+// Only these exact VRChat origins may receive a user's Cookie. Community
+// services remain valid proxy targets, but can never authorize delivery-CDN
+// redirects or receive VRChat credentials.
+const CREDENTIAL_ALLOWED_HOSTS = new Set([
+    "api.vrchat.cloud",
+    "files.vrchat.cloud",
+    "vrchat.cloud",
 ]);
 
-function isAllowedTarget(rawUrl) {
+function isSafeProxyUrl(rawUrl) {
     let parsed;
     try {
         parsed = new URL(rawUrl);
     } catch {
-        return false;
+        return null;
     }
-    if (parsed.protocol !== "https:") return false;
+    if (parsed.protocol !== "https:" || parsed.port || parsed.username || parsed.password) return null;
+    return parsed;
+}
+
+function isAllowedTarget(rawUrl) {
+    const parsed = isSafeProxyUrl(rawUrl);
+    if (!parsed) return false;
     const host = parsed.hostname.toLowerCase();
-    if (ALLOWED_HOSTS.has(host)) return true;
-    return ALLOWED_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+    return ALLOWED_HOSTS.has(host) || ALLOWED_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+}
+
+function isAllowedDeliveryCdnTarget(rawUrl) {
+    const parsed = isSafeProxyUrl(rawUrl);
+    return !!parsed && DELIVERY_CDN_SUFFIXES.some((suffix) => parsed.hostname.toLowerCase().endsWith(suffix));
+}
+
+function isAllowedImageContentType(contentType) {
+    const mime = String(contentType || '').split(';', 1)[0].trim().toLowerCase();
+    return mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/webp' || mime === 'image/gif';
+}
+
+function isAllowedJsonContentType(contentType) {
+    const mime = String(contentType || '').split(';', 1)[0].trim().toLowerCase();
+    return mime === 'application/json' || mime.endsWith('+json');
+}
+
+function isCredentialAllowedTarget(rawUrl) {
+    const parsed = isSafeProxyUrl(rawUrl);
+    return !!parsed && CREDENTIAL_ALLOWED_HOSTS.has(parsed.hostname.toLowerCase());
+}
+
+function headersForProxyHop(options, currentUrl) {
+    const headers = new Headers(options.headers || {});
+    // Cookie is a VRChat credential. Rebuild headers for every hop and only
+    // attach it to the exact VRChat hosts that require it; community hosts and
+    // delivery CDNs must never receive it.
+    if (!isCredentialAllowedTarget(currentUrl)) {
+        headers.delete('Cookie');
+        // Community API operators (avatarrecovery.com) ban the VRChat-login UA
+        // string; community fetches identify with a current VRCX release
+        // instead. VRChat hops keep the login-proven USER_AGENT untouched.
+        headers.set('User-Agent', COMMUNITY_USER_AGENT);
+    }
+    return headers;
+}
+
+async function fetchAllowedWithRedirects(initialUrl, options = {}, maxHops = 3) {
+    let current = new URL(initialUrl);
+    let redirectedFromCredentialHost = false;
+    for (let hop = 0; hop <= maxHops; hop++) {
+        const allowed = isAllowedTarget(current.toString())
+            || (redirectedFromCredentialHost && isAllowedDeliveryCdnTarget(current.toString()));
+        if (!allowed) throw new Error('Target host not allowed');
+        const hopOptions = { ...options, headers: headersForProxyHop(options, current), redirect: 'manual' };
+        const response = await fetch(current.toString(), hopOptions);
+        if (![301, 302, 303, 307, 308].includes(response.status)) return { response, url: current };
+        const location = response.headers.get('location');
+        if (!location || hop === maxHops) throw new Error('Invalid redirect');
+        redirectedFromCredentialHost = isCredentialAllowedTarget(current.toString());
+        current = new URL(location, current);
+    }
+    throw new Error('Too many redirects');
 }
 
 function isAllowedUploadTarget(rawUrl) {
@@ -122,6 +201,29 @@ async function vrcFetch(path, options = {}, authCookies = "") {
     return { resp, setCookies };
 }
 
+// Check the caller's full VRChat friend list. The online and offline views are
+// separate upstream result sets, so both must be paged before returning false.
+// Any upstream failure throws: callers must fail closed rather than treating an
+// unknown relationship as permission to send a duplicate friend request.
+async function isVrcFriend(authCookies, targetId) {
+    if (!authCookies || !/^usr_[A-Za-z0-9_-]+$/.test(targetId || '')) {
+        throw new Error('Friend status unavailable');
+    }
+    for (const offline of [false, true]) {
+        let offset = 0;
+        while (offset < 3000) {
+            const { resp } = await vrcFetch(`/auth/user/friends?n=100&offset=${offset}&offline=${offline}`, { method: 'GET' }, authCookies);
+            if (!resp.ok) throw new Error('Friend status unavailable');
+            const batch = await resp.json();
+            if (!Array.isArray(batch)) throw new Error('Friend status unavailable');
+            if (batch.some(friend => friend && friend.id === targetId)) return true;
+            if (batch.length < 100) break;
+            offset += 100;
+        }
+    }
+    return false;
+}
+
 function getAuth(request) {
     const header = request.headers.get("X-VRC-Auth") || "";
     if (!header) return "";
@@ -130,6 +232,10 @@ function getAuth(request) {
     } catch {
         return header;
     }
+}
+
+function shouldReturnRefreshedAuth(resp, setCookies) {
+    return !!(resp && resp.ok && Array.isArray(setCookies) && setCookies.length);
 }
 
 function mergeCookies(existing, newCookies) {
@@ -152,19 +258,46 @@ function mergeCookies(existing, newCookies) {
         .join("; ");
 }
 
-function authBucket(authCookies) {
-    if (!authCookies) return "anon";
-    let hash = 0;
-    for (let i = 0; i < authCookies.length; i++) {
-        hash = ((hash << 5) - hash + authCookies.charCodeAt(i)) | 0;
-    }
-    return `auth:${Math.abs(hash)}`;
+async function authBucket(authCookies) {
+    if (!authCookies) return "anon:v2";
+    const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(String(authCookies))
+    );
+    return `auth:v2:${bytesToBase64Url(new Uint8Array(digest))}`;
 }
 
-
-// Admin auth — verifies X-Admin-Token header against the ADMIN_SECRET env var.
-// ADMIN_SECRET is set in wrangler secrets / CF Dashboard secrets and is NOT
-// committed to git. Returns { ok: true } or { ok: false, response }.
+// ── VRChat identity resolution ────────────────────────────────────────────
+// Resolve the caller's real VRChat id by replaying their X-VRC-Auth cookie
+// against VRChat /auth/user. This is the authoritative identity for
+// authenticated Worker endpoints (e.g. /api/s3proxy): a client-supplied id
+// or header alone is never proof of who the caller is.
+//
+// _identityCache: authCookie string -> { at, id, age18 }  (30s TTL; VRChat
+// sessions are long-lived so a half-minute old answer is safe and saves an
+// upstream round-trip per request.)
+const _identityCache = new Map();
+const IDENTITY_CACHE_TTL_MS = 30_000;
+async function resolveVrcIdentity(request, env) {
+    const auth = getAuth(request);
+    if (!auth) return null;
+    const cached = _identityCache.get(auth);
+    if (cached && (Date.now() - cached.at) < IDENTITY_CACHE_TTL_MS) {
+        return cached;
+    }
+    try {
+        const { resp } = await vrcFetch("/auth/user", { method: "GET" }, auth);
+        if (!resp.ok) return null;
+        const user = await resp.json();
+        if (!user || !user.id) return null;
+        const age18 = user.ageVerificationStatus === "18+" || user.ageVerified === true;
+        const entry = { at: Date.now(), id: user.id, age18, displayName: user.displayName || "" };
+        _identityCache.set(auth, entry);
+        return entry;
+    } catch (_) {
+        return null;
+    }
+}
 
 export default {
     async fetch(request, env, ctx) {
@@ -182,7 +315,11 @@ export default {
         // Static Assets binding. We must hand these off BEFORE the API route
         // block, otherwise they'd fall through to the 404 at the end.
         if (!path.startsWith('/api/')) {
-            if (!env.ASSETS) return new Response("Static assets require env.ASSETS binding", { status: 500 });
+            // In production the ASSETS binding always exists and serves (or
+            // 404s) static assets itself. Some local-dev modes invoke the
+            // worker on asset-miss paths without the binding; fall back to a
+            // plain 404 instead of erroring.
+            if (!env.ASSETS) return new Response("Not found", { status: 404, headers: CORS_HEADERS });
             const assetResp = await env.ASSETS.fetch(request);
             return assetResp;
         }
@@ -258,7 +395,11 @@ export default {
 
             const setCookies = vrcResp.headers.getAll ? vrcResp.headers.getAll("set-cookie") : [vrcResp.headers.get("set-cookie")].filter(Boolean);
             const responseHeaders = new Headers(CORS_HEADERS);
-            if (setCookies.length > 0) {
+            // Only return auth cookies on a successful login (HTTP 200).
+            // Returning Set-Cookie on 401/2FA-required/rate-limited responses
+            // would persist half-baked session cookies that interfere with the
+            // next login attempt.
+            if (vrcResp.status === 200 && setCookies.length > 0) {
                 responseHeaders.set("X-VRC-Auth", btoa(mergeCookies("", setCookies)));
             }
 
@@ -299,10 +440,12 @@ export default {
                 );
 
                 const data = await resp.json();
-                const cookies = mergeCookies(auth, setCookies);
 
                 if (resp.status === 200 && data.verified) {
-                    return jsonResp({ ok: true }, 200, { "X-VRC-Auth": btoa(cookies) });
+                    const refreshedAuth = shouldReturnRefreshedAuth(resp, setCookies)
+                        ? btoa(mergeCookies(auth, setCookies))
+                        : null;
+                    return jsonResp({ ok: true }, 200, refreshedAuth ? { "X-VRC-Auth": refreshedAuth } : {});
                 }
                 return jsonResp({ ok: false, message: "Invalid code" }, 400);
             } catch (e) {
@@ -320,7 +463,7 @@ export default {
             if (!imgAuth && authParam) {
                 try { imgAuth = atob(authParam); } catch { imgAuth = authParam; }
             }
-            const imageBucket = authBucket(imgAuth);
+            const imageBucket = await authBucket(imgAuth);
             if (!targetUrl) return new Response("Missing url", { status: 400 });
             if (!isAllowedTarget(targetUrl)) {
                 return new Response("Target host not allowed", { status: 403, headers: CORS_HEADERS });
@@ -337,20 +480,24 @@ export default {
                     "User-Agent": USER_AGENT,
                     "Referer": "https://vrchat.com/"
                 };
-                if (imgAuth) headers["Cookie"] = imgAuth;
+                // The VRChat credential may only travel to VRChat hosts —
+                // community image hosts (avtr.icu etc.) are fetched cookie-free.
+                if (imgAuth && isCredentialAllowedTarget(targetUrl)) headers["Cookie"] = imgAuth;
 
                 // 20s deadline so a slow/hung VRC CDN origin can't hold the
                 // Worker subrequest open indefinitely and starve the client's
                 // image queue (the "some images time out" symptom).
-                const imgResp = await fetch(targetUrl, {
+                const { response: imgResp } = await fetchAllowedWithRedirects(targetUrl, {
                     method: "GET",
                     headers,
-                    redirect: "follow",
                     signal: AbortSignal.timeout(20000)
                 });
 
                 if (!imgResp.ok) {
                     return new Response("Image fetch failed", { status: imgResp.status, headers: CORS_HEADERS });
+                }
+                if (!isAllowedImageContentType(imgResp.headers.get('content-type'))) {
+                    return new Response("Image type not allowed", { status: 415, headers: CORS_HEADERS });
                 }
 
                 // Clone and cache the response
@@ -368,7 +515,8 @@ export default {
                 ctx.waitUntil(cache.put(cacheKey, respClone));
                 return resp;
             } catch (e) {
-                return new Response("Image proxy failed: " + e.message, { status: 500, headers: CORS_HEADERS });
+                const status = e && e.name === 'TimeoutError' ? 504 : 502;
+                return new Response("Image proxy unavailable", { status, headers: CORS_HEADERS });
             }
         }
 
@@ -382,11 +530,13 @@ export default {
             }
 
             try {
-                const proxyResp = await fetch(targetUrl, {
+                const { response: proxyResp } = await fetchAllowedWithRedirects(targetUrl, {
                     method: "GET",
                     headers: { "User-Agent": USER_AGENT },
                 });
-
+                if (!isAllowedJsonContentType(proxyResp.headers.get('content-type'))) {
+                    return jsonResp({ error: "Unsupported content type from upstream" }, 415);
+                }
                 const respBody = await proxyResp.arrayBuffer();
                 return new Response(respBody, {
                     status: proxyResp.status,
@@ -396,7 +546,8 @@ export default {
                     }
                 });
             } catch (e) {
-                return jsonResp({ error: e.message }, 500);
+                const status = e && e.name === 'TimeoutError' ? 504 : 502;
+                return jsonResp({ error: "Upstream unavailable" }, status);
             }
         }
 
@@ -411,7 +562,7 @@ export default {
                 return jsonResp({ error: "Invalid JSON" }, 400);
             }
             const urls = (body.urls || []).filter(isAllowedTarget);
-            const imageBucket = authBucket(auth);
+            const imageBucket = await authBucket(auth);
             if (!urls.length) return jsonResp({ ok: true, cached: 0 });
 
             const cache = caches.default;
@@ -432,15 +583,13 @@ export default {
                         "User-Agent": USER_AGENT,
                         "Referer": "https://vrchat.com/"
                     };
-                    if (auth) headers["Cookie"] = auth;
+                    if (auth && isCredentialAllowedTarget(rawUrl)) headers["Cookie"] = auth;
 
-                    const imgResp = await fetch(rawUrl, {
+                    const { response: imgResp, url: finalUrl } = await fetchAllowedWithRedirects(rawUrl, {
                         method: "GET",
                         headers,
-                        redirect: "follow"
                     });
-
-                    if (imgResp.ok) {
+                    if (imgResp.ok && isAllowedImageContentType(imgResp.headers.get('content-type'))) {
                         const resp = new Response(imgResp.body, {
                             status: 200,
                             headers: {
@@ -465,6 +614,16 @@ export default {
         if (path.startsWith("/api/vrc/")) {
             const vrcPath = path.replace("/api/vrc", "");
             const method = request.method;
+            const friendRequestMatch = vrcPath.match(/^\/user\/(usr_[A-Za-z0-9_-]+)\/friendRequest$/);
+            if (friendRequestMatch && method === 'POST') {
+                try {
+                    if (await isVrcFriend(auth, friendRequestMatch[1])) {
+                        return jsonResp({ success: true, already_friends: true });
+                    }
+                } catch (_) {
+                    return jsonResp({ error: 'Friend status unavailable' }, 503);
+                }
+            }
             let body = null;
             let headers = {};
 
@@ -490,17 +649,23 @@ export default {
             );
 
             // Fetch exactly as Raw Buffer to prevent surrogate-pair (emojis) and UTF-8 charset
-            // stripping by CF's text() if header is purely application/json.
-            const respBody = await resp.arrayBuffer();
-            const cookies = mergeCookies(auth, setCookies);
-
+            // stripping by CF's text() if header is purely application/json. Fetch
+            // forbids a body on 204/205/304, so preserve a null body for those statuses.
+            const respBody = [204, 205, 304].includes(resp.status) ? null : await resp.arrayBuffer();
+            const refreshedAuth = shouldReturnRefreshedAuth(resp, setCookies)
+                ? btoa(mergeCookies(auth, setCookies))
+                : null;
 
             return new Response(respBody, {
                 status: resp.status,
                 headers: {
                     "Content-Type": resp.headers.get("content-type") || "application/json",
+                    "Cache-Control": "no-store",
+                    ...(resp.headers.get("retry-after") ? { "Retry-After": resp.headers.get("retry-after") } : {}),
+                    ...(resp.headers.get("etag") ? { "ETag": resp.headers.get("etag") } : {}),
+                    ...(resp.headers.get("last-modified") ? { "Last-Modified": resp.headers.get("last-modified") } : {}),
                     ...CORS_HEADERS,
-                    "X-VRC-Auth": btoa(cookies),
+                    ...(refreshedAuth ? { "X-VRC-Auth": refreshedAuth } : {}),
                 },
             });
         }
@@ -522,18 +687,24 @@ export default {
             async function resolveRedirects(startUrl, authCookies) {
                 let resolved = startUrl;
                 let currentUrl = startUrl;
+                let redirectedFromCredentialHost = false;
                 for (let i = 0; i < 5; i++) {
-                    if (!isAllowedTarget(currentUrl)) return { error: 403 };
+                    const allowed = isAllowedTarget(currentUrl)
+                        || (redirectedFromCredentialHost && isAllowedDeliveryCdnTarget(currentUrl));
+                    if (!allowed) return { error: 403 };
+                    const headers = new Headers({ "User-Agent": USER_AGENT });
+                    if (authCookies && isCredentialAllowedTarget(currentUrl)) headers.set("Cookie", authCookies);
                     const step = await fetch(currentUrl, {
                         method: "GET",
-                        headers: { "User-Agent": USER_AGENT, ...(authCookies ? { "Cookie": authCookies } : {}) },
+                        headers,
                         redirect: "manual",
                     });
                     if (step.status === 301 || step.status === 302 || step.status === 303 || step.status === 307 || step.status === 308) {
                         const location = step.headers.get("Location");
                         if (!location) break;
+                        redirectedFromCredentialHost = isCredentialAllowedTarget(currentUrl);
                         currentUrl = new URL(location, currentUrl).toString();
-                        if (!isAllowedTarget(currentUrl)) return { error: 403 };
+                        if (!isAllowedTarget(currentUrl) && !(redirectedFromCredentialHost && isAllowedDeliveryCdnTarget(currentUrl))) return { error: 403 };
                         resolved = currentUrl;
                         continue;
                     }
@@ -549,7 +720,7 @@ export default {
             if (resolved.error === 401) return jsonResp({ error: "VRChat auth expired" }, 401);
             if (resolved.error === 403) return jsonResp({ error: "Redirect target not allowed" }, 403);
             let cdnUrl = resolved.url;
-            if (!isAllowedTarget(cdnUrl)) return jsonResp({ error: "CDN target not allowed" }, 403);
+            if (!isAllowedTarget(cdnUrl) && !isAllowedDeliveryCdnTarget(cdnUrl)) return jsonResp({ error: "CDN target not allowed" }, 403);
 
             // Step 2: Fetch from CDN and stream back with Content-Disposition
             let cdnResp = await fetch(cdnUrl, {
@@ -565,7 +736,7 @@ export default {
                 if (resolved.error === 401) return jsonResp({ error: "VRChat auth expired" }, 401);
                 if (resolved.error === 403) return jsonResp({ error: "Redirect target not allowed" }, 403);
                 cdnUrl = resolved.url;
-                if (!isAllowedTarget(cdnUrl)) return jsonResp({ error: "CDN target not allowed" }, 403);
+                if (!isAllowedTarget(cdnUrl) && !isAllowedDeliveryCdnTarget(cdnUrl)) return jsonResp({ error: "CDN target not allowed" }, 403);
                 cdnResp = await fetch(cdnUrl, {
                     method: "GET",
                     headers: { "User-Agent": USER_AGENT },
@@ -605,13 +776,22 @@ export default {
         // If content-type is NOT in X-Amz-SignedHeaders, this extra header breaks S3 signature → 403.
         // Fix: wrap body in Blob with empty type to suppress automatic Content-Type injection.
         if (path === "/api/s3proxy" && request.method === "PUT") {
-            if (!auth) return jsonResp({ error: "Missing auth" }, 401);
+            // A non-empty header is not authentication. Resolve the live VRChat
+            // identity before using this Worker as a signed-upload relay.
+            const identity = await resolveVrcIdentity(request, env);
+            if (!identity) return jsonResp({ error: "Authentication required" }, 401);
             const s3Url = request.headers.get("X-S3-Url");
             if (!s3Url) return jsonResp({ error: "Missing X-S3-Url header" }, 400);
             if (!isAllowedUploadTarget(s3Url)) return jsonResp({ error: "Upload target not allowed" }, 403);
+            const contentLength = Number(request.headers.get('content-length') || 0);
+            const MAX_S3_PROXY_BYTES = 50 * 1024 * 1024;
+            if (Number.isFinite(contentLength) && contentLength > MAX_S3_PROXY_BYTES) {
+                return jsonResp({ error: "Upload too large" }, 413);
+            }
 
-            // Buffer body to avoid Transfer-Encoding:chunked
+            // Buffer body to avoid Transfer-Encoding:chunked.
             const bodyBuffer = await request.arrayBuffer();
+            if (bodyBuffer.byteLength > MAX_S3_PROXY_BYTES) return jsonResp({ error: "Upload too large" }, 413);
 
             // Parse X-Amz-SignedHeaders from presigned URL
             const s3Headers = new Headers();
@@ -663,8 +843,6 @@ export default {
                 }, s3Resp.status);
             }
         }
-
-
 
         return jsonResp({ error: "Not found" }, 404);
     },

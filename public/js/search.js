@@ -31,13 +31,15 @@ function _newSearchSignal() {
   return _searchAbortController.signal;
 }
 
+// Community DB sources (one-shot full-result APIs). nekosunevr was removed
+// (2026-09-06): the operator shut the avatar-search service down and pivoted
+// to the NekoNexus game platform — the endpoint no longer serves data.
 function _communityDbSources(query, append) {
   const suffix = append ? '&n=' + COMMUNITY_LOAD_MORE_LIMIT : '';
   return [
     { name: 'vrcdb', url: `/api/proxy?url=${encodeURIComponent(`https://vrcx.vrcdb.com/avatars/Avatar/VRCX?search=${encodeURIComponent(query)}${suffix}`)}` },
     { name: 'avatarrecovery', url: `/api/proxy?url=${encodeURIComponent(`https://api.avatarrecovery.com/Avatar/vrcx?search=${encodeURIComponent(query)}${suffix}`)}` },
-    { name: 'cute.bet', url: `/api/proxy?url=${encodeURIComponent(`https://avtr.cute.bet/search?search=${encodeURIComponent(query)}${suffix}`)}` },
-    { name: 'nekosunevr', url: `/api/proxy?url=${encodeURIComponent(`https://avtr.nekosunevr.co.uk/vrcx_search?search=${encodeURIComponent(query)}${suffix}`)}` }
+    { name: 'cute.bet', url: `/api/proxy?url=${encodeURIComponent(`https://avtr.cute.bet/search?search=${encodeURIComponent(query)}${suffix}`)}` }
   ];
 }
 
@@ -45,10 +47,11 @@ let avtrdbCurrentQuery = "";
 let avtrdbCurrentPlatform = "";
 let avtrdbDebounceTimer = null;
 let avtrdbTotalLoaded = 0;
-let avtrdbMatchField = (function () {
-  try { return normalizeAvtrdbMatchField(localStorage.getItem('vrcw_avtrdb_match_field')); }
-  catch (_) { return 'all'; }
-})();
+// Field filter is intentionally NOT persisted (v189): a forgotten "author"
+// selection silently narrowed every later search (user-reported trap). It is
+// session-only now; clear any stale key left behind by older versions.
+let avtrdbMatchField = 'all';
+try { localStorage.removeItem('vrcw_avtrdb_match_field'); } catch (_) {}
 let _avtrdbDisplayOrder = [];
 const AVTRDB_RENDER_BATCH = 60;
 let _avtrdbRenderItems = [];
@@ -282,6 +285,10 @@ async function doAvtrdbSearch() {
   // Stop any in-flight background pagination from a previous search and
   // reset render queue / sentinel state so streaming starts from scratch.
   _avtrdbBgDriverAbortEpoch++;
+  // The epoch bump already invalidates the old driver; clear its running flag
+  // so the new search isn't dropped by the "already running" guard while the
+  // stale driver is still unwinding (its finally is epoch-guarded now).
+  _avtrdbBgDriverRunning = false;
   _avtrdbBgDriverFailedPage = -1;
   _avtrdbRenderItems = [];
   _avtrdbRenderedCount = 0;
@@ -462,7 +469,7 @@ function setAvtrdbMatchField(field) {
   field = normalizeAvtrdbMatchField(field);
   if (avtrdbMatchField === field) return;
   avtrdbMatchField = field || 'all';
-  try { localStorage.setItem('vrcw_avtrdb_match_field', avtrdbMatchField); } catch (_) {}
+  // Deliberately not written to localStorage — see the avtrdbMatchField declaration.
   document.querySelectorAll('#fieldGlassSelect .glass-option').forEach(b =>
     b.classList.toggle('selected', b.dataset.field === avtrdbMatchField));
   const activeField = document.querySelector(`#fieldGlassSelect .glass-option[data-field="${avtrdbMatchField}"]`);
@@ -596,6 +603,10 @@ function _updateAvtrdbStats() {
     suffix = t('search.fetchInterrupted', {page: _avtrdbBgDriverFailedPage});
   } else if (_avtrdbBgDriverRunning || _avtrdbHasMore) {
     suffix = t('search.bgFetching');
+  } else if (_avtrdbRenderedCount < _avtrdbRenderItems.length) {
+    // Fetching is done but the grid is still batching — "all loaded" would
+    // make users think rendering stalled at the first batch (user-reported).
+    suffix = t('search.scrollForMore');
   } else {
     suffix = t('search.allLoaded');
   }
@@ -618,7 +629,10 @@ function _avtrdbSourceDone(signal) {
     // streaming we keep arrival order to avoid cards jumping around; this
     // final pass makes relevance/newest/name actually mean something.
     if (avtrdbSortMode && avtrdbSortMode !== 'arrival') {
-      _rerenderAvtrdbGrid();
+      // Keep the user's rendered count and scroll position: this is an
+      // automatic re-sort after streaming, not an explicit user action, and
+      // resetting to the first batch mid-scroll read as "stuck at 60".
+      _rerenderAvtrdbGrid({ preserveRendered: true, scrollToTop: false });
     }
   } else {
     // Nothing collected — show an error instead of a stuck spinner (F5).
@@ -686,7 +700,10 @@ async function _avtrdbBackgroundDriver(signal) {
       _updateAvtrdbStats();
     }
   } finally {
-    _avtrdbBgDriverRunning = false;
+    // Only release the running flag if this driver is still the current one —
+    // a stale driver unwinding late must not unlock the guard while a newer
+    // driver is mid-flight.
+    if (myEpoch === _avtrdbBgDriverAbortEpoch) _avtrdbBgDriverRunning = false;
     _updateAvtrdbStats();
   }
 }
@@ -851,8 +868,10 @@ function _restoreCard(card) {
     const wrapper = img.closest('.avatar-thumb-wrapper');
     if (thumb) {
       if (isCached) {
+        clearImageFailureUi(img);
         img.src = thumb;
       } else {
+        clearImageFailureUi(img);
         img.dataset.src = thumb;
         img.classList.add('loading');
         if (wrapper) wrapper.classList.add('img-loading');
@@ -1003,6 +1022,9 @@ function _appendAvtrdbRenderBatch(count = AVTRDB_RENDER_BATCH) {
     stats.dataset.rendered = String(_avtrdbRenderedCount);
     stats.dataset.total = String(_avtrdbRenderItems.length);
   }
+  // v189: refresh the visible counter after every batch. Observer-driven
+  // batches previously left the stats line frozen at the first batch size.
+  _updateAvtrdbStats();
 
   const sentinel = document.getElementById('avtrdb-render-sentinel');
   if (_avtrdbRenderObserver) _avtrdbRenderObserver.disconnect();
@@ -1022,6 +1044,7 @@ function _rerenderAvtrdbGrid(opts = {}) {
   const stats = document.getElementById("avtrdbStats");
   if (!grid) return;
   const preserveOrder = !!opts.preserveOrder;
+  const scrollToTop = opts.scrollToTop !== false;
 
   const requiredPlats = avtrdbCurrentPlatform ? avtrdbCurrentPlatform.split("+") : [];
   const q = avtrdbCurrentQuery;
@@ -1048,6 +1071,9 @@ function _rerenderAvtrdbGrid(opts = {}) {
   }
 
   const previousRendered = opts.preserveRendered ? _avtrdbRenderedCount : 0;
+  const panel = grid.closest('.upload-panel');
+  const prevPanelTop = panel ? panel.scrollTop : 0;
+  const prevGridTop = grid.scrollTop;
   _avtrdbRenderItems = items;
   _avtrdbRenderedCount = 0;
   if (_avtrdbRenderObserver) { _avtrdbRenderObserver.disconnect(); _avtrdbRenderObserver = null; }
@@ -1061,7 +1087,16 @@ function _rerenderAvtrdbGrid(opts = {}) {
   // After a manual re-sort, scroll the user back to the top of the new order
   // (otherwise the same scroll position points at a totally different item).
   if (!preserveOrder) {
-    try { (grid.closest('.upload-panel') || document.scrollingElement || document.documentElement).scrollTo({ top: 0 }); } catch (_) {}
+    if (scrollToTop) {
+      try { (panel || document.scrollingElement || document.documentElement).scrollTo({ top: 0 }); } catch (_) {}
+    } else {
+      // Automatic final re-sort: restore where the user was instead of
+      // yanking the panel back to the top with only the first batch visible.
+      try {
+        if (panel) panel.scrollTop = prevPanelTop;
+        grid.scrollTop = prevGridTop;
+      } catch (_) {}
+    }
   }
   avtrdbTotalLoaded = items.length;
   _updateAvtrdbStats();

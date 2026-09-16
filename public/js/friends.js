@@ -354,6 +354,10 @@ const FRIENDS_CACHE_TTL = 60 * 1000; // 60s
 async function fetchCurrentFriendCategory(forceRefresh = false) {
   const seq = ++currentGlobalFetchSeq;
   const cat = currentFriendCategory;
+  const refreshAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  const isRefreshCurrent = () => seq === currentGlobalFetchSeq
+    && cat === currentFriendCategory
+    && (refreshAuthEpoch == null || authSessionEpoch === refreshAuthEpoch);
   const listEl = document.getElementById('friendList');
   const statsEl = document.getElementById('friendStats');
   if (!listEl) return;
@@ -365,9 +369,12 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
   let cacheIsFresh = false;
   try {
     const cachedBasics = await idb.get('friend_basics') || [];
+    if (!isRefreshCurrent()) return;
     const cacheAge = await idb.get('friend_basics_age') || 0;
+    if (!isRefreshCurrent()) return;
     
     const cachedFavMap = await idb.get('friend_favorite_map');
+    if (!isRefreshCurrent()) return;
     if (cachedFavMap) {
       friendFavoriteIdMap = new Map(cachedFavMap);
     }
@@ -375,6 +382,7 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
     cacheIsFresh = cachedBasics.length > 0 && !forceRefresh && (Date.now() - cacheAge) < FRIENDS_CACHE_TTL;
 
     if (cachedBasics.length > 0) {
+      if (!isRefreshCurrent()) return;
       // Keep last known status from cache — don't force offline, that causes filter flash
       allFriends = cachedBasics.map(b => ({
         ...b,
@@ -382,13 +390,15 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
         location: b.location || '',
         state: b.state || 'unknown'
       }));
+      if (!isRefreshCurrent()) return;
       filterFriends();
       const freshLabel = cacheIsFresh ? t('friend.cache') : t('friend.refreshingCount', {count: allFriends.length});
-      if (statsEl) statsEl.textContent = freshLabel;
+      if (statsEl && isRefreshCurrent()) statsEl.textContent = freshLabel;
       // Cache fresh enough — skip the big API loop entirely. Saves ~10-100
       // requests per tab switch when ping-ponging between tabs.
       if (cacheIsFresh) return;
     } else {
+      if (!isRefreshCurrent()) return;
       listEl.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);">' + escHtml(t('friend.connectingVRC')) + '</div>';
     }
   } catch (e) { console.error('IDB error:', e); }
@@ -404,11 +414,13 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
   // 5+ times during it.
   const debouncedFilter = () => {
     if (_filterDebounceTimer) clearTimeout(_filterDebounceTimer);
-    _filterDebounceTimer = setTimeout(() => filterFriends(), 600);
+    _filterDebounceTimer = setTimeout(() => {
+      if (isRefreshCurrent()) filterFriends();
+    }, 600);
   };
 
   const updateFriendBatch = (batch) => {
-    if (seq !== currentGlobalFetchSeq || cat !== currentFriendCategory) return;
+    if (!isRefreshCurrent()) return;
     batch.forEach(f => {
       friendMap.set(f.id, f);
       // Also update the global allFriends array
@@ -435,9 +447,9 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
       location: f.location,
       state: f.state
     }));
+    if (!isRefreshCurrent()) return;
     idb.set('friend_basics', basics).catch(()=>{});
     idb.set('friend_basics_age', Date.now()).catch(()=>{});
-    idb.set('friend_favorite_map', Array.from(friendFavoriteIdMap.entries())).catch(()=>{});
   };
 
   try {
@@ -458,46 +470,67 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
     const favoriteGroups = ['group_0', 'group_1', 'group_2', 'group_3'];
     const favoriteIds = new Set();
     
-    // Clear and rebuild friendFavoriteIdMap for fresh categories
-    friendFavoriteIdMap.clear();
-
-    // Get all favorite IDs across groups
+    // Build favorites in a temporary map. Do not clear the last known map until
+    // every group page succeeds; a partial response must never look like an
+    // authoritative "not favorited" result.
+    const nextFriendFavoriteIdMap = new Map();
+    let favoriteRefreshFailed = false;
     await Promise.all(favoriteGroups.map(async group => {
       let offset = 0;
       while (true) {
-        if (seq !== currentGlobalFetchSeq) return;
-        const r = await apiCall(`/api/vrc/favorites?type=friend&tag=${group}&n=100&offset=${offset}`);
-        if (!r.ok) break;
-        const batch = await r.json();
-        if (!batch || !batch.length || seq !== currentGlobalFetchSeq) break;
+        if (!isRefreshCurrent()) return;
+        let r;
+        try {
+          r = await apiCall(`/api/vrc/favorites?type=friend&tag=${group}&n=100&offset=${offset}`, { noCache: true, noDedupe: true });
+        } catch (_) {
+          favoriteRefreshFailed = true;
+          return;
+        }
+        if (!r.ok) { favoriteRefreshFailed = true; return; }
+        let batch;
+        try { batch = await r.json(); } catch (_) { favoriteRefreshFailed = true; return; }
+        if (!Array.isArray(batch)) { favoriteRefreshFailed = true; return; }
+        if (!batch.length) break;
+        if (!isRefreshCurrent()) return;
         batch.forEach(fav => {
+          if (!fav || !fav.favoriteId || !fav.id) return;
           favoriteIds.add(fav.favoriteId);
-          // Track which groups this user belongs to
-          if (!friendFavoriteIdMap.has(fav.favoriteId)) {
-            friendFavoriteIdMap.set(fav.favoriteId, { favoriteId: fav.id, tags: [group] });
-          } else {
-            const entry = friendFavoriteIdMap.get(fav.favoriteId);
+          // VRChat shape: favoriteId is the target user ID; id is the
+          // favorite-record ID used by DELETE /favorites/{id}.
+          const entry = nextFriendFavoriteIdMap.get(fav.favoriteId);
+          if (entry) {
             if (!entry.tags.includes(group)) entry.tags.push(group);
+          } else {
+            nextFriendFavoriteIdMap.set(fav.favoriteId, { favoriteId: fav.id, tags: [group] });
           }
         });
         if (batch.length < 100) break;
         offset += 100;
       }
     }));
+    if (!isRefreshCurrent()) return;
+    if (favoriteRefreshFailed) {
+      console.warn('Friend favorite refresh incomplete; retaining previous map');
+    }
 
     // High-concurrency refresh for all Favorites (parallel fetch /users/{id})
     const fIds = [...favoriteIds];
-    const CONCURRENCY = 50; 
+    const CONCURRENCY = 50;
     for (let i = 0; i < fIds.length; i += CONCURRENCY) {
-      if (seq !== currentGlobalFetchSeq || cat !== currentFriendCategory) return;
+      if (!isRefreshCurrent()) return;
       const chunk = fIds.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(chunk.map(uid => 
+      const results = await Promise.allSettled(chunk.map(uid =>
         apiCall(`/api/vrc/users/${uid}`).then(r => r.ok ? r.json() : null)
       ));
-      if (seq !== currentGlobalFetchSeq) return;
+      if (!isRefreshCurrent()) return;
       const freshBatch = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
       updateFriendBatch(freshBatch);
       if (statsEl) statsEl.textContent = t('friend.refreshingReady', {count: friendMap.size});
+    }
+    if (isRefreshCurrent() && !favoriteRefreshFailed) {
+      friendFavoriteIdMap = nextFriendFavoriteIdMap;
+      idb.set('friend_favorite_map', Array.from(friendFavoriteIdMap.entries())).catch(() => {});
+      debouncedFilter();
     }
 
 

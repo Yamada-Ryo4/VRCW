@@ -95,6 +95,10 @@ function showFriendContextMenu(e) {
   if (!f) return;
   const id = f.id || '';
   const name = f.displayName || '';
+  // Every menu belongs to the profile that was open when it was created. The
+  // refresh action below must not revive that profile after another one opens.
+  const menuProfileSeq = window._fpCurrentSeq;
+  const menuProfileCtrl = scopedAbortControllers.get('friendProfile');
   const fpState = getFriendProfileActionState(f);
   const {
     isSelf,
@@ -113,19 +117,41 @@ function showFriendContextMenu(e) {
   const sections = [
     { items: [
       { icon:'<i class="fa-solid fa-rotate-right"></i> ', label:t('ctx.refreshProfile'), action: async () => {
-        // Re-fetch from API for up-to-date data
+        // Re-fetch from API for up-to-date data. Keep this request scoped to
+        // the profile/menu that created it: opening B while A is refreshing
+        // must not let A's success or fallback repaint B.
+        const refreshSeq = menuProfileSeq;
+        const refreshId = id;
+        const refreshCtrl = menuProfileCtrl;
+        const isRefreshCurrent = () => {
+          const modal = document.getElementById('friendProfileModal');
+          return window._fpCurrentSeq === refreshSeq
+            && currentFriendProfile && currentFriendProfile.id === refreshId
+            && modal && !modal.classList.contains('hidden')
+            && (!refreshCtrl || isScopedAbortCurrent('friendProfile', refreshCtrl));
+        };
         try {
-          const r = await apiCall(`/api/vrc/users/${id}`);
+          const r = await apiCall(`/api/vrc/users/${refreshId}`, {
+            signal: refreshCtrl && refreshCtrl.signal,
+            noDedupe: true,
+            noCache: true,
+            cache: 'no-store'
+          });
+          if (!isRefreshCurrent()) return;
           if (r.ok) {
             const fresh = await r.json();
+            if (!isRefreshCurrent()) return;
             currentFriendProfile = fresh;
             _renderFriendProfileUI(fresh, document.getElementById('friendProfileModal'));
             logMsg(t('log.profileRefreshed'), 'success');
-          } else {
-            // Fall back to re-open using the proper profile-by-id route
-            openFriendProfileById(id);
+          } else if (isRefreshCurrent()) {
+            // Fall back only while this menu still owns the open profile.
+            openFriendProfileById(refreshId);
           }
-        } catch { openFriendProfileById(id); }
+        } catch {
+          // Failure fallback has the same stale-profile guard as success.
+          if (isRefreshCurrent()) openFriendProfileById(refreshId);
+        }
       }},
       { icon:'<i class="fa-solid fa-clipboard"></i> ', label:t('ctx.copyId'), action: () => navigator.clipboard.writeText(id).then(() => logMsg(t('log.idCopied'), 'info')) },
       { icon:'<i class="fa-solid fa-link"></i> ', label:t('ctx.shareVrcHome'), action: () => window.open(`https://vrchat.com/home/user/${id}`, '_blank') },

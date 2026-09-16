@@ -11,27 +11,34 @@
 // is why it felt noticeably slower to open. Below mirrors that pattern: IDB-first
 // render, background refresh, 5-min TTL, one-shot groupsLoaded guard.
 let groupsLoaded = false;
+let _groupsGeneration = 0;
 let _groupsListCache = [];          // raw /users/{id}/groups response
 const GROUPS_CACHE_TTL = 5 * 60 * 1000; // 5 min — matches avatars/worlds
 
-function toggleGlobalNav() {
-  const nav = document.getElementById("globalNav");
-  const navCol = document.getElementById("globalNavCollapsed");
-  if (!nav || !navCol) return;
-  const isOpen = !nav.classList.contains("hidden");
-  nav.classList.toggle("hidden", isOpen);
-  navCol.classList.toggle("hidden", !isOpen);
-  try { localStorage.setItem("navCollapsed", isOpen ? "1" : "0"); } catch (_) {}
+function syncGlobalNavLayout() {
+  const nav = document.getElementById('globalNav');
+  const collapsedNav = document.getElementById('globalNavCollapsed');
+  if (!nav || !collapsedNav) return;
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('navCollapsed') === '1'; } catch (_) {}
+  if (window.innerWidth <= 768) collapsed = false;
+  nav.classList.toggle('hidden', collapsed);
+  collapsedNav.classList.toggle('hidden', !collapsed);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  try {
-    if (localStorage.getItem("navCollapsed") === "1") {
-      document.getElementById("globalNav")?.classList.add("hidden");
-      document.getElementById("globalNavCollapsed")?.classList.remove("hidden");
-    }
-  } catch (_) {}
-});
+function toggleGlobalNav() {
+  if (window.innerWidth <= 768) {
+    syncGlobalNavLayout();
+    return;
+  }
+  const nav = document.getElementById('globalNav');
+  if (!nav) return;
+  try { localStorage.setItem('navCollapsed', nav.classList.contains('hidden') ? '0' : '1'); } catch (_) {}
+  syncGlobalNavLayout();
+}
+
+document.addEventListener('DOMContentLoaded', syncGlobalNavLayout);
+window.addEventListener('resize', syncGlobalNavLayout);
 
 function _loadAssetsModule() {
   if (VRCW.modules.assets) return Promise.resolve(VRCW.modules.assets);
@@ -76,6 +83,10 @@ function switchGroupsCategory(cat) {
 async function loadGroupsPage(cat) {
   const area = document.getElementById('groupsContentArea');
   if (!area) return;
+  const gen = ++_groupsGeneration;
+  const sessionToken = makeAuthSessionToken();
+  const current = () => gen === _groupsGeneration && isAuthSessionCurrent(sessionToken);
+  if (!current()) return;
 
   // Search sub-view has no cache — it's driven by user input.
   if (cat === 'search') {
@@ -97,10 +108,12 @@ async function loadGroupsPage(cat) {
   try {
     const cached = await idb.get('groups_basics');
     if (Array.isArray(cached) && cached.length >= 0) {
+      if (!current()) return;
       _groupsListCache = cached;
       cacheAge = (await idb.get('groups_basics_age')) || 0;
+      if (!current()) return;
       cacheIsFresh = cacheAge > 0 && (Date.now() - cacheAge) < GROUPS_CACHE_TTL;
-      if (cached.length > 0) {
+      if (cached.length > 0 && current()) {
         renderGroupsList(area, cat, cached);
       }
     }
@@ -131,14 +144,17 @@ async function loadGroupsPage(cat) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const groups = await r.json();
 
+    if (!current()) return;
     _groupsListCache = Array.isArray(groups) ? groups : [];
     // Persist to IDB for next session's instant render.
     try {
+      if (!current()) return;
       await idb.set('groups_basics', _groupsListCache);
+      if (!current()) return;
       await idb.set('groups_basics_age', Date.now());
     } catch (_) {}
 
-    renderGroupsList(area, cat, _groupsListCache);
+    if (current()) renderGroupsList(area, cat, _groupsListCache);
   } catch (e) {
     if (isAbortError(e)) return;
     // Keep cached content visible on transient failure (mirrors friends.js).

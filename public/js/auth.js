@@ -7,24 +7,6 @@
  */
 // ── Mobile Sidebar Toggle ──
 window.toggleSidebar = function (forceState) {
-  // If dating panel is active, delegate to the dating iframe
-  const datingPanel = document.getElementById('datingPanel');
-  if (datingPanel && datingPanel.classList.contains('active')) {
-    const iframe = document.getElementById('datingIframe');
-    if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'toggleSidebar', forceState }, '*');
-      // Also toggle btn icon
-      const btn = document.getElementById('mobileSidebarBtn');
-      if (btn) {
-        const isOpening = forceState !== undefined ? forceState : btn.dataset.datingOpen !== 'true';
-        btn.dataset.datingOpen = isOpening ? 'true' : 'false';
-        btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
-        btn.classList.toggle('active', isOpening);
-      }
-    }
-    return;
-  }
-
   const activePanel = document.querySelector(".download-panel.active") || document.querySelector(".upload-panel.active");
   if (!activePanel) return;
   const sidebar = activePanel.querySelector(".sidebar");
@@ -47,23 +29,9 @@ window.toggleSidebar = function (forceState) {
   if (btn) btn.innerHTML = isOpening ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
 };
 
-// Listen for sidebar state changes posted back from the dating iframe.
-// When the user closes the sidebar by tapping the overlay (inside the iframe),
-// the iframe calls toggleSidebar(false) directly, bypassing the parent wrapper,
-// so the parent's mobileSidebarBtn icon would get out of sync. This listener
-// keeps the icon correct in that scenario.
-window.addEventListener('message', (e) => {
-  if (!e.data || e.data.type !== 'sidebarStateChanged') return;
-  const btn = document.getElementById('mobileSidebarBtn');
-  if (!btn) return;
-  const isOpen = !!e.data.isOpen;
-  btn.dataset.datingOpen = isOpen ? 'true' : 'false';
-  btn.innerHTML = isOpen ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
-  btn.classList.toggle('active', isOpen);
-});
-
 // ── Login & Account Management ──
 let lastAttemptUser = "";
+let pendingLoginSessionToken = null;
 
 function renderSavedAccounts() {
   const container = document.getElementById("savedAccountsContainer");
@@ -106,32 +74,40 @@ function removeSavedAccount(idx, username) {
 
 window.loginSaved = async function (idx) {
   const accs = JSON.parse(localStorage.getItem("vrc_accounts") || "[]");
-  if (accs[idx]) {
-    advanceAuthSession();
-    abortAllApiRequests();
-    vrcAuth = accs[idx].auth;
-    localStorage.setItem("vrc_auth", vrcAuth);
-    // Verify the saved token is still valid
-    try {
-      const r = await apiCall("/api/vrc/auth/user");
-      if (r.ok) {
-        showMainApp();
-      } else {
-        // Token expired — remove from saved and show error
-        accs.splice(idx, 1);
-        localStorage.setItem("vrc_accounts", JSON.stringify(accs));
-        renderSavedAccounts();
-        vrcAuth = "";
-        localStorage.removeItem("vrc_auth");
-        const errEl = document.getElementById("login-error");
-        errEl.textContent = "Session expired, please login again";
-        errEl.style.display = "block";
-      }
-    } catch (e) {
+  if (!accs[idx]) return;
+
+  // A second saved-account click advances the epoch. Every continuation below
+  // must prove it still belongs to this attempt before touching global auth or
+  // the saved-account list.
+  advanceAuthSession();
+  abortAllApiRequests();
+  vrcAuth = accs[idx].auth;
+  localStorage.setItem("vrc_auth", vrcAuth);
+  const attemptToken = makeAuthSessionToken();
+
+  try {
+    const r = await apiCall("/api/vrc/auth/user");
+    if (!isAuthSessionCurrent(attemptToken)) return;
+    if (r.ok) {
+      showMainApp();
+    } else if (r.status === 401 || r.status === 403) {
+      // Only an authentication rejection removes the saved account. 499 is an
+      // intentional abort/stale response, not evidence that the token expired.
+      accs.splice(idx, 1);
+      localStorage.setItem("vrc_accounts", JSON.stringify(accs));
+      renderSavedAccounts();
+      vrcAuth = "";
+      localStorage.removeItem("vrc_auth");
       const errEl = document.getElementById("login-error");
-      errEl.textContent = "Network error: " + e.message;
-      errEl.style.display = "block";
+      if (errEl) { errEl.textContent = "Session expired, please login again"; errEl.style.display = "block"; }
+    } else {
+      const errEl = document.getElementById("login-error");
+      if (errEl) { errEl.textContent = "Login verification failed (HTTP " + r.status + ")"; errEl.style.display = "block"; }
     }
+  } catch (e) {
+    if (!isAuthSessionCurrent(attemptToken) || e?.status === 499 || e?.name === 'AbortError') return;
+    const errEl = document.getElementById("login-error");
+    if (errEl) { errEl.textContent = "Network error: " + e.message; errEl.style.display = "block"; }
   }
 };
 
@@ -164,9 +140,28 @@ async function getDeviceFingerprint() {
 async function doLogin() {
   const user = document.getElementById("username").value.trim();
   const pass = document.getElementById("password").value;
-  if (!user || !pass) return;
+  if (!user || !pass) {
+    const errEl = document.getElementById("login-error");
+    if (errEl) {
+      errEl.textContent = !user && !pass
+        ? t('auth.missingCredentials')
+        : (!user ? t('auth.missingUsername') : t('auth.missingPassword'));
+      errEl.style.display = "block";
+    }
+    const missingField = !user ? document.getElementById("username") : document.getElementById("password");
+    missingField?.focus();
+    return;
+  }
 
   lastAttemptUser = user;
+  // A manual login starts a new session attempt. This prevents an earlier
+  // account's delayed response from updating the current login UI or auth.
+  advanceAuthSession();
+  abortAllApiRequests();
+  vrcAuth = "";
+  localStorage.removeItem("vrc_auth");
+  const loginAttemptToken = makeAuthSessionToken();
+  pendingLoginSessionToken = loginAttemptToken;
   const btn = document.getElementById("btnLogin");
   const _origLabel = btn.textContent;
   const oldWidth = btn.offsetWidth;
@@ -190,7 +185,9 @@ async function doLogin() {
         fingerprint: fp
       },
     });
+    if (!isAuthSessionCurrent(loginAttemptToken)) return;
     const data = await resp.json();
+    if (!isAuthSessionCurrent(loginAttemptToken)) return;
 
     // Rate-limit detection
     if (data.rateLimited) {
@@ -227,6 +224,11 @@ async function doLogin() {
         // / password manager / authenticator without an extra click.
         requestAnimationFrame(() => document.getElementById("tfaCode")?.focus());
       } else {
+        // The login response may establish the first authenticated credential
+        // after this request started anonymously. Rotate the session once now
+        // so subsequent IDB reads use the account namespace, not anon.
+        beginAuthenticatedSession();
+        pendingLoginSessionToken = null;
         saveAccountInfo(user);
         showMainApp();
       }
@@ -277,16 +279,22 @@ async function doVerify2FA() {
   const type = methods.includes("emailotp") && !methods.includes("totp")
     ? "emailotp"
     : "totp";
+  const verifyToken = pendingLoginSessionToken || makeAuthSessionToken();
   try {
     const resp = await apiCall("/api/2fa", { method: "POST", json: { code, type } });
+    if (!isAuthSessionCurrent(verifyToken)) return;
     const data = await resp.json();
+    if (!isAuthSessionCurrent(verifyToken)) return;
     if (data.ok) {
+      beginAuthenticatedSession();
+      pendingLoginSessionToken = null;
       if (lastAttemptUser) saveAccountInfo(lastAttemptUser);
       showMainApp();
     } else {
       alert(data.message || "Invalid code");
     }
   } catch (e) {
+    if (!isAuthSessionCurrent(verifyToken) || e?.status === 499 || e?.name === 'AbortError') return;
     alert("Network error: " + e.message);
   } finally {
     if (btn) {
@@ -300,6 +308,12 @@ async function doVerify2FA() {
 function doLogout() {
   advanceAuthSession();
   abortAllApiRequests();
+  if (typeof clearBackgroundQueue === 'function') clearBackgroundQueue();
+  if (typeof setSearchActive === 'function') setSearchActive(false);
+  pendingLoginSessionToken = null;
+  currentGlobalFetchSeq++;
+  currentWorldFetchSeq++;
+  bumpUiEpoch();
   vrcAuth = "";
   localStorage.removeItem("vrc_auth");
   // Wipe in-memory session state so a subsequent login on the same tab doesn't
@@ -310,6 +324,16 @@ function doLogout() {
     if (typeof avatars !== 'undefined') avatars = [];
     if (typeof visibleAvatars !== 'undefined') visibleAvatars = [];
     if (typeof allFriends !== 'undefined') allFriends = [];
+    if (typeof allWorlds !== 'undefined') allWorlds = [];
+    favoriteGroups = [];
+    worldFavGroups = [];
+    friendFavGroups = [];
+    avatarFavTagMap.clear();
+    if (typeof avatarFavoriteIndexByGroup !== 'undefined') avatarFavoriteIndexByGroup.clear();
+    if (typeof worldFavoriteIndexByGroup !== 'undefined') worldFavoriteIndexByGroup.clear();
+    if (typeof _assetsGen === 'number') _assetsGen++;
+    if (typeof _groupsGeneration === 'number') _groupsGeneration++;
+    if (window._localNameMap) window._localNameMap.clear();
     if (typeof selectedIds !== 'undefined' && selectedIds.clear) selectedIds.clear();
     if (typeof selectedWorldIds !== 'undefined' && selectedWorldIds.clear) selectedWorldIds.clear();
     if (typeof favoriteIdMap !== 'undefined' && favoriteIdMap.clear) favoriteIdMap.clear();
@@ -346,16 +370,6 @@ function doLogout() {
   document.getElementById("loginPage").classList.remove("hidden");
   document.getElementById("mainApp").classList.add("hidden");
 
-  // Reset the dating iframe to purge any cached session state from the previous
-  // user — without this, switching accounts would show the old user's dating
-  // profile/matches until the page was manually refreshed (user isolation bug).
-  try {
-    const datingIframe = document.getElementById('datingIframe');
-    if (datingIframe) {
-      datingIframe.src = datingIframe.src; // force reload → clears iframe JS state
-    }
-  } catch (e) { /* best-effort */ }
-
   // Focus username so re-login is one keystroke away
   requestAnimationFrame(() => document.getElementById('username')?.focus());
 }
@@ -380,7 +394,6 @@ function showMainApp() {
       if (initEpoch !== authSessionEpoch || initAuthBucket !== _apiAuthBucket()) return;
       currentUserId = user.id || "";
       window.myProfileData = user;
-      if (typeof initDatingSettings === 'function') initDatingSettings();
     } else if (r.status === 401) {
       if (initEpoch !== authSessionEpoch) return;
       // Token is invalid - clear it and show login page
@@ -396,16 +409,20 @@ function showMainApp() {
   // 2. Background index syncs (don't block UI; tab views render from IDB first).
   // These compare lightweight remote indexes with IDB caches and only refresh
   // changed buckets, instead of forcing full detail reloads on every site open.
+  const startupToken = makeAuthSessionToken();
   queueBackgroundTask(async () => {
+    if (!isAuthSessionCurrent(startupToken)) return;
     await fetchFavoriteGroups(); // IDB-first, remote refresh is backgrounded
+    if (!isAuthSessionCurrent(startupToken)) return;
     const indexOk = await syncAllFavoriteIds();
-    if (!indexOk) return;
+    if (!isAuthSessionCurrent(startupToken) || !indexOk) return;
     if (typeof syncAvatarFavoriteCachesByIndex === 'function') await syncAvatarFavoriteCachesByIndex();
+    if (!isAuthSessionCurrent(startupToken)) return;
     if (typeof syncWorldFavoriteCachesByIndex === 'function') await syncWorldFavoriteCachesByIndex();
   }, 'startup-favorite-index-sync');
   queueBackgroundTask(async () => {
-    // Keep the friends mini-profile fresh in the sidebar even if user starts on
-    // the avatars tab. Use forceRefresh=false so existing cache renders first.
+    // Keep the friends mini-profile fresh in the sidebar even if user starts on the avatars tab.
+    if (!isAuthSessionCurrent(startupToken)) return;
     await fetchMyProfile(false);
   }, 'startup-my-profile');
 

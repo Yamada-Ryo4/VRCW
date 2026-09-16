@@ -153,9 +153,28 @@ function worldLogMsg(msg, type = 'info') {
 
 function proxyImg(url) {
   if (!url) return '';
-  // All VRChat images go through Worker proxy (SW caches them after first view)
-  if (url.includes('vrchat.cloud') || url.includes('vrchat.com'))
-    return `${API_BASE}/api/image?url=${encodeURIComponent(url)}&auth=${encodeURIComponent(vrcAuth || '')}&bucket=${encodeURIComponent(_apiAuthBucket())}`;
+  // Parse the hostname instead of searching the whole URL. A community URL
+  // containing "vrchat.com" in its path/query must not become a credentialed
+  // VRChat image request. Keep auth= for native <img> compatibility; the
+  // opaque bucket is only a cache partition and never contains the credential.
+  try {
+    const parsed = new URL(url, location.href);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return url;
+    if (parsed.origin === location.origin) return url; // already same-origin
+    const host = parsed.hostname.toLowerCase();
+    const isVrchatHost = host === 'vrchat.com' || host.endsWith('.vrchat.com')
+      || host === 'vrchat.cloud' || host.endsWith('.vrchat.cloud');
+    // All remote images must load through the same-origin /api/image proxy:
+    // images.js fetches thumbnails, and the page CSP forbids cross-origin
+    // fetch (connect-src 'self' blob:), so a raw community URL always dies.
+    // VRChat files additionally carry the credential query so the Worker can
+    // authenticate the upstream fetch; community hosts are proxied cookie-free
+    // (the Worker never attaches credentials to non-VRChat targets).
+    if (isVrchatHost) {
+      return `${API_BASE}/api/image?url=${encodeURIComponent(parsed.href)}&auth=${encodeURIComponent(vrcAuth || '')}&bucket=${encodeURIComponent(_apiAuthBucket())}`;
+    }
+    return `${API_BASE}/api/image?url=${encodeURIComponent(parsed.href)}`;
+  } catch (_) {}
   return url;
 }
 

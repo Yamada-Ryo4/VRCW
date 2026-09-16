@@ -17,7 +17,10 @@ function _rememberFavoriteIndex(map, groupName, itemId) {
 }
 
 async function syncAllFavoriteIds() {
+  const sessionToken = makeAuthSessionToken();
+  const current = () => isAuthSessionCurrent(sessionToken);
   try {
+    if (!current()) return false;
     const nextFavoriteIdMap = new Map();
     const nextAvatarFavTagMap = new Map();
     const nextWorldFavoriteIdMap = new Map();
@@ -32,7 +35,9 @@ async function syncAllFavoriteIds() {
     // 1. Avatars
     let offset = 0;
     while (true) {
+      if (!current()) return false;
       const resp = await apiCall(`/api/vrc/favorites?type=avatar&n=100&offset=${offset}`, { noAbort: true });
+      if (!current()) return false;
       if (!resp.ok) throw new Error(`Avatar favorites HTTP ${resp.status}`);
       const favs = await resp.json();
       if (!favs || favs.length === 0) break;
@@ -57,7 +62,9 @@ async function syncAllFavoriteIds() {
     for (const worldFavType of ['world', 'vrcPlusWorld']) {
       offset = 0;
       while (true) {
+        if (!current()) return false;
         const resp = await apiCall(`/api/vrc/favorites?type=${worldFavType}&n=100&offset=${offset}`, { noAbort: true });
+        if (!current()) return false;
         if (!resp.ok) {
           if (worldFavType === 'vrcPlusWorld' && (resp.status === 403 || resp.status === 404)) break;
           throw new Error(`${worldFavType} favorites HTTP ${resp.status}`);
@@ -86,7 +93,9 @@ async function syncAllFavoriteIds() {
     try {
       offset = 0;
       while (true) {
+        if (!current()) return false;
         const resp = await apiCall(`/api/vrc/favorites?type=friend&n=100&offset=${offset}`, { noAbort: true });
+        if (!current()) return false;
         if (!resp.ok) throw new Error(`Friend favorites HTTP ${resp.status}`);
         const favs = await resp.json();
         if (!favs || favs.length === 0) break;
@@ -108,6 +117,7 @@ async function syncAllFavoriteIds() {
       console.warn("Friend favorite sync failed", e);
     }
 
+    if (!current()) return false;
     favoriteIdMap = nextFavoriteIdMap;
     avatarFavTagMap = nextAvatarFavTagMap;
     worldFavoriteIdMap = nextWorldFavoriteIdMap;
@@ -120,6 +130,7 @@ async function syncAllFavoriteIds() {
     logMsg(t('log.favoritesSynced', {avatar: favoriteIdMap.size, world: worldFavoriteIdMap.size, friend: friendFavoriteIdMap.size}), "info");
     return true;
   } catch (e) {
+    if (!current()) return false;
     console.warn("Failed to sync favorite IDs", e);
     return false;
   }
@@ -147,6 +158,7 @@ function _renderFavoriteGroupsForType(type, groups) {
 }
 
 async function _loadCachedFavoriteGroups() {
+  const sessionToken = makeAuthSessionToken();
   const entries = [
     ['avatar', 'favorite_groups_avatar'],
     ['world', 'favorite_groups_world'],
@@ -154,11 +166,12 @@ async function _loadCachedFavoriteGroups() {
   ];
   await Promise.all(entries.map(async ([type, key]) => {
     const cached = await idb.get(key).catch(() => null);
-    if (Array.isArray(cached)) _renderFavoriteGroupsForType(type, cached);
+    if (isAuthSessionCurrent(sessionToken) && Array.isArray(cached)) _renderFavoriteGroupsForType(type, cached);
   }));
 }
 
 async function _refreshFavoriteGroupsFromRemote() {
+  const sessionToken = makeAuthSessionToken();
   const specs = [
     ['avatar', 'favorite_groups_avatar', '/api/vrc/favorite/groups?type=avatar&n=50'],
     ['world', 'favorite_groups_world', '/api/vrc/favorite/groups?type=world&n=50'],
@@ -168,16 +181,18 @@ async function _refreshFavoriteGroupsFromRemote() {
     const r = await apiCall(url, { noAbort: true });
     if (!r.ok) return;
     const groups = await r.json();
-    if (!Array.isArray(groups)) return;
+    if (!isAuthSessionCurrent(sessionToken) || !Array.isArray(groups)) return;
     await idb.set(key, groups).catch(() => {});
-    _renderFavoriteGroupsForType(type, groups);
+    if (isAuthSessionCurrent(sessionToken)) _renderFavoriteGroupsForType(type, groups);
   }));
 }
 
 async function fetchFavoriteGroups() {
+  const sessionToken = makeAuthSessionToken();
   // IDB-first: draw sidebar group buttons immediately, then refresh remote in
   // the background. Do not block startup on VRChat favorite-group endpoints.
   await _loadCachedFavoriteGroups();
+  if (!isAuthSessionCurrent(sessionToken)) return;
   _refreshFavoriteGroupsFromRemote().catch(e => console.warn("Could not fetch favorite groups", e));
 }
 function renderFriendFavGroupButtons() {
@@ -225,14 +240,21 @@ function _worldBasicFromItem(w) {
     authorId: w.authorId,
     occupants: w.occupants,
     releaseStatus: w.releaseStatus,
-    isInvalid: w.isInvalid
+    isInvalid: !!w.isInvalid,
+    favoriteId: w.favoriteId || worldFavoriteIdMap.get(w.id) || null,
+    platforms: w.platforms || null,
+    unityPackages: w.unityPackages || null,
+    description: w.description || '',
+    updatedAt: w.updated_at || w.updatedAt || null
   };
 }
 
 async function _removeFromListCache(fullKey, basicsKey, ageKey, itemId) {
+  const sessionToken = makeAuthSessionToken();
   let changed = false;
   try {
     const basics = await idb.get(basicsKey);
+    if (!isAuthSessionCurrent(sessionToken)) return false;
     if (Array.isArray(basics)) {
       const nextBasics = basics.filter(item => item && (item.id || item.vrc_id) !== itemId);
       if (nextBasics.length !== basics.length) {
@@ -242,9 +264,11 @@ async function _removeFromListCache(fullKey, basicsKey, ageKey, itemId) {
     }
   } catch (_) {}
 
+  if (!isAuthSessionCurrent(sessionToken)) return false;
   if (fullKey) {
     try {
       const full = await idb.get(fullKey);
+      if (!isAuthSessionCurrent(sessionToken)) return false;
       if (Array.isArray(full)) {
         const nextFull = full.filter(item => item && (item.id || item.vrc_id) !== itemId);
         if (nextFull.length !== full.length) await idb.set(fullKey, nextFull);
@@ -252,13 +276,14 @@ async function _removeFromListCache(fullKey, basicsKey, ageKey, itemId) {
     } catch (_) {}
   }
 
-  if (changed && ageKey) {
+  if (isAuthSessionCurrent(sessionToken) && changed && ageKey) {
     try { await idb.set(ageKey, Date.now()); } catch (_) {}
   }
   return changed;
 }
 
 async function _upsertIntoListCache(fullKey, basicsKey, ageKey, item, toBasic) {
+  const sessionToken = makeAuthSessionToken();
   const basic = toBasic(item);
   if (!basic || !basic.id) {
     if (ageKey) {
@@ -269,19 +294,23 @@ async function _upsertIntoListCache(fullKey, basicsKey, ageKey, item, toBasic) {
 
   try {
     const basics = await idb.get(basicsKey);
+    if (!isAuthSessionCurrent(sessionToken)) return false;
     if (Array.isArray(basics)) {
       const nextBasics = basics.filter(existing => existing && existing.id !== basic.id);
       nextBasics.unshift(basic);
       await idb.set(basicsKey, nextBasics);
+      if (!isAuthSessionCurrent(sessionToken)) return false;
       if (ageKey) await idb.set(ageKey, Date.now());
     } else if (ageKey) {
       await idb.set(ageKey, 0);
     }
   } catch (_) {}
 
+  if (!isAuthSessionCurrent(sessionToken)) return false;
   if (fullKey) {
     try {
       const full = await idb.get(fullKey);
+      if (!isAuthSessionCurrent(sessionToken)) return false;
       if (Array.isArray(full)) {
         const fullItem = item.id ? item : Object.assign({}, item, { id: basic.id });
         const nextFull = full.filter(existing => existing && (existing.id || existing.vrc_id) !== basic.id);
@@ -314,11 +343,15 @@ async function upsertAvatarIntoFavoriteCache(groupName, av) {
   );
 }
 
+function _worldCacheKey(category) {
+  return (typeof WORLD_CACHE_PREFIX === 'string' ? WORLD_CACHE_PREFIX : 'world_basics_v2_') + category;
+}
+
 async function removeWorldFromFavoriteCache(groupName, worldId) {
   if (!groupName || !worldId) return;
   await _removeFromListCache(
     null,
-    'world_basics_fav_' + groupName,
+    _worldCacheKey('fav_' + groupName),
     'world_basics_age_fav_' + groupName,
     worldId
   );
@@ -328,23 +361,26 @@ async function upsertWorldIntoFavoriteCache(groupName, world) {
   if (!groupName || !world) return;
   await _upsertIntoListCache(
     null,
-    'world_basics_fav_' + groupName,
+    _worldCacheKey('fav_' + groupName),
     'world_basics_age_fav_' + groupName,
     world,
-    _worldBasicFromItem
+    typeof _worldBasicForWorldsCache === 'function' ? _worldBasicForWorldsCache : _worldBasicFromItem
   );
 }
 
 async function _fetchWorldFavoriteIndex(groupName) {
+  const sessionToken = makeAuthSessionToken();
   const favType = typeof _worldFavTypeForGroup === 'function'
     ? _worldFavTypeForGroup(groupName)
     : (String(groupName || '').startsWith('vrcPlusWorlds') ? 'vrcPlusWorld' : 'world');
   const ids = [];
   let offset = 0;
   while (true) {
+    if (!isAuthSessionCurrent(sessionToken)) throw _staleAuthSessionError();
     const resp = await apiCall(`/api/vrc/favorites?type=${favType}&tag=${groupName}&n=100&offset=${offset}`, { noAbort: true });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const favs = await resp.json();
+    if (!isAuthSessionCurrent(sessionToken)) throw _staleAuthSessionError();
     if (!Array.isArray(favs) || favs.length === 0 || favs.error) break;
     favs.forEach((f) => {
       if (f.favoriteId) {
@@ -372,26 +408,19 @@ async function _fetchWorldBasicsByIds(ids, seqToken) {
     ));
     results.forEach((r) => { if (r.status === 'fulfilled') all.push(r.value); });
   }
-  return all.map(w => ({
-    id: w.id,
-    name: w.name,
-    thumbnailImageUrl: w.thumbnailImageUrl,
-    imageUrl: w.imageUrl,
-    authorName: w.authorName,
-    authorId: w.authorId,
-    occupants: w.occupants,
-    releaseStatus: w.releaseStatus,
-    isInvalid: w.isInvalid
-  }));
+  return all.map(_worldBasicFromItem).filter(Boolean);
 }
 
 async function _fetchAvatarFavoritesForGroup(groupName) {
+  const sessionToken = makeAuthSessionToken();
   let offset = 0;
   let all = [];
   while (true) {
+    if (!isAuthSessionCurrent(sessionToken)) throw _staleAuthSessionError();
     const resp = await apiCall(`/api/vrc/avatars/favorites?n=100&offset=${offset}&tag=${groupName}`, { noAbort: true });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const batch = await resp.json();
+    if (!isAuthSessionCurrent(sessionToken)) throw _staleAuthSessionError();
     if (!Array.isArray(batch) || batch.length === 0) break;
     all = all.concat(batch);
     if (batch.length < 100) break;
@@ -401,13 +430,17 @@ async function _fetchAvatarFavoritesForGroup(groupName) {
 }
 
 async function syncAvatarFavoriteCachesByIndex() {
+  const sessionToken = makeAuthSessionToken();
+  const current = () => isAuthSessionCurrent(sessionToken);
   try {
     if (!Array.isArray(favoriteGroups) || favoriteGroups.length === 0) return;
     for (const g of favoriteGroups) {
+      if (!current()) return;
       if (!g || !g.name) continue;
       try {
         const remoteIds = avatarFavoriteIndexByGroup.get(g.name) || [];
         const cachedBasicsRaw = await idb.get('avatar_basics_' + g.name);
+        if (!current()) return;
         const cachedBasics = Array.isArray(cachedBasicsRaw) ? cachedBasicsRaw : null;
         const cachedIds = (cachedBasics || []).map(a => a && a.id).filter(Boolean);
 
@@ -417,6 +450,7 @@ async function syncAvatarFavoriteCachesByIndex() {
         }
 
         const full = remoteIds.length ? await _fetchAvatarFavoritesForGroup(g.name) : [];
+        if (!current()) return;
         const basics = full.map(a => ({
           id: a.id,
           name: a.name,
@@ -427,8 +461,11 @@ async function syncAvatarFavoriteCachesByIndex() {
           tags: a.tags
         }));
         await idb.set('avatars_' + g.name, full);
+        if (!current()) return;
         await idb.set('avatar_basics_' + g.name, basics);
+        if (!current()) return;
         await idb.set('avatar_basics_age_' + g.name, Date.now());
+        if (!current()) return;
         if (currentTab === 'download' && currentCategory === g.name) {
           avatars = basics;
           applyFilters();
@@ -443,20 +480,25 @@ async function syncAvatarFavoriteCachesByIndex() {
 }
 
 async function syncWorldFavoriteCachesByIndex() {
+  const sessionToken = makeAuthSessionToken();
+  const current = () => isAuthSessionCurrent(sessionToken);
   try {
     if (typeof loadWorldFavGroups === 'function') await loadWorldFavGroups();
-    if (!Array.isArray(worldFavGroups) || worldFavGroups.length === 0) return;
+    if (!current() || !Array.isArray(worldFavGroups) || worldFavGroups.length === 0) return;
 
-    const seqToken = { cancelled: false };
+    const seqToken = { get cancelled() { return !current(); } };
     for (const g of worldFavGroups) {
+      if (!current()) return;
       if (!g || !g.name) continue;
       const category = 'fav_' + g.name;
       try {
         const remoteIds = worldFavoriteIndexByGroup.has(g.name)
           ? (worldFavoriteIndexByGroup.get(g.name) || [])
           : await _fetchWorldFavoriteIndex(g.name);
+        if (!current()) return;
         worldFavGroupCounts.set(g.name, remoteIds.length);
-        const cachedBasicsRaw = await idb.get('world_basics_' + category);
+        const cachedBasicsRaw = await idb.get(_worldCacheKey(category));
+        if (!current()) return;
         const cachedBasics = Array.isArray(cachedBasicsRaw) ? cachedBasicsRaw : null;
         const cachedIds = (cachedBasics || []).map(w => w && w.id).filter(Boolean);
 
@@ -466,8 +508,11 @@ async function syncWorldFavoriteCachesByIndex() {
         }
 
         const basics = remoteIds.length ? await _fetchWorldBasicsByIds(remoteIds, seqToken) : [];
-        await idb.set('world_basics_' + category, basics);
+        if (!current()) return;
+        await idb.set(_worldCacheKey(category), basics);
+        if (!current()) return;
         await idb.set('world_basics_age_' + category, Date.now());
+        if (!current()) return;
         if (currentTab === 'worlds' && VRCW.modules.worlds && typeof currentWorldCategory !== 'undefined' && currentWorldCategory === category) {
           allWorlds = basics;
           filterWorlds();
@@ -476,7 +521,7 @@ async function syncWorldFavoriteCachesByIndex() {
         console.warn('syncWorldFavoriteCachesByIndex', g.name, e);
       }
     }
-    if (typeof renderWorldFavGroupButtons === 'function') renderWorldFavGroupButtons();
+    if (current() && typeof renderWorldFavGroupButtons === 'function') renderWorldFavGroupButtons();
   } catch (e) {
     console.warn('syncWorldFavoriteCachesByIndex failed', e);
   }
@@ -595,9 +640,10 @@ async function runPriorityTask(taskFn) {
 }
 
 function queueBackgroundTask(taskFn, key = '') {
+  const sessionToken = makeAuthSessionToken();
   if (key && backgroundTaskKeys.has(key)) return;
   if (key) backgroundTaskKeys.add(key);
-  backgroundLoadQueue.push({ taskFn, key });
+  backgroundLoadQueue.push({ taskFn, key, sessionToken });
   if (!isPriorityTaskRunning) processBackgroundQueue();
 }
 
@@ -612,8 +658,10 @@ async function processBackgroundQueue() {
   if (isPriorityTaskRunning || _searchActive || !backgroundLoadQueue.length) return;
   const item = backgroundLoadQueue.shift();
   if (item) {
-    try { await item.taskFn(); } catch(e){}
-    if (item.key) backgroundTaskKeys.delete(item.key);
+    try {
+      if (isAuthSessionCurrent(item.sessionToken)) await item.taskFn();
+    } catch(e){}
+    if (item.key && isAuthSessionCurrent(item.sessionToken)) backgroundTaskKeys.delete(item.key);
     setTimeout(processBackgroundQueue, 500);
   }
 }
@@ -665,6 +713,7 @@ function startUpload() {
   });
 }
 
+
 // ── Tabs ──
 function switchTab(tab) {
   // No-op when already on this tab. Re-clicking the active nav item used to
@@ -683,20 +732,11 @@ function switchTab(tab) {
   // declarative anchor.
   document.querySelectorAll('[data-tab="' + tab + '"]').forEach(b => b.classList.add("active"));
 
-  const panels = { download:'downloadPanel', upload:'uploadPanel', search:'searchPanel', friends:'friendsPanel', worlds:'worldsPanel', groups:'groupsPanel', assets:'assetsPanel', settings:'settingsPanel', dating:'datingPanel' };
+  const panels = { download:'downloadPanel', upload:'uploadPanel', search:'searchPanel', friends:'friendsPanel', worlds:'worldsPanel', groups:'groupsPanel', assets:'assetsPanel', settings:'settingsPanel' };
   Object.entries(panels).forEach(([key, id]) => {
       const el = document.getElementById(id);
       if (el) {
           el.classList.toggle('active', tab === key);
-          if (id === 'datingPanel') {
-              el.style.display = (tab === key) ? 'flex' : 'none';
-              if (tab === key) {
-                  const iframe = document.getElementById('datingIframe');
-                  if (iframe && iframe.contentWindow) {
-                      iframe.contentWindow.postMessage({ type: 'tabActivated' }, location.origin);
-                  }
-              }
-          }
       }
   });
   const sp = document.getElementById('settingsPanel');
@@ -705,14 +745,10 @@ function switchTab(tab) {
   const targetPanel = document.getElementById(panels[tab]);
   const btn = document.getElementById('mobileSidebarBtn');
   if (btn && targetPanel) {
-      const hasSidebar = tab === 'dating' || targetPanel.querySelector('.sidebar') !== null;
+      const hasSidebar = targetPanel.querySelector('.sidebar') !== null;
       btn.style.visibility = hasSidebar ? 'visible' : 'hidden';
-      // Reset icon when switching away from dating
-      if (tab !== 'dating') {
-          btn.dataset.datingOpen = 'false';
-          btn.innerHTML = '<i class="fa-solid fa-bars"></i>';
-          btn.classList.remove('active');
-      }
+      btn.innerHTML = '<i class="fa-solid fa-bars"></i>';
+      btn.classList.remove('active');
   }
 
   // If already on this tab, skip the abort+reload dance entirely
@@ -758,7 +794,7 @@ function switchTab(tab) {
 }
 
 function switchSettingsPage(page) {
-  ['cache', 'join', 'dating', 'about'].forEach(p => {
+  ['cache', 'join', 'about'].forEach(p => {
     const el = document.getElementById('setPage' + p.charAt(0).toUpperCase() + p.slice(1));
     if (el) el.style.display = p === page ? '' : 'none';
     const btn = document.getElementById('setCat' + p.charAt(0).toUpperCase() + p.slice(1));
@@ -766,136 +802,12 @@ function switchSettingsPage(page) {
   });
   if (page === 'cache') loadCacheStats();
   if (page === 'join') loadJoinPrefs();
-  if (page === 'dating') loadDatingSettings();
 }
 
 // ── Join Preferences (localStorage) ──
 const PREF_TYPE   = 'vrcw_default_instance_type';
 const PREF_REGION = 'vrcw_default_region';
 
-// ── Dating System Logic ──
-let datingAgeVerified = false;
-
-async function initDatingSettings() {
-  if (!window.myProfileData) return;
-  const vrcId = window.myProfileData.id;
-  
-  // 1. Fetch D1 setting
-  try {
-    const res = await apiCall(`/api/dating/settings?vrc_id=${vrcId}`);
-    if (res.ok) {
-      const data = await res.json();
-      datingAgeVerified = data.age_verified === 1;
-    }
-  } catch(e) {}
-
-  const navItem = document.getElementById('navItemDating');
-  const navIcon = document.getElementById('navIconDating');
-  const toggle = document.getElementById('settingEnableDating');
-  
-  const isVrc18init = window.myProfileData?.ageVerificationStatus === '18+'
-                   || window.myProfileData?.ageVerified === true;
-
-  if (datingAgeVerified || isVrc18init) {
-    // Already verified (either via DB or VRChat 18+)
-    if (navItem) navItem.style.display = 'flex';
-    if (navIcon) navIcon.style.display = 'flex';
-    if (toggle) toggle.checked = true;
-  } else {
-    // Not verified
-    if (navItem) navItem.style.display = 'none';
-    if (navIcon) navIcon.style.display = 'none';
-    if (toggle) toggle.checked = false;
-  }
-}
-
-function loadDatingSettings() {
-  const toggle = document.getElementById('settingEnableDating');
-  const prompt = document.getElementById('datingAgePrompt');
-  const isVrc18 = window.myProfileData?.ageVerificationStatus === '18+'
-                || window.myProfileData?.ageVerified === true;
-
-  if (toggle) toggle.checked = datingAgeVerified || isVrc18;
-  if (prompt) prompt.style.display = 'none';
-
-  // If VRC 18+ certified, show a note
-  const noteEl = document.getElementById('datingVrcVerifiedNote');
-  if (noteEl) noteEl.style.display = isVrc18 ? 'block' : 'none';
-}
-
-function toggleDatingFeature() {
-  const toggle = document.getElementById('settingEnableDating');
-  const prompt = document.getElementById('datingAgePrompt');
-  const navItem = document.getElementById('navItemDating');
-  const navIcon = document.getElementById('navIconDating');
-
-  if (toggle.checked) {
-    const isVrc18toggle = window.myProfileData?.ageVerificationStatus === '18+'
-                       || window.myProfileData?.ageVerified === true;
-    if (datingAgeVerified || isVrc18toggle) {
-      // Allow turning on without prompt if already verified
-      if (navItem) navItem.style.display = 'flex';
-      if (navIcon) navIcon.style.display = 'flex';
-      prompt.style.display = 'none';
-      saveDatingSettings(true, null);
-    } else {
-      // Require DOB input
-      prompt.style.display = 'block';
-    }
-  } else {
-    prompt.style.display = 'none';
-    if (navItem) navItem.style.display = 'none';
-    if (navIcon) navIcon.style.display = 'none';
-    // If they manually turn it off, we might want to un-verify them or just hide it.
-    // For now, let's just let them hide it. We won't clear their age_verified.
-  }
-}
-
-async function verifyDatingAge() {
-  const dob = document.getElementById('datingDobInput').value;
-  if (!dob) return alert(t('alert.enterDob'));
-  
-  const birthDate = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-  }
-  
-  if (age < 18) {
-    alert(t('alert.datingUnderage'));
-    document.getElementById('settingEnableDating').checked = false;
-    document.getElementById('datingAgePrompt').style.display = 'none';
-    return;
-  }
-  
-  datingAgeVerified = true;
-  document.getElementById('datingAgePrompt').style.display = 'none';
-  
-  const navItem = document.getElementById('navItemDating');
-  const navIcon = document.getElementById('navIconDating');
-  if (navItem) navItem.style.display = 'flex';
-  if (navIcon) navIcon.style.display = 'flex';
-  
-  await saveDatingSettings(true, dob);
-  alert(t('alert.datingVerified'));
-}
-
-async function saveDatingSettings(verified, dob) {
-  if (!window.myProfileData) return;
-  try {
-    // vrc_id is intentionally omitted — the server resolves the caller's
-    // identity from X-VRC-Auth (R12). Sending it would be misleading dead data.
-    await apiCall('/api/dating/settings', {
-      method: 'POST',
-      json: {
-        age_verified: verified,
-        dob: dob
-      }
-    });
-  } catch(e) {}
-}
 
 const INSTANCE_TYPE_LABELS = {
   hidden:     t('shell.instanceType.hidden'),
@@ -977,14 +889,7 @@ async function loadCacheStats() {
 
   // Image blob count
   let imageCount = 0;
-  try {
-    imageCount = await new Promise(res => {
-      const tx = idb.db.transaction('images','readonly');
-      const req = tx.objectStore('images').count();
-      req.onsuccess = () => res(req.result);
-      req.onerror  = () => res(0);
-    });
-  } catch(_) {}
+  try { imageCount = await idb.imageCount(); } catch(_) {}
 
   let html = '';
 
@@ -1025,29 +930,14 @@ async function loadCacheStats() {
 
 async function clearCacheCategory(keys) {
   if (!confirm(t('confirm.clearCacheCategory', {count: keys.length}))) return;
-  await idb.init();
-  await new Promise(r => {
-    const tx = idb.db.transaction('cache','readwrite');
-    const store = tx.objectStore('cache');
-    let pending = keys.length;
-    if (pending === 0) { r(); return; }
-    keys.forEach(k => {
-      const req = store.delete(k);
-      req.onsuccess = req.onerror = () => { if (--pending === 0) r(); };
-    });
-  });
+  await idb.deleteKeys(keys);
   loadCacheStats();
   showToast(t('toast.cacheCleared', {count: keys.length}), 'success');
 }
 
 async function clearImageCache() {
   if (!confirm(t('confirm.clearImageCache'))) return;
-  await idb.init();
-  await new Promise(r => {
-    const tx = idb.db.transaction('images','readwrite');
-    tx.objectStore('images').clear();
-    tx.oncomplete = r; tx.onerror = r;
-  });
+  await idb.clearImages();
   await clearServiceWorkerImageCaches();
   loadCacheStats();
   showToast(t('toast.imageCacheCleared'), 'success');
@@ -1074,9 +964,8 @@ async function clearServiceWorkerImageCaches() {
 
 async function clearAllCacheNow() {
   if (!confirm(t('confirm.clearAllCache'))) return;
-  await idb.init();
-  await new Promise(r => { const tx = idb.db.transaction('cache','readwrite'); tx.objectStore('cache').clear(); tx.oncomplete=r; tx.onerror=r; });
-  await new Promise(r => { const tx = idb.db.transaction('images','readwrite'); tx.objectStore('images').clear(); tx.oncomplete=r; tx.onerror=r; });
+  await idb.clearCache();
+  await idb.clearImages();
   await clearServiceWorkerImageCaches();
   loadCacheStats();
   showToast(t('toast.allCacheCleared'), 'success');

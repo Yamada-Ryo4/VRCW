@@ -48,13 +48,31 @@ function revokeImageBlobSrc(img) {
   delete img.dataset.blobUrl;
 }
 
-function imageCacheKey(src) {
+function imageCacheKey(src, authBucketOverride) {
   if (!src || !src.includes('/api/image')) return src || '';
   try {
     const u = new URL(src, location.href);
-    return `${u.searchParams.get('bucket') || _apiAuthBucket()}::${u.searchParams.get('url') || src}`;
+    return `${u.searchParams.get('bucket') || authBucketOverride || _apiAuthBucket()}::${u.searchParams.get('url') || src}`;
   } catch (_) {
     return src;
+  }
+}
+
+// Clear the failed-thumbnail UI state (✕ overlay, tap-to-retry wiring) for a
+// fresh load attempt. Used by the success handler and by card restore, so a
+// recovered image never keeps showing "点击重试" over real content.
+function clearImageFailureUi(img) {
+  if (!img) return;
+  img.classList.remove('failed');
+  const wrapper = img.parentElement;
+  if (!wrapper) return;
+  wrapper.classList.remove('img-failed');
+  wrapper.style.cursor = '';
+  wrapper.title = '';
+  delete wrapper.dataset.retryWired;
+  if (wrapper._retryHandler) {
+    wrapper.removeEventListener('click', wrapper._retryHandler);
+    delete wrapper._retryHandler;
   }
 }
 
@@ -63,6 +81,9 @@ function processImageQueue() {
     runningLoads++;
     const { img, src } = imageQueue.shift();
     _imageQueueSet.delete(img);
+    const imageAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+    const imageAuthBucket = typeof _apiAuthBucket === 'function' ? _apiAuthBucket() : '';
+    const isImageLoadCurrent = () => imageAuthEpoch === null || imageAuthEpoch === authSessionEpoch;
 
     // Skip if cancelled while waiting in queue
     if (img.dataset.cancelled) {
@@ -73,25 +94,64 @@ function processImageQueue() {
     }
 
     const wrapper = img.parentElement;
-    const cacheKey = imageCacheKey(src);
+
+    // Defensive: a data: URI (the BLANK placeholder) must never be fetched —
+    // CSP blocks data: fetches, so the item would burn its retries in a dead
+    // loop. Recovering the real URL is onRetryClick's job; a data: item here
+    // means a stale caller leaked the placeholder into the queue.
+    if (!src || src.startsWith('data:')) {
+      img.classList.remove('loading');
+      if (wrapper) wrapper.classList.remove('img-loading');
+      img.classList.add('failed');
+      if (wrapper) wrapper.classList.add('img-failed');
+      delete img.dataset.loading;
+      runningLoads--;
+      continue;
+    }
+
+    const cacheKey = imageCacheKey(src, imageAuthBucket);
+    let timedOut = false;
+    let loadReleased = false;
+
+    const releaseLoad = () => {
+      if (loadReleased) return false;
+      loadReleased = true;
+      runningLoads = Math.max(0, runningLoads - 1);
+      processImageQueue();
+      return true;
+    };
+
+    // Discard stale work without applying the old account's blob to the
+    // current DOM/cache. Cleanup is idempotent because abort and promise
+    // callbacks may race during logout or account switching.
+    const discardLoad = () => {
+      img.onload = img.onerror = null;
+      delete img._abortCtrl;
+      delete img.dataset.loading;
+      delete img.dataset.cancelled;
+      img.classList.remove('loading');
+      if (wrapper) wrapper.classList.remove('img-loading');
+      releaseLoad();
+    };
 
     // Called on successful load or permanent failure
     const finishLoad = (success) => {
+      if (loadReleased) return;
       img.onload = img.onerror = null;
       delete img._abortCtrl;
       img.classList.remove('loading');
       if (wrapper) wrapper.classList.remove('img-loading');
-      runningLoads--;
       if (success) {
         img.removeAttribute('data-src');
         delete img.dataset.loading;
         avatarObserver.unobserve(img);
       }
-      processImageQueue();
+      releaseLoad();
     };
 
     // Called when fetch is aborted (scrolled out) — restore state for retry
     const cancelLoad = () => {
+      if (loadReleased) return;
       img.onload = img.onerror = null;
       delete img._abortCtrl;
       delete img.dataset.cancelled;
@@ -99,12 +159,22 @@ function processImageQueue() {
       img.classList.remove('loading');
       if (wrapper) wrapper.classList.remove('img-loading');
       // Don't unobserve — observer will retrigger when image re-enters viewport
-      runningLoads--;
-      processImageQueue();
+      releaseLoad();
     };
 
-    img.onload = () => { loadedImageUrls.add(cacheKey); revokeImageBlobSrc(img); finishLoad(true); };
+    img.onload = () => {
+      if (!isImageLoadCurrent()) { discardLoad(); return; }
+      loadedImageUrls.add(cacheKey);
+      revokeImageBlobSrc(img);
+      // A failure can recover later (auto-retry via scroll recycle/restore, or
+      // a successful manual retry). Clear the failed overlay and its
+      // tap-to-retry wiring here, or a loaded image keeps showing "✕ 点击重试"
+      // and the stale listener swallows the card's own click.
+      clearImageFailureUi(img);
+      finishLoad(true);
+    };
     img.onerror = () => {
+      if (!isImageLoadCurrent()) { discardLoad(); return; }
       const retryCount = parseInt(img.dataset.retry || '0');
       if (retryCount < 2 && !img.dataset.cancelled) {
         img.dataset.retry = retryCount + 1;
@@ -131,9 +201,11 @@ function processImageQueue() {
               img.classList.remove('failed');
               img.dataset.retry = '0';
               const oldSrc = img.getAttribute('data-src');
-              // If data-src was already cleared, recover from the current src
-              const recoverSrc = oldSrc || img.src;
-              if (recoverSrc) {
+              // Never fall back to img.src: after a failure it is the BLANK
+              // placeholder data: URI, and fetching data: violates CSP — the
+              // retry would spin forever instead of reloading the real image.
+              const recoverSrc = oldSrc || img.dataset.src || '';
+              if (recoverSrc && !recoverSrc.startsWith('data:')) {
                 img.setAttribute('data-src', recoverSrc);
                 img.dataset.loading = '1';
                 imageQueue.push({ img, src: recoverSrc }); _imageQueueSet.add(img);
@@ -141,30 +213,34 @@ function processImageQueue() {
               }
             };
             wrapper.addEventListener('click', onRetryClick);
+            wrapper._retryHandler = onRetryClick;
           }
         }
-        img.removeAttribute('data-src');
+        // Keep data-src on permanent failure: it is the retry click's only
+        // link back to the real URL (img.src is the BLANK placeholder here,
+        // and fetching data: is CSP-blocked — the dead retry loop).
         delete img.dataset.loading;
         avatarObserver.unobserve(img);
         finishLoad(false);
       }
     };
-
     img.classList.add('loading');
     if (wrapper) wrapper.classList.add('img-loading');
 
     // Check IDB cache first (instant, no network)
     idb.getImage(cacheKey).then(blob => {
+      if (!isImageLoadCurrent()) { discardLoad(); return; }
       if (img.dataset.cancelled) { cancelLoad(); return; }
 
       if (blob) {
+        if (!isImageLoadCurrent()) { discardLoad(); return; }
         setImageBlobSrc(img, blob);
         // onload fires → finishLoad(true)
       } else {
         // Yield to priority tasks (tab switches etc.)
         if (isPriorityTaskRunning) {
           imageQueue.unshift({ img, src }); _imageQueueSet.add(img);
-          runningLoads--;
+          releaseLoad();
           setTimeout(processImageQueue, 500);
           return;
         }
@@ -172,33 +248,47 @@ function processImageQueue() {
         // Fetch with AbortController so we can cancel mid-flight
         const ctrl = new AbortController();
         img._abortCtrl = ctrl;
-        const _imgTimeout = setTimeout(() => { try { ctrl.abort(); } catch(_) {} }, 15000);
+        const _imgTimeout = setTimeout(() => {
+          // A timeout is a failed visible load, not a viewport cancellation.
+          // Mark it before abort() so the AbortError path gets bounded retries
+          // and eventually leaves the interactive tap-to-retry state intact.
+          timedOut = true;
+          try { ctrl.abort(); } catch(_) {}
+        }, 15000);
 
         fetch(src, { signal: ctrl.signal })
           .then(r => r.blob())
           .then(blob => {
             clearTimeout(_imgTimeout);
             delete img._abortCtrl;
+            if (!isImageLoadCurrent()) { discardLoad(); return; }
             if (img.dataset.cancelled) { cancelLoad(); return; }
             if (blob && blob.type.startsWith('image/')) {
+              if (!isImageLoadCurrent()) { discardLoad(); return; }
               idb.setImage(cacheKey, blob);
+              if (!isImageLoadCurrent()) { discardLoad(); return; }
               setImageBlobSrc(img, blob);
               // onload fires → finishLoad(true)
             } else {
+              if (!isImageLoadCurrent()) { discardLoad(); return; }
               img.src = src; // Fallback direct URL
             }
           })
           .catch(e => {
             clearTimeout(_imgTimeout);
             delete img._abortCtrl;
-            if (e.name === 'AbortError') {
+            if (e.name === 'AbortError' && !timedOut) {
               cancelLoad(); // Clean cancel — restore for retry
             } else {
-              img.src = src; // Network error fallback
+              // Timeout (or a normal network failure) is a real load failure.
+              // Use the same bounded retry/failure UI as an image error rather
+              // than silently clearing loading state while still in view.
+              img.onerror();
             }
           });
+
       }
-    }).catch(() => { finishLoad(false); });
+    }).catch(() => { if (!isImageLoadCurrent()) discardLoad(); else finishLoad(false); });
   }
 }
 

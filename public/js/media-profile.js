@@ -166,6 +166,7 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
       const { blob, frames, framesOverTime } = await gifToSpritesheet(file, fps);
       fd.append('filestring', blob, 'spritesheet.png');
       fd.append('tagstring', 'emojianimated');
+      fd.append('tag', 'emojianimated');
       fd.append('frames', String(frames));
       fd.append('framesOverTime', String(framesOverTime));
       statusEl.innerHTML = t('media.uploadingSpritesheet', {frames: frames, fps: framesOverTime});
@@ -185,11 +186,13 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
       });
       fd.append('filestring', file, file.name);
       fd.append('tagstring', tag);
+      fd.append('tag', tag);
       statusEl.innerHTML = t('media.uploading');
     } else {
       // gallery, icon, prints preview
       fd.append('filestring', file, file.name);
       fd.append('tagstring', tag);
+      fd.append('tag', tag);
       statusEl.innerHTML = t('media.uploading');
     }
 
@@ -222,18 +225,27 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
 }
 
 async function fetchGalleryOnly(container, gen) {
+  const galleryAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  const galleryGen = gen;
+  const isGalleryCurrent = () => (galleryGen == null || _assetsGen === galleryGen)
+    && (galleryAuthEpoch === null || galleryAuthEpoch === authSessionEpoch);
   try {
     const { data: cached, fresh } = await readAssetsCache('gallery', ASSETS_CACHE_TTL_MS);
+    if (!isGalleryCurrent()) return;
     let files;
     if (fresh && Array.isArray(cached)) {
       files = cached;
     } else {
       container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">' + escHtml(t('loading')) + '</div>';
       const r = await apiCall('/api/vrc/files?tag=gallery&n=60');
-      if (gen != null && _assetsGen !== gen) return;
-      files = r.ok ? await r.json() : [];
+      if (!isGalleryCurrent()) return;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      files = await r.json();
+      if (!isGalleryCurrent()) return;
       await writeAssetsCache('gallery', files);
+      if (!isGalleryCurrent()) return;
     }
+    if (!isGalleryCurrent()) return;
     container.innerHTML = '<h2 style="margin-bottom:16px;">' + escHtml(t('media.vrcGallery')) + '</h2>';
     container.innerHTML += '<div class="vrc-upload-row">' + makeUploadCard({
       title: t('media.uploadToGallery'), hint: t('media.galleryHint'),
@@ -262,20 +274,29 @@ async function fetchGalleryOnly(container, gen) {
 // PRINTS (拍立得照片) - separate page
 // ═══════════════════════════════════════════════════════════
 async function fetchPrints(container, gen) {
+  const printsAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  const printsGen = gen;
+  const isPrintsCurrent = () => (printsGen == null || _assetsGen === printsGen)
+    && (printsAuthEpoch === null || printsAuthEpoch === authSessionEpoch);
   try {
     const { data: cached, fresh } = await readAssetsCache('prints', ASSETS_CACHE_TTL_MS);
+    if (!isPrintsCurrent()) return;
     let prints;
     if (fresh && Array.isArray(cached)) {
       prints = cached;
     } else {
       container.innerHTML = '<div style="color:var(--text-muted);margin:20px;">' + escHtml(t('loading')) + '</div>';
       const myId = await getMyId();
-      if (gen != null && _assetsGen !== gen) return;
+      if (!isPrintsCurrent()) return;
       const r = await apiCall('/api/vrc/prints/user/' + myId + '?n=100&offset=0');
-      if (gen != null && _assetsGen !== gen) return;
-      prints = r.ok ? await r.json() : [];
+      if (!isPrintsCurrent()) return;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      prints = await r.json();
+      if (!isPrintsCurrent()) return;
       await writeAssetsCache('prints', prints);
+      if (!isPrintsCurrent()) return;
     }
+    if (!isPrintsCurrent()) return;
     const printUploadId = 'printUpl_' + Date.now();
     container.innerHTML = '<h2 style="margin-bottom:12px;">' + escHtml(t('media.prints')) + '</h2>' +
       '<div class="vrc-upload-card" style="max-width:420px;margin-bottom:20px;">' +
@@ -330,6 +351,17 @@ async function deletePrint(printId, btn) {
   try {
     const r = await apiCall(`/api/vrc/prints/${printId}`, { method: 'DELETE' });
     if (r.ok) {
+      // Keep the in-memory/IDB prints payload consistent with the DELETE so a
+      // fresh page render cannot resurrect the removed card from cache.
+      try {
+        const cached = await idb.get('assets_prints');
+        if (Array.isArray(cached)) {
+          const next = cached.filter(print => print && print.id !== printId);
+          await idb.set('assets_prints', next);
+        }
+        await idb.set('assets_age_prints', Date.now());
+        if (typeof invalidateAssetsCache === 'function') invalidateAssetsCache('prints');
+      } catch (_) {}
       // Use the explicit `.print-card` selector — `btn.closest('div')` was
       // grabbing the inner caption row (a descendant <div>) and yanking it,
       // leaving an empty white card visible until the next refresh.

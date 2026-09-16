@@ -182,6 +182,10 @@ async function _verifyFavoriteAvatarCache(groupName, seq, opts = {}) {
   if (!groupName || groupName === 'mine' || groupName === 'local') return;
   const list = Array.isArray(opts.source) ? opts.source : avatars;
   if (!Array.isArray(list) || list.length === 0) return;
+  const verifyAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  const isCurrent = () => (!seq || (seq === fetchSeq && seq === currentGlobalFetchSeq))
+    && currentCategory === groupName
+    && (verifyAuthEpoch === null || verifyAuthEpoch === authSessionEpoch);
   const CONCURRENCY = opts.concurrency || 12;
   let changed = false;
   let verified = 0;
@@ -204,7 +208,7 @@ async function _verifyFavoriteAvatarCache(groupName, seq, opts = {}) {
   };
 
   for (let i = 0; i < next.length; i += CONCURRENCY) {
-    if (seq && seq !== fetchSeq) return;
+    if (!isCurrent()) return;
     const chunk = next.slice(i, i + CONCURRENCY);
     const results = await Promise.all(chunk.map(verifyOne));
     results.forEach((fresh, offset) => {
@@ -222,11 +226,14 @@ async function _verifyFavoriteAvatarCache(groupName, seq, opts = {}) {
     return;
   }
 
+  if (!isCurrent()) return;
   await idb.set("avatars_" + groupName, next).catch(()=>{});
+  if (!isCurrent()) return;
   await idb.set("avatar_basics_" + groupName, next.map(_avatarBasicFromItem).filter(Boolean)).catch(()=>{});
+  if (!isCurrent()) return;
   await idb.set("avatar_basics_age_" + groupName, Date.now()).catch(()=>{});
 
-  if (!seq || (seq === fetchSeq && currentCategory === groupName)) {
+  if (isCurrent()) {
     avatars = next.map(_avatarBasicFromItem).filter(Boolean);
     applyFilters();
     const invalidCount = avatars.filter(_isAvatarInvalid).length;
@@ -236,7 +243,13 @@ async function _verifyFavoriteAvatarCache(groupName, seq, opts = {}) {
 
 async function fetchAvatars(forceRefresh = false) {
   const seq = ++currentGlobalFetchSeq;
-  fetchSeq = seq; 
+  fetchSeq = seq;
+  const category = currentCategory;
+  const fetchAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  const isFetchCurrent = () => seq === fetchSeq
+    && seq === currentGlobalFetchSeq
+    && currentCategory === category
+    && (fetchAuthEpoch === null || fetchAuthEpoch === authSessionEpoch);
   const grid = document.getElementById("avatarGrid");
 
   // ── Step 1: Always render basics from cache immediately (if available) ──
@@ -248,10 +261,11 @@ async function fetchAvatars(forceRefresh = false) {
   let renderedFromCache = false;
   let cacheIsFresh = false;
   try {
-    const cachedBasicsRaw = await idb.get('avatar_basics_' + currentCategory);
+    const cachedBasicsRaw = await idb.get('avatar_basics_' + category);
     const cacheExists = Array.isArray(cachedBasicsRaw);
     const cachedBasics = cacheExists ? cachedBasicsRaw : [];
-    const cacheAge = await idb.get('avatar_basics_age_' + currentCategory) || 0;
+    const cacheAge = await idb.get('avatar_basics_age_' + category) || 0;
+    if (!isFetchCurrent()) return;
     cacheIsFresh = cacheExists && (Date.now() - cacheAge) < AVATARS_CACHE_TTL;
     if (cacheExists) {
       avatars = cachedBasics;
@@ -261,11 +275,11 @@ async function fetchAvatars(forceRefresh = false) {
       // Favorite groups are IDB-first: startup/background index sync updates
       // stale favorite caches only when their remote ID index changes. "Mine"
       // has no cheap index endpoint, so it keeps the TTL-driven refresh path.
-      if (!forceRefresh && currentCategory !== "mine") {
-        _verifyFavoriteAvatarCache(currentCategory, seq).catch(e => console.warn('verify favorite avatars failed', e));
+      if (!forceRefresh && category !== "mine") {
+        _verifyFavoriteAvatarCache(category, seq, { source: cachedBasics }).catch(e => console.warn('verify favorite avatars failed', e));
         return;
       }
-      if (!forceRefresh && currentCategory === "mine" && cacheIsFresh) return;
+      if (!forceRefresh && category === "mine" && cacheIsFresh) return;
     } else if (grid) {
       grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:rgba(255,255,255,0.4);">${t('avatar.loadingShort')}</div>`;
     }
@@ -281,8 +295,9 @@ async function fetchAvatars(forceRefresh = false) {
       //  was removed from the worker, which made this fetch 404 → black-screen on login.)
       let offset = 0;
       while (true) {
-        if (seq !== currentGlobalFetchSeq) return;
+        if (!isFetchCurrent()) return;
         const resp = await apiCall(`/api/vrc/avatars?user=me&releaseStatus=all&n=100&offset=${offset}`);
+        if (!isFetchCurrent()) return;
         if (!resp.ok) {
           if (offset === 0) throw new Error("Failed to fetch avatars: HTTP " + resp.status);
           break; // partial result is fine
@@ -294,7 +309,7 @@ async function fetchAvatars(forceRefresh = false) {
         // the first 100 immediately instead of waiting for every page. Only do
         // this when there's no cached view already on screen (cold load) — when
         // a cache render is up we let the final applyFilters() swap it once.
-        if (!renderedFromCache && seq === fetchSeq) {
+        if (!renderedFromCache && isFetchCurrent()) {
           avatars = allFetched;
           applyFilters();
         }
@@ -308,15 +323,16 @@ async function fetchAvatars(forceRefresh = false) {
       // VRC+ favorites max is around 256. Fetch sequentially to avoid rate-limiting (429 errors)
       let offset = 0;
       while (true) {
-        if (seq !== currentGlobalFetchSeq) return;
-        const resp = await apiCall(`/api/vrc/avatars/favorites?n=100&offset=${offset}&tag=${currentCategory}`);
+        if (!isFetchCurrent()) return;
+        const resp = await apiCall(`/api/vrc/avatars/favorites?n=100&offset=${offset}&tag=${category}`);
+        if (!isFetchCurrent()) return;
         if (!resp.ok) break;
         const batch = await resp.json();
-        if (!batch || batch.length === 0 || seq !== currentGlobalFetchSeq) break;
+        if (!batch || batch.length === 0 || !isFetchCurrent()) break;
         allFetched = allFetched.concat(batch);
         // Progressive render per page (cold load only) so the first 100
         // favorites show immediately instead of waiting for all pages.
-        if (!renderedFromCache && seq === fetchSeq) {
+        if (!renderedFromCache && isFetchCurrent()) {
           const seenIds = new Set();
           avatars = allFetched.filter(av => { if (seenIds.has(av.id)) return false; seenIds.add(av.id); return true; });
           applyFilters();
@@ -335,8 +351,8 @@ async function fetchAvatars(forceRefresh = false) {
       });
     }
 
-    // If views changed while we waited, abandon stale render
-    if (seq !== fetchSeq) return;
+    // If views or accounts changed while we waited, abandon stale render.
+    if (!isFetchCurrent()) return;
     avatars = allFetched;
     // renderGrid now does DOM reconciliation so calling applyFilters() won't flash.
     // This ensures remote additions/deletions immediately update the grid structure.
@@ -344,20 +360,22 @@ async function fetchAvatars(forceRefresh = false) {
     
     // Save basics only
     const basics = allFetched.map(_avatarBasicFromItem).filter(Boolean);
-    idb.set("avatar_basics_" + currentCategory, basics).catch(()=>{});
-    idb.set("avatar_basics_age_" + currentCategory, Date.now()).catch(()=>{});
+    if (!isFetchCurrent()) return;
+    idb.set("avatar_basics_" + category, basics).catch(()=>{});
+    idb.set("avatar_basics_age_" + category, Date.now()).catch(()=>{});
     logMsg(`<i class="fa-solid fa-check"></i> Sync complete: ${avatars.length} avatars`, "success");
 
     // Optimized: Disable background prefetch to save Cloudflare Worker requests
     // prefetchThumbnails(allFetched);
 
     try {
-      await idb.set("avatars_" + currentCategory, allFetched);
+      if (!isFetchCurrent()) return;
+      await idb.set("avatars_" + category, allFetched);
     } catch (e) {}
 
     // If viewing a favorites category, also fetch the Favorite objects
     // so we have the favoriteId needed to unfavorite each avatar.
-    if (currentCategory !== "mine") {
+    if (category !== "mine") {
       try {
         const favPromises = [0, 100, 200, 300].map(offset =>
           apiCall(`/api/vrc/favorites?type=avatar&tag=${currentCategory}&n=100&offset=${offset}`)
@@ -1167,10 +1185,21 @@ function selectAll() {
 
 // ── Edit & Delete Avatar ──
 let currentEditId = null;
+let currentEditGeneration = 0;
+
+function _editSessionIsCurrent(editId, generation, editAuthEpoch) {
+  const modal = document.getElementById("editModal");
+  return currentEditId === editId
+    && currentEditGeneration === generation
+    && !!modal
+    && !modal.classList.contains('hidden')
+    && (editAuthEpoch === null || editAuthEpoch === authSessionEpoch);
+}
 
 function editAvatar(id) {
   const av = avatars.find((a) => a.id === id);
   if (!av) return;
+  currentEditGeneration += 1;
   currentEditId = id;
   document.getElementById("editName").value = av.name || "";
   document.getElementById("editDesc").value = av.description || "";
@@ -1223,11 +1252,15 @@ function closeEditModal() {
     unlockBodyScroll();
     delete editModal.dataset.scrollLocked;
   }
+  currentEditGeneration += 1;
   currentEditId = null;
 }
 
 async function saveEditAvatar() {
-  if (!currentEditId) return;
+  const editId = currentEditId;
+  const editGeneration = currentEditGeneration;
+  const editAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  if (!editId || !_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
   const name = document.getElementById("editName").value.trim();
   if (!name) return alert("Name is required");
   const desc = document.getElementById("editDesc").value.trim();
@@ -1246,15 +1279,24 @@ async function saveEditAvatar() {
   btn.disabled = true;
 
   try {
-    // Upload new thumbnail if selected
+    // Upload new thumbnail if selected. Keep the file/name immutable so a
+    // modal switch cannot make a late upload use the next avatar's fields.
     let newImageUrl = null;
     const thumbInput = document.getElementById("editThumbInput");
-    if (thumbInput && thumbInput.files.length > 0) {
+    const thumbFile = thumbInput && thumbInput.files.length > 0 ? thumbInput.files[0] : null;
+    if (thumbFile) {
       btn.innerHTML = t('avatar.uploadingImage');
       logMsg(`🖼️ Uploading new thumbnail for ${name}...`, "info");
-      newImageUrl = await uploadImageToVRChat(thumbInput.files[0], name);
+      await loadScriptOnce('js/upload.js?v=' + APP_CACHE_VERSION);
+      if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
+      if (!VRCW.modules.upload || typeof VRCW.modules.upload.uploadImageToVRChat !== 'function') {
+        throw new Error('Upload module did not register image uploader');
+      }
+      newImageUrl = await VRCW.modules.upload.uploadImageToVRChat(thumbFile, name);
+      if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
     }
 
+    if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
     btn.innerHTML = t('avatar.saving');
     logMsg(`✏️ Updating ${name}...`, "info");
     const payload = {
@@ -1265,26 +1307,31 @@ async function saveEditAvatar() {
     };
     if (newImageUrl) payload.imageUrl = newImageUrl;
 
-    const resp = await apiCall(`/api/vrc/avatars/${currentEditId}`, {
+    const resp = await apiCall(`/api/vrc/avatars/${editId}`, {
       method: "PUT",
       json: payload,
     });
 
+    if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
     if (!resp.ok) {
       const err = await resp.text();
       throw new Error(err);
     }
 
-    // Update local object
+    // Update local object only while the same modal/account is still active.
     const updatedAv = await resp.json();
-    const idx = avatars.findIndex((a) => a.id === currentEditId);
+    if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
+    const idx = avatars.findIndex((a) => a.id === editId);
     if (idx !== -1) avatars[idx] = updatedAv;
 
-    // Update IDB cache
-    try { await idb.set("avatars_" + currentCategory, avatars); } catch (_) {}
+    const editCategory = currentCategory;
+    // Update IDB cache; never use a category/account that changed while PUT ran.
+    if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
+    try { await idb.set("avatars_" + editCategory, avatars); } catch (_) {}
+    if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
 
     // Update the card's name overlay + thumbnail in-place (no full re-render)
-    const card = document.getElementById("card-" + currentEditId);
+    const card = document.getElementById("card-" + editId);
     if (card) {
       const nameOverlay = card.querySelector(".avatar-name-overlay");
       if (nameOverlay) nameOverlay.textContent = updatedAv.name || "";
@@ -1298,6 +1345,7 @@ async function saveEditAvatar() {
         }
       }
     }
+    if (!_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) return;
     closeEditModal();
     // Re-apply filters after edit. The user may have flipped releaseStatus
     // (public→private etc.); without this the card stays visible in a filtered
@@ -1306,12 +1354,16 @@ async function saveEditAvatar() {
     logMsg(`✓ ${t("editSuccess")} ${name}`, "success");
     showToast(`✓ ${t("editSuccess")} ${name}`, 'success');
   } catch (e) {
-    logMsg(`✗ ${t("editFail")} ${name} - ${e.message}`, "error");
-    showToast(`${t("editFail")}: ${e.message}`, 'error');
+    if (_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) {
+      logMsg(`✗ ${t("editFail")} ${name} - ${e.message}`, "error");
+      showToast(`${t("editFail")}: ${e.message}`, 'error');
+    }
   } finally {
-    btn.textContent = oldText;
-    btn.disabled = false;
-    btn.style.width = '';
+    if (_editSessionIsCurrent(editId, editGeneration, editAuthEpoch)) {
+      btn.textContent = oldText;
+      btn.disabled = false;
+      btn.style.width = '';
+    }
   }
 }
 

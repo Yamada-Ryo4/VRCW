@@ -43,7 +43,19 @@ if (fileInput) {
   });
 }
 
+let uploadBatchRunning = false;
+
+function _setUploadControlsLocked(locked) {
+  ['modeNew', 'modeUpdate', 'avatarName', 'avatarDesc', 'avatarImage', 'avatarSelect', 'fileInput'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !!locked;
+  });
+  document.querySelectorAll('input[name="uploadMode"]').forEach(el => { el.disabled = !!locked; });
+  document.querySelectorAll('#file-list-container .file-remove').forEach(el => { el.disabled = !!locked; });
+}
+
 function addFiles(files) {
+  if (uploadBatchRunning) return;
   files.forEach((f) => {
     if (!uploadFiles.some((u) => u.name === f.name)) uploadFiles.push(f);
   });
@@ -74,6 +86,7 @@ function renderFileList() {
 }
 
 function removeFile(i) {
+  if (uploadBatchRunning) return;
   uploadFiles.splice(i, 1);
   renderFileList();
   document.getElementById("btnUpload").disabled = uploadFiles.length === 0;
@@ -435,15 +448,30 @@ async function resizeImageTo4x3(file) {
 // ── Upload Image to VRChat File API ──
 // Resizes to 1200x900 (4:3), uploads via File API, returns VRChat file URL
 async function uploadImageToVRChat(file, namePrefix) {
+  const uploadAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  const uploadAuth = vrcAuth;
+  const isUploadSessionCurrent = () => uploadAuthEpoch === null || uploadAuthEpoch === authSessionEpoch;
+  const ensureUploadSessionCurrent = () => {
+    if (!isUploadSessionCurrent()) {
+      const error = new Error('Upload session changed');
+      error.name = 'AbortError';
+      throw error;
+    }
+  };
+  ensureUploadSessionCurrent();
   logMsg("Resizing image to 1200x900 (4:3)...", "info");
   const fileData = await resizeImageTo4x3(file);
+  ensureUploadSessionCurrent();
   logMsg(`Image resized: ${fileData.length} bytes`, "info");
 
   if (fileData.length > 10 * 1024 * 1024)
     throw new Error("Image too large after resize (max 10MB).");
   const fileMd5 = md5(fileData);
+  const sigBytes = await computeRsyncSignature(fileData);
+  const sigMd5 = md5(sigBytes);
 
   // 1. Create file record
+  ensureUploadSessionCurrent();
   const rFile = await apiCall("/api/vrc/file", {
     method: "POST",
     json: {
@@ -458,11 +486,12 @@ async function uploadImageToVRChat(file, namePrefix) {
   const imgFileId = (await rFile.json()).id;
 
   // 2. Create version
+  ensureUploadSessionCurrent();
   const rVer = await apiCall(`/api/vrc/file/${imgFileId}`, {
     method: "POST",
     json: {
-      signatureMd5: "",
-      signatureSizeInBytes: 0,
+      signatureMd5: sigMd5,
+      signatureSizeInBytes: sigBytes.length,
       fileMd5,
       fileSizeInBytes: fileData.length,
     },
@@ -471,7 +500,43 @@ async function uploadImageToVRChat(file, namePrefix) {
     throw new Error("Failed to create image version: " + (await rVer.text()));
   const imgVersionId = (await rVer.json()).versions?.slice(-1)[0]?.version ?? 1;
 
-  // 3. Start file upload (Simple Mode)
+  // 3. Upload signature
+  ensureUploadSessionCurrent();
+  const rSigStart = await apiCall(
+    `/api/vrc/file/${imgFileId}/${imgVersionId}/signature/start`,
+    { method: "PUT" },
+  );
+  if (!rSigStart.ok)
+    throw new Error("Image signature start failed: " + (await rSigStart.text()));
+  const sigUrl = (await rSigStart.json()).url;
+
+  ensureUploadSessionCurrent();
+  const rSigPut = await fetch(`${API_BASE}/api/s3proxy`, {
+    method: "PUT",
+    body: sigBytes,
+    headers: {
+      "X-S3-Url": sigUrl,
+      "X-VRC-Auth": uploadAuth,
+      "X-S3-content-md5": sigMd5,
+      "X-S3-content-type": "application/x-rsync-signature",
+    },
+  });
+  if (!rSigPut.ok)
+    throw new Error("Image signature upload failed: " + (await rSigPut.text()));
+
+  ensureUploadSessionCurrent();
+  const rSigFinish = await apiCall(
+    `/api/vrc/file/${imgFileId}/${imgVersionId}/signature/finish`,
+    {
+      method: "PUT",
+      json: { nextPartNumber: "0", maxParts: "0" },
+    },
+  );
+  if (!rSigFinish.ok)
+    throw new Error("Image signature finalize failed: " + (await rSigFinish.text()));
+
+  // 4. Start file upload (Simple Mode)
+  ensureUploadSessionCurrent();
   const rPartStart = await apiCall(
     `/api/vrc/file/${imgFileId}/${imgVersionId}/file/start?partNumber=1`,
     { method: "PUT" },
@@ -480,20 +545,22 @@ async function uploadImageToVRChat(file, namePrefix) {
     throw new Error("Image start failed: " + (await rPartStart.text()));
   const partUrl = (await rPartStart.json()).url;
 
-  // 4. Upload to S3 via proxy
+  // 5. Upload to S3 via proxy
+  ensureUploadSessionCurrent();
   const rPartPut = await fetch(`${API_BASE}/api/s3proxy`, {
     method: "PUT",
     body: fileData,
     headers: {
       "X-S3-Url": partUrl,
-      "X-VRC-Auth": vrcAuth,
       "X-S3-content-md5": fileMd5,
+      "X-VRC-Auth": uploadAuth,
     },
   });
   if (!rPartPut.ok)
     throw new Error("Image S3 upload failed: " + (await rPartPut.text()));
 
-  // 5. Finish upload (Simple mode: no etags)
+  // 6. Finish upload (Simple mode: no etags)
+  ensureUploadSessionCurrent();
   const rFinish = await apiCall(
     `/api/vrc/file/${imgFileId}/${imgVersionId}/file/finish`,
     {
@@ -504,15 +571,17 @@ async function uploadImageToVRChat(file, namePrefix) {
   if (!rFinish.ok)
     throw new Error("Image finalize failed: " + (await rFinish.text()));
 
-  // 6. Poll for completion (images are usually fast)
+  // 7. Poll for completion (images are usually fast)
   for (let attempt = 0; attempt < 15; attempt++) {
     await new Promise((r) => setTimeout(r, 2000));
+    ensureUploadSessionCurrent();
     const rStatus = await apiCall(`/api/vrc/file/${imgFileId}`);
     if (rStatus.ok) {
       const ver = ((await rStatus.json()).versions || []).find(
         (v) => v.version === parseInt(imgVersionId),
       );
       if (ver && ver.status === "complete") {
+        ensureUploadSessionCurrent();
         const url = `https://api.vrchat.cloud/api/1/file/${imgFileId}/${imgVersionId}/file`;
         logMsg(`Image uploaded: ${url}`, "success");
         return url;
@@ -541,7 +610,7 @@ function patchBlueprintId(vrcaBytes, newAvatarId) {
   let patchCount = 0;
   const data = new Uint8Array(vrcaBytes); // work on a copy
 
-  for (let i = 0; i < data.length - AVTR_LEN; i++) {
+  for (let i = 0; i <= data.length - AVTR_LEN; i++) {
     // Check for "avtr_" prefix
     if (
       data[i] === 0x61 &&
@@ -578,24 +647,44 @@ function patchBlueprintId(vrcaBytes, newAvatarId) {
 }
 
 async function startUpload() {
-  if (uploadFiles.length === 0) return;
+  if (uploadBatchRunning || uploadFiles.length === 0) return;
+  const batchFiles = uploadFiles.map(file => Object.freeze({
+    file,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+  }));
+  const batchAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
+  const batchAuth = vrcAuth;
+  const isUploadBatchCurrent = () => !uploadBatchRunning
+    ? false
+    : (batchAuthEpoch === null || batchAuthEpoch === authSessionEpoch);
+  uploadBatchRunning = true;
   const btn = document.getElementById("btnUpload");
   btn.disabled = true;
+  _setUploadControlsLocked(true);
   const isNew = document.getElementById("modeNew").checked;
+  const batchName = document.getElementById("avatarName")?.value.trim() || '';
+  const batchAvatarImage = document.getElementById("avatarImage")?.files?.[0] || null;
+  const batchAvatarId = document.getElementById("avatarSelect")?.value || '';
 
   setUploadStatus(t("uploading"));
   setProgress(0, "");
 
-  for (let idx = 0; idx < uploadFiles.length; idx++) {
-    const file = uploadFiles[idx];
-    const itemEl = document.getElementById("upload-item-" + idx);
-    const statusEl = document.getElementById("upload-status-" + idx);
-    if (itemEl) itemEl.classList.add("uploading");
-    if (statusEl) statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> ';
+  try {
+    for (let idx = 0; idx < batchFiles.length; idx++) {
+      if (!isUploadBatchCurrent()) break;
+      const batchItem = batchFiles[idx];
+      const file = batchItem.file;
+      const itemEl = document.getElementById("upload-item-" + idx);
+      const statusEl = document.getElementById("upload-status-" + idx);
+      if (itemEl) itemEl.classList.add("uploading");
+      if (statusEl) statusEl.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> ';
 
     try {
       setUploadStatus(`Processing ${file.name}...`);
       let fileData = new Uint8Array(await file.arrayBuffer());
+      if (!isUploadBatchCurrent()) return;
 
       // 1. Use raw file data directly (no gzip — VRChat security scanner needs raw AssetBundle)
       // NOTE: rawData and sigBytes/sigMd5 may be reassigned in update mode after patching
@@ -617,8 +706,8 @@ async function startUpload() {
 
       if (isNew) {
         let name =
-          uploadFiles.length === 1
-            ? document.getElementById("avatarName").value.trim()
+          batchFiles.length === 1
+            ? batchName
             : "";
         if (!name) name = file.name.replace(/\.vrca$/i, "");
 
@@ -652,7 +741,7 @@ async function startUpload() {
         const verData = await rVer.json();
         versionId = verData.versions[verData.versions.length - 1].version;
       } else {
-        const selAvatarId = document.getElementById("avatarSelect").value;
+        const selAvatarId = batchAvatarId;
         if (!selAvatarId) throw new Error("No avatar selected");
 
         // Patch BlueprintId in .vrca to match the target avatar
@@ -667,9 +756,9 @@ async function startUpload() {
 
         // Get avatar info to find file ID
         const rAv = await apiCall(`/api/vrc/avatars/${selAvatarId}`);
-        if (!rAv.ok) throw new Error(`获取模型信息失败 (HTTP ${rAv.status})，可能无权修改此模型`);
+        if (!rAv.ok) throw new Error(t('toast.avatarInfoFail', {status: rAv.status}));
         const avData = await rAv.json();
-        if (!avData || !avData.unityPackages) throw new Error(`模型信息格式异常，无法读取 unityPackages`);
+        if (!avData || !avData.unityPackages) throw new Error(t('toast.avatarInfoBadFormat'));
         for (const pkg of avData.unityPackages || []) {
           if (["standalonewindows", "pc"].includes(pkg.platform)) {
             const m = (pkg.assetUrl || "").match(/file\/(file_[a-f0-9-]+)\//);
@@ -720,7 +809,7 @@ async function startUpload() {
           "X-S3-Url": sigUrl,
           "X-S3-content-md5": sigMd5,
           "X-S3-content-type": "application/x-rsync-signature",
-          "X-VRC-Auth": vrcAuth,
+          "X-VRC-Auth": batchAuth,
         },
       });
       if (!rSigPut.ok) {
@@ -794,7 +883,7 @@ async function startUpload() {
           body: chunk,
           headers: {
             "X-S3-Url": partUrl,
-            "X-VRC-Auth": vrcAuth,
+            "X-VRC-Auth": batchAuth,
             "X-S3-content-md5": chunkMd5,
           },
         });
@@ -877,6 +966,7 @@ async function startUpload() {
       // VRChat *usually* auto-promotes the latest version, but some edge cases
       // leave the avatar on the old version — this PUT guarantees the new
       // version is live. Harmless if VRChat already promoted it. (F11)
+      if (!isUploadBatchCurrent()) return;
       if (!isNew && selAvatarId && fileId && versionId) {
         setProgress(97, "Updating avatar to new version...");
         const rUpd = await apiCall(`/api/vrc/avatars/${selAvatarId}`, {
@@ -893,24 +983,27 @@ async function startUpload() {
       }
 
       // 8. Create avatar
+      if (!isUploadBatchCurrent()) return;
       if (isNew && fileId) {
         setProgress(98, "Creating avatar record...");
         let name =
-          uploadFiles.length === 1
-            ? document.getElementById("avatarName").value.trim()
+          batchFiles.length === 1
+            ? batchName
             : "";
         if (!name) name = file.name.replace(/\.vrca$/i, "");
 
         // Upload thumbnail image if selected
         let finalImageUrl = "";
-        const imgInput = document.getElementById("avatarImage");
-        if (imgInput && imgInput.files.length > 0) {
+        const imgInput = batchAvatarImage;
+        if (imgInput) {
           try {
             finalImageUrl = await uploadImageToVRChat(
-              imgInput.files[0],
+              imgInput,
+
               name || "Avatar",
             );
           } catch (err) {
+            if (!isUploadBatchCurrent()) return;
             logMsg("Failed to upload thumbnail: " + err.message, "error");
           }
         }
@@ -948,6 +1041,7 @@ async function startUpload() {
         logMsg(`Avatar created: ${(await rAvatar.json()).id}`, "success");
       }
 
+      if (!isUploadBatchCurrent()) return;
       setProgress(100, "Done!");
       if (statusEl) statusEl.textContent = "✓";
       if (itemEl) {
@@ -956,7 +1050,8 @@ async function startUpload() {
       }
       setUploadStatus(t("uploadOk"), "success");
     } catch (e) {
-      if (isAbortError(e)) { setUploadStatus(t("uploadCancelled") || "已取消", "info"); return; }
+      if (!isUploadBatchCurrent()) return;
+      if (isAbortError(e)) { setUploadStatus(t("toast.uploadCancelled"), "info"); return; }
       if (statusEl) statusEl.textContent = "✗";
       if (itemEl) {
         itemEl.classList.remove("uploading");
@@ -964,8 +1059,15 @@ async function startUpload() {
       }
       setUploadStatus(t("uploadFail") + e.message, "error");
     }
+    }
+  } finally {
+    const stillCurrent = batchAuthEpoch === null || batchAuthEpoch === authSessionEpoch;
+    uploadBatchRunning = false;
+    if (stillCurrent) {
+      _setUploadControlsLocked(false);
+      btn.disabled = uploadFiles.length === 0;
+    }
   }
-  btn.disabled = false;
 }
 
 // ── avtrDB Public Avatar Search ──
@@ -975,6 +1077,7 @@ VRCW.registerModule('upload', {
   renderFileList,
   removeFile,
   startUpload,
+  uploadImageToVRChat,
 });
 renderAppVersionInfo();
 

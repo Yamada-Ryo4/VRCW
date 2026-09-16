@@ -130,25 +130,7 @@ function _worldFavTypeForGroup(groupName) {
 }
 
 function _worldBasicForWorldsCache(w) {
-    if (!w || !w.id) return null;
-    return {
-        id: w.id,
-        name: w.name,
-        thumbnailImageUrl: w.thumbnailImageUrl,
-        imageUrl: w.imageUrl,
-        authorName: w.authorName,
-        authorId: w.authorId,
-        occupants: w.occupants,
-        releaseStatus: w.releaseStatus,
-        isInvalid: !!w.isInvalid,
-        favoriteId: w.favoriteId || null,   // needed to rebuild worldFavoriteIdMap from IDB cache
-        // Platform fields required by filterWorldsByPlatform - without these,
-        // cache hits make platform filtering return empty lists.
-        platforms: w.platforms || null,
-        unityPackages: w.unityPackages || null,
-        description: w.description || '',
-        updatedAt: w.updated_at || w.updatedAt || null
-    };
+  return _worldBasicFromItem(w);
 }
 
 async function _saveWorldBasicsForCurrentCategory(cat = currentWorldCategory) {
@@ -160,6 +142,8 @@ async function _saveWorldBasicsForCurrentCategory(cat = currentWorldCategory) {
 
 async function fetchWorlds(category, forceRefresh = false) {
   const seq = ++currentWorldFetchSeq;
+  const sessionToken = makeAuthSessionToken();
+  const isCurrent = () => seq === currentWorldFetchSeq && category === currentWorldCategory && isAuthSessionCurrent(sessionToken);
   currentWorldCategory = category;
   const gridEl  = document.getElementById('worldGrid');
   const statsEl = document.getElementById('worldStats');
@@ -178,9 +162,11 @@ async function fetchWorlds(category, forceRefresh = false) {
   let cacheIsFresh = false;
   try {
     const cachedBasicsRaw = await idb.get(WORLD_CACHE_PREFIX + category);
+    if (!isCurrent()) return;
     const cacheExists = Array.isArray(cachedBasicsRaw);
     const cachedBasics = cacheExists ? cachedBasicsRaw : [];
     const cacheAge = await idb.get('world_basics_age_' + category) || 0;
+    if (!isCurrent()) return;
     cacheIsFresh = cacheExists && (Date.now() - cacheAge) < WORLDS_CACHE_TTL;
 
     if (cacheExists) {
@@ -196,9 +182,8 @@ async function fetchWorlds(category, forceRefresh = false) {
       // returning, otherwise cleanupInvalidWorlds() can't find favIds and all
       // DELETE calls fail silently (BUG: every item falls into the else-fail branch).
       if (!forceRefresh && category.startsWith('fav_')) {
-        worldFavoriteIdMap = new Map();
         cachedBasics.forEach(w => { if (w.id && w.favoriteId) worldFavoriteIdMap.set(w.id, w.favoriteId); });
-        return;
+        if (cacheIsFresh) return;
       }
       // If cache is still fresh, skip API refresh entirely — saves 87+ requests
       if (cacheIsFresh && !forceRefresh) return;
@@ -1047,16 +1032,9 @@ async function showCacheClearModal() {
     if (!matched) catKeys['other'].push(k);
   }
 
-  // Estimate image blob count
+  // Count only this account's image namespace.
   let imageCount = 0;
-  try {
-    imageCount = await new Promise(res => {
-      const tx = idb.db.transaction('images','readonly');
-      const req = tx.objectStore('images').count();
-      req.onsuccess = () => res(req.result);
-      req.onerror  = () => res(0);
-    });
-  } catch(_) {}
+  try { imageCount = await idb.imageCount(); } catch(_) {}
   catKeys['images'] = imageCount > 0 ? Array(imageCount).fill('__img__') : [];
 
   const modal = document.createElement('div');
@@ -1122,26 +1100,12 @@ async function showCacheClearModal() {
       }
     }
 
-    // Delete from cache store
-    if (keysToDelete.length) {
-      await idb.init();
-      await new Promise(resolve => {
-        const tx = idb.db.transaction('cache', 'readwrite');
-        const store = tx.objectStore('cache');
-        keysToDelete.forEach(k => store.delete(k));
-        tx.oncomplete = resolve;
-        tx.onerror = resolve;
-      });
-    }
+    // Delete logical keys from this account's namespace.
+    if (keysToDelete.length) await idb.deleteKeys(keysToDelete);
 
-    // Clear images store if checked
+    // Clear only this account's image namespace.
     if (document.getElementById('ccc_images')?.checked && imageCount > 0) {
-      await new Promise(resolve => {
-        const tx = idb.db.transaction('images', 'readwrite');
-        tx.objectStore('images').clear();
-        tx.oncomplete = resolve;
-        tx.onerror = resolve;
-      });
+      await idb.clearImages();
       // Also clear Service Worker image cache
       if (navigator.serviceWorker?.controller) {
         navigator.serviceWorker.controller.postMessage('clearImageCache');

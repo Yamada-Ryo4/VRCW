@@ -2663,6 +2663,10 @@ select.input-field {
    ══════════════════════════════════════════════ */
 @media (max-width: 768px) {
 
+  .global-nav-collapsed {
+    display: none !important;
+  }
+
   /* Global nav → bottom bar */
   .global-nav {
     position: fixed;
