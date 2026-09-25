@@ -126,6 +126,29 @@ function parseLocation(location) {
   return { worldId, instanceId: rest.split('~')[0], type };
 }
 
+// Direct-open accepts only an exact supported ID or an official HTTPS URL
+// whose path carries exactly one matching ID. The caller dispatches by parsed
+// type and never navigates to or opens the supplied URL itself.
+function parseDirectOpenId(input) {
+  const value = String(input || '').trim();
+  if (!value || value.length > 2048) return null;
+  const idPattern = /^(avtr|usr|wrld)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (idPattern.test(value)) return { type: value.slice(0, value.indexOf('_')).toLowerCase(), id: value };
+
+  let parsed;
+  try { parsed = new URL(value); } catch (_) { return null; }
+  if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'vrchat.com'
+      || parsed.port || parsed.username || parsed.password || parsed.search || parsed.hash) return null;
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length !== 3 || segments[0].toLowerCase() !== 'home') return null;
+  const type = { avatar: 'avtr', user: 'usr', world: 'wrld' }[segments[1].toLowerCase()];
+  const id = segments[2];
+  if (!type || !idPattern.test(id) || id.slice(0, id.indexOf('_')).toLowerCase() !== type) return null;
+  const ids = value.match(/(?:avtr|usr|wrld)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/ig) || [];
+  if (ids.length !== 1 || ids[0] !== id) return null;
+  return { type, id };
+}
+
 function getLanguages(tags = []) {
   const langMap = { zho:'🇨🇳', eng:'🇺🇸', jpn:'🇯🇵', kor:'🇰🇷', deu:'🇩🇪', fra:'🇫🇷', spa:'🇪🇸',
                     por:'🇧🇷', rus:'🇷🇺', swe:'🇸🇪', ces:'🇨🇿', pol:'🇵🇱', tur:'🇹🇷', fin:'🇫🇮',
@@ -194,5 +217,5 @@ function formatDate(d) {
   });
 }
 
-VRCW.registerModule('common', { getStatusLabel, getTrustInfo, isVRCPlus, getPlatformEmoji, getLocationDisplay, parseLocation, getLanguages, friendLogMsg, worldLogMsg, proxyImg, formatDate, getLocale });
+VRCW.registerModule('common', { getStatusLabel, getTrustInfo, isVRCPlus, getPlatformEmoji, getLocationDisplay, parseLocation, parseDirectOpenId, getLanguages, friendLogMsg, worldLogMsg, proxyImg, formatDate, getLocale });
 renderAppVersionInfo();

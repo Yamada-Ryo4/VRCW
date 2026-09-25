@@ -16,10 +16,126 @@ let currentWorldDetail  = null;
 // favorites-record ID) onto each world object so it survives IDB caching.
 let _pendingFavIdMap    = new Map();
 
+function syncWorldLocalFavoriteButtons() {
+  document.querySelectorAll('[data-local-world-fav]').forEach(button => {
+    const saved = localWorldIdMap.has(button.dataset.localWorldFav);
+    const label = saved ? t('world.removeLocal') : t('world.saveLocal');
+    button.innerHTML = saved ? '<i class="fa-solid fa-bookmark"></i>' : '<i class="fa-regular fa-bookmark"></i>';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-pressed', saved ? 'true' : 'false');
+  });
+  _refreshWorldLocalFavoriteButton();
+}
+
+function _refreshWorldLocalFavoriteButton() {
+  const id = currentWorldDetail?.id;
+  if (!id) return;
+  const saved = localWorldIdMap.has(id);
+  const label = saved ? t('world.removeLocal') : t('world.saveLocal');
+  ['worldDetailLocalFavBtn', 'worldDetailMobileLocalFavBtn'].forEach(buttonId => {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    button.innerHTML = `<i class="fa-solid fa-bookmark"></i> ${escHtml(label)}`;
+    button.classList.toggle('btn-warning', saved);
+    button.classList.toggle('btn-secondary', !saved);
+    button.setAttribute('aria-pressed', saved ? 'true' : 'false');
+  });
+}
+
+async function toggleWorldLocalFavorite() {
+  const world = currentWorldDetail;
+  if (!world?.id) return;
+  if (localWorldIdMap.has(world.id)) await removeFromLocalWorldFavorite(world.id, false);
+  else await saveToLocalWorldFavorite(world);
+  _refreshWorldLocalFavoriteButton();
+}
+
+async function quickWorldLocalFav(worldId, event) {
+  event?.stopPropagation?.();
+  const world = allWorlds.find(item => item.id === worldId) || localWorldFavs.find(item => item.id === worldId);
+  if (!world) return;
+  if (localWorldIdMap.has(worldId)) await removeFromLocalWorldFavorite(worldId, false);
+  else await saveToLocalWorldFavorite(world);
+}
+
+function getLatestWindowsWorldPackage(world) {
+  const packages = Array.isArray(world?.unityPackages) ? world.unityPackages : [];
+  return packages.filter(pkg => {
+    if (!pkg || pkg.platform !== 'standalonewindows' || typeof pkg.assetUrl !== 'string') return false;
+    try {
+      const url = new URL(pkg.assetUrl);
+      return url.protocol === 'https:' && url.hostname.toLowerCase() === 'api.vrchat.cloud'
+        && !url.port && !url.username && !url.password
+        && /^\/api\/1\/file\/file_[0-9a-f-]{36}\/\d+\/file$/i.test(url.pathname)
+        && !url.pathname.includes('/variant/');
+    } catch (_) { return false; }
+  })
+    .reduce((best, pkg) => !best || (Number(pkg.assetVersion) || 0) > (Number(best.assetVersion) || 0) ? pkg : best, null);
+}
+
+function updateWorldDownloadButtons(world, loading = false) {
+  const available = !loading && !!getLatestWindowsWorldPackage(world);
+  for (const id of ['worldDetailDownloadBtn', 'worldDetailMobileDownloadBtn']) {
+    const button = document.getElementById(id);
+    if (!button) continue;
+    button.hidden = !available;
+    button.setAttribute('aria-hidden', available ? 'false' : 'true');
+    button.disabled = !available || button.dataset.downloading === '1';
+  }
+}
+
+async function downloadCurrentWorld() {
+  const world = currentWorldDetail;
+  const detailToken = window._worldDetailActiveToken;
+  if (!world?.id || !detailToken || !isUiTokenCurrent(detailToken)
+      || document.getElementById('worldDetailId')?.textContent !== world.id) return;
+  if (!getLatestWindowsWorldPackage(world)) {
+    showToast(t('world.noWindowsPackage'), 'error');
+    return;
+  }
+  if (!vrcAuth) {
+    showToast(t('toast.uidMissingRelogin'), 'error');
+    return;
+  }
+  const buttons = ['worldDetailDownloadBtn', 'worldDetailMobileDownloadBtn'].map(id => document.getElementById(id)).filter(Boolean);
+  if (buttons.some(button => button.dataset.downloading === '1')) return;
+  buttons.forEach(button => { button.dataset.downloading = '1'; button.disabled = true; });
+  try {
+    const response = await fetch(`${API_BASE}/api/world-download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-VRC-Auth': btoa(vrcAuth) },
+      body: JSON.stringify({ worldId: world.id })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    if (blob.type.includes('text/html') || blob.type.includes('application/json') || blob.size === 0) {
+      throw new Error(t('world.noWindowsPackage'));
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = `${String(world.name || 'world').normalize('NFKC').replace(/[\\u0000-\\u001f\\u007f<>:"/\\\\|?*]/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || 'world'}_${world.id.slice(-8)}_windows.vrcw`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+    showToast(t('world.downloadStarted'), 'success');
+  } catch (error) {
+    showToast(t('world.downloadFailed', {msg: error.message}), 'error');
+  } finally {
+    buttons.forEach(button => { delete button.dataset.downloading; button.disabled = !getLatestWindowsWorldPackage(currentWorldDetail); });
+  }
+}
+
 async function initWorldsTab() {
   worldsLoaded = true;
   await loadWorldFavGroups();
   // Default: first fav group or recent
+  await syncLocalWorldFavorites();
   if (worldFavGroups.length > 0) {
     switchWorldCategory('fav_' + worldFavGroups[0].name);
   } else {
@@ -60,6 +176,7 @@ function renderWorldFavGroupButtons(message) {
   }).join('');
 
   html += makeCatBtn(t('world.myUploads'), "switchWorldCategory('mine')", 'worldCatMine');
+  html += makeCatBtn(`<i class="fa-solid fa-bookmark"></i> ${escHtml(t('world.localCount', {count: localWorldFavs.length}))}`, "switchWorldCategory('local')", 'worldCatLocal');
 
   if (message) {
     html = `<div style="font-size:0.75em;color:var(--text-muted);padding:4px 0 8px;line-height:1.5;">${escHtml(message)}</div>` + html;
@@ -156,6 +273,15 @@ async function fetchWorlds(category, forceRefresh = false) {
 
   const catLabel = category.startsWith('fav_') ? t('world.favGroupLabel', {name: category.slice(4)}) : category;
   worldLogMsg(t('log.switchToWorldCat', {name: catLabel}), 'info');
+  if (category === 'local') {
+    await syncLocalWorldFavorites();
+    if (seq !== currentWorldFetchSeq || category !== currentWorldCategory) return;
+    allWorlds = localWorldFavs.slice();
+    filterWorlds();
+    if (statsEl) statsEl.textContent = t('world.localCount', {count: allWorlds.length});
+    _updateWorldActionBtns();
+    return;
+  }
 
   // ── Step 1: Load basics from cache immediately ──────────────────────────
   const WORLDS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
@@ -465,6 +591,7 @@ function _buildWorldCard(w) {
   card.onclick = () => openWorldDetail(w.id, w);
   const isCached = loadedImageUrls.has(imageCacheKey(thumb));
   const isFaved  = worldFavoriteIdMap.has(w.id);
+  const isLocalFaved = localWorldIdMap.has(w.id);
   const sel = selectedWorldIds.has(w.id);
 
   card.innerHTML = `<div class="avatar-thumb-wrapper ${isCached?'':'img-loading'}">
@@ -475,6 +602,7 @@ function _buildWorldCard(w) {
       </div>
       <div class="card-tr-overlay">
         <div class="card-fav-quick" data-fav-btn="${escHtml(w.id)}" onclick="quickWorldFav('${escJsAttr(w.id)}',event)" title="${isFaved ? t('world.unfavorite') : t('world.addToFavorites')}">${isFaved ? '<i class="fa-solid fa-star"></i> ' : '☆'}</div>
+        <button type="button" class="card-fav-quick" data-local-world-fav="${escHtml(w.id)}" onclick="quickWorldLocalFav('${escJsAttr(w.id)}',event)" title="${isLocalFaved ? t('world.removeLocal') : t('world.saveLocal')}" aria-label="${isLocalFaved ? t('world.removeLocal') : t('world.saveLocal')}" aria-pressed="${isLocalFaved}">${isLocalFaved ? '<i class="fa-solid fa-bookmark"></i>' : '<i class="fa-regular fa-bookmark"></i>'}</button>
       </div>
       <div style="position:absolute;bottom:8px;right:8px;display:flex;gap:4px;z-index:5;pointer-events:none;">
         ${friendsHere>0 ? `<div style="background:var(--accent);color:white;font-size:0.7em;padding:2px 6px;border-radius:4px;font-weight:700;box-shadow:0 2px 4px rgba(0,0,0,0.3);"><i class="fa-solid fa-handshake"></i> ${friendsHere}</div>` : ''}
@@ -737,6 +865,7 @@ function switchWorldDetailTab(tab) {
 }
 
 async function openWorldDetail(worldId, worldObj = null) {
+  if (currentWorldCategory === 'local') switchWorldCategory('local');
   const modal = document.getElementById('worldDetailModal');
   if (!modal) return;
   bumpUiEpoch();
@@ -746,6 +875,7 @@ async function openWorldDetail(worldId, worldObj = null) {
 
   // Show the modal FIRST so the user sees something immediately,
   // even if subsequent setup throws.
+  updateWorldDownloadButtons(null, true);
   modal.style.zIndex = modalZTop();
   modal.classList.remove('hidden');
   if (modal.dataset.scrollLocked !== '1') { lockBodyScroll(); modal.dataset.scrollLocked = '1'; }
@@ -769,6 +899,9 @@ async function openWorldDetail(worldId, worldObj = null) {
     const w = await r.json();
     if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('worldDetail', detailCtrl)) return;
     currentWorldDetail = w;
+    updateWorldDownloadButtons(w);
+    await syncLocalWorldFavorites();
+    if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('worldDetail', detailCtrl)) return;
 
     // Fill Basic Info
     document.getElementById('worldDetailImg').src = proxyImg(w.thumbnailImageUrl||w.imageUrl||'');
@@ -934,6 +1067,7 @@ async function openWorldDetail(worldId, worldObj = null) {
     const favBtn  = document.getElementById('worldDetailFavBtn');
     const isFaved = worldFavoriteIdMap.has(w.id) || !!w.favoriteId;
     if (isFaved && w.favoriteId) worldFavoriteIdMap.set(w.id, w.favoriteId);
+    _refreshWorldLocalFavoriteButton();
     if (favBtn) {
       favBtn.innerHTML  = isFaved ? `<i class="fa-solid fa-star"></i> ${escHtml(t('world.unfavorite'))}` : `<i class="fa-solid fa-star"></i> ${escHtml(t('world.favorite'))}`;
       favBtn.className  = isFaved ? 'btn btn-warning' : 'btn btn-secondary';
@@ -960,6 +1094,7 @@ function closeWorldDetail() {
     if (modal.dataset.scrollLocked === '1') { unlockBodyScroll(); modal.dataset.scrollLocked = ''; }
   }
   currentWorldDetail = null;
+  updateWorldDownloadButtons(null);
   if (typeof flushPendingAvatarCardUpdates === 'function') flushPendingAvatarCardUpdates();
 }
 
@@ -1332,5 +1467,10 @@ VRCW.registerModule('worlds', {
   addWorldToFavorite,
   toggleWorldFavMenu,
   toggleWorldFavorite,
+  getLatestWindowsWorldPackage,
+  updateWorldDownloadButtons,
+  downloadCurrentWorld,
+  toggleWorldLocalFavorite,
+  quickWorldLocalFav,
 });
 renderAppVersionInfo();

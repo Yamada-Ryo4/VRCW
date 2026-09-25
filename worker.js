@@ -158,6 +158,104 @@ function sanitizeDownloadFilename(filename) {
         .slice(0, 180) || "avatar.vrca";
 }
 
+function sanitizeWorldDownloadFilename(worldName, worldId) {
+    let base = String(worldName || "world")
+        .normalize('NFKC')
+        .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]/g, '_')
+        .replace(/[. ]+$/g, '')
+        .trim()
+        .slice(0, 100);
+    if (!base || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(base)) base = 'world';
+    const suffix = String(worldId || '').slice(-8);
+    return `${base}_${suffix}_windows.vrcw`;
+}
+
+function asciiDownloadFilename(filename) {
+    return String(filename || 'download.vrcw')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\x20-\x7e]/g, '_')
+        .replace(/[\r\n"]/g, '_')
+        .replace(/[\\/]/g, '_')
+        .slice(0, 180) || 'download.vrcw';
+}
+
+function isOfficialWorldFileUrl(rawUrl) {
+    let parsed;
+    try { parsed = new URL(rawUrl); } catch { return false; }
+    return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.vrchat.cloud'
+        && !parsed.port && !parsed.username && !parsed.password
+        && /^\/api\/1\/file\/file_[0-9a-f-]{36}\/\d+\/file$/i.test(parsed.pathname);
+}
+
+async function readBodyLimited(stream, maxBytes) {
+    if (!stream) return null;
+    const reader = stream.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > maxBytes) {
+                await reader.cancel();
+                return null;
+            }
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return bytes;
+}
+
+function getLatestWindowsWorldPackage(world) {
+    const packages = Array.isArray(world?.unityPackages) ? world.unityPackages : [];
+    return packages.filter(pkg => pkg && pkg.platform === 'standalonewindows'
+        && typeof pkg.assetUrl === 'string'
+        && !pkg.assetUrl.includes('/variant/')
+        && isOfficialWorldFileUrl(pkg.assetUrl))
+        .reduce((best, pkg) => !best || (Number(pkg.assetVersion) || 0) > (Number(best.assetVersion) || 0) ? pkg : best, null);
+}
+
+async function proxyWorldDownloadAsset(fileUrl, filename, authCookies) {
+    if (!isOfficialWorldFileUrl(fileUrl)) return jsonResp({ error: 'World package URL not allowed' }, 403);
+    let current = new URL(fileUrl);
+    let redirectedFromCredentialHost = false;
+    let response = null;
+    for (let hop = 0; hop <= 5; hop++) {
+        const allowed = isOfficialWorldFileUrl(current.toString())
+            || (redirectedFromCredentialHost && isAllowedDeliveryCdnTarget(current.toString()));
+        if (!allowed) return jsonResp({ error: 'Redirect target not allowed' }, 403);
+        const headers = new Headers({ 'User-Agent': USER_AGENT });
+        if (authCookies && isCredentialAllowedTarget(current.toString())) headers.set('Cookie', authCookies);
+        response = await fetch(current.toString(), { method: 'GET', headers, redirect: 'manual', signal: AbortSignal.timeout(30000) });
+        if (![301, 302, 303, 307, 308].includes(response.status)) break;
+        const location = response.headers.get('Location');
+        if (!location || hop === 5) return jsonResp({ error: 'Invalid redirect' }, 502);
+        redirectedFromCredentialHost = isCredentialAllowedTarget(current.toString());
+        current = new URL(location, current);
+    }
+    if (!response?.ok) return jsonResp({ error: `World package fetch failed: ${response?.status || 502}` }, response?.status || 502);
+    const type = (response.headers.get('Content-Type') || '').toLowerCase();
+    if (type.includes('text/html') || type.includes('application/json')) return jsonResp({ error: 'World package response is not binary' }, 502);
+    const safeFilename = encodeURIComponent(filename);
+    const headers = {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename=\"${asciiDownloadFilename(filename)}\"; filename*=UTF-8''${safeFilename}`,
+        'Cache-Control': 'no-store',
+        ...CORS_HEADERS,
+    };
+    const length = response.headers.get('Content-Length');
+    if (length && /^\d+$/.test(length)) headers['Content-Length'] = length;
+    return new Response(response.body, { status: 200, headers });
+}
+
 function jsonResp(data, status = 200, extraHeaders = {}) {
     return new Response(JSON.stringify(data), {
         status,
@@ -224,14 +322,14 @@ async function isVrcFriend(authCookies, targetId) {
     return false;
 }
 
+function decodeAuthValue(value) {
+    const encoded = String(value || "");
+    if (!encoded) return "";
+    try { return atob(encoded); } catch { return encoded; }
+}
+
 function getAuth(request) {
-    const header = request.headers.get("X-VRC-Auth") || "";
-    if (!header) return "";
-    try {
-        return atob(header);
-    } catch {
-        return header;
-    }
+    return decodeAuthValue(request.headers.get("X-VRC-Auth") || "");
 }
 
 function shouldReturnRefreshedAuth(resp, setCookies) {
@@ -669,6 +767,41 @@ export default {
                 },
             });
         }
+        // POST /api/world-download — resolve and stream the current Windows world package.
+        // Only a world ID and auth credential are accepted; package URL and filename
+        // always come from fresh official VRChat world metadata.
+        if (path === "/api/world-download" && request.method === "POST") {
+            const contentType = request.headers.get('content-type') || '';
+            if (!/^application\/json\s*(?:;|$)/i.test(contentType)) return jsonResp({ error: 'Invalid download request' }, 400);
+            const MAX_WORLD_DOWNLOAD_BODY_BYTES = 1024;
+            const contentLength = Number(request.headers.get('content-length') || 0);
+            if (Number.isFinite(contentLength) && contentLength > MAX_WORLD_DOWNLOAD_BODY_BYTES) return jsonResp({ error: 'Download request too large' }, 413);
+            const bodyBytes = await readBodyLimited(request.body, MAX_WORLD_DOWNLOAD_BODY_BYTES);
+            if (!bodyBytes) return jsonResp({ error: 'Download request too large' }, 413);
+            let body;
+            try { body = JSON.parse(new TextDecoder().decode(bodyBytes)); } catch { return jsonResp({ error: 'Invalid JSON' }, 400); }
+            const worldId = typeof body?.worldId === 'string' ? body.worldId : '';
+            if (!/^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worldId)) return jsonResp({ error: 'Invalid world ID' }, 400);
+            if (!body || Object.keys(body).some(key => key !== 'worldId')) return jsonResp({ error: 'Unexpected download request fields' }, 400);
+            const downloadAuth = auth;
+            if (!downloadAuth) return jsonResp({ error: 'Authentication required' }, 401);
+            const identity = await resolveVrcIdentity(request, env);
+            if (!identity) return jsonResp({ error: 'Authentication required' }, 401);
+
+            try {
+                const { resp: worldResp } = await vrcFetch(`/worlds/${encodeURIComponent(worldId)}`, { method: 'GET' }, downloadAuth);
+                if (!worldResp.ok) return jsonResp({ error: 'World lookup failed' }, worldResp.status);
+                const world = await worldResp.json();
+                if (!world || world.id !== worldId || !Array.isArray(world.unityPackages)) return jsonResp({ error: 'Invalid world metadata' }, 502);
+                const pkg = getLatestWindowsWorldPackage(world);
+                if (!pkg) return jsonResp({ error: 'Windows world package unavailable' }, 404);
+                return proxyWorldDownloadAsset(pkg.assetUrl, sanitizeWorldDownloadFilename(world.name, worldId), downloadAuth);
+            } catch (error) {
+                const status = error?.name === 'TimeoutError' ? 504 : 502;
+                return jsonResp({ error: 'World package unavailable' }, status);
+            }
+        }
+
         // GET /api/download?url=...&filename=... — Proxy download with correct filename
         // Since this response is same-origin, browser `a.download` attribute works correctly.
         if (path === "/api/download" && request.method === "GET") {

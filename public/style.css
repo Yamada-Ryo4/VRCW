@@ -2062,6 +2062,7 @@ select.input-field {
   border-radius: 6px;
 }
 
+
 .friends-section-header {
   font-size: 0.65rem;
   font-weight: 600;
@@ -3174,9 +3175,16 @@ select.input-field {
     gap: 10px !important;
   }
 
-  /* Hide header icon buttons (⭐ ⚡) on mobile — moved to bottom bar */
-  .world-detail-header-btns .btn-icon:not([title="关闭"]):not([title="删除世界"]) {
+  /* Duplicate local favorite, download, cloud favorite, and join controls in the bottom bar. */
+  #worldDetailLocalFavBtn,
+  #worldDetailDownloadBtn,
+  #worldDetailMainFavBtn,
+  #worldDetailJoinBtn {
     display: none !important;
+  }
+  #worldDetailDeleteBtn,
+  #worldDetailCloseBtn {
+    display: flex !important;
   }
 
   /* Show the mobile bottom action bar */

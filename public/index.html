@@ -37,7 +37,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌐</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=192">
+    <link rel="stylesheet" href="style.css?v=194">
     <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js" defer></script>
     <script>
       // Register Service Worker for image caching — eliminates repeat Cloudflare image requests
@@ -107,9 +107,12 @@
         <!-- Mobile Top Bar -->
         <div id="mobileTopBar" class="mobile-top-bar hidden">
             <div class="mobile-top-title">VRCW</div>
-            <button id="mobileSidebarBtn" class="mobile-menu-btn" onclick="toggleSidebar()">
-                <i class="fa-solid fa-bars"></i>
-            </button>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <button id="mobileDirectOpenBtn" class="mobile-menu-btn" onclick="openDirectOpenModal()" data-i18n-title="nav.directOpen" title="按 ID 打开"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>
+                <button id="mobileSidebarBtn" class="mobile-menu-btn" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+            </div>
         </div>
         <!-- Left Global Nav -->
         <div class="app-layout">
@@ -118,7 +121,7 @@
                 <div class="global-nav-header">
                     <div class="nav-logo">
                         <span class="app-title">VRCW</span>
-                        <span class="app-version" id="appVersionBadge">v192</span>
+                        <span class="app-version" id="appVersionBadge">v194</span>
                     </div>
                     <button class="nav-collapse-btn" onclick="toggleGlobalNav()" title="收起" data-i18n-title="nav.collapse">&#8249;</button>
                 </div>
@@ -145,6 +148,9 @@
                     <button class="nav-item" onclick="switchTab('search')" data-tab="search" id="navItemSearch">
                         <i class="nav-icon fa-solid fa-magnifying-glass"></i><span class="nav-label" data-i18n="nav.search">搜索</span>
                     </button>
+                    <button class="nav-item" onclick="openDirectOpenModal()" id="navItemDirectOpen" data-i18n-title="nav.directOpen" title="Open by ID">
+                        <i class="nav-icon fa-solid fa-arrow-up-right-from-square"></i><span class="nav-label" data-i18n="nav.directOpen">Open by ID</span>
+                    </button>
                     <div style="height:1px;background:var(--border);margin:4px 0;"></div>
                     <button class="nav-item" onclick="switchTab('settings')" data-tab="settings" id="navItemSettings">
                         <i class="nav-icon fa-solid fa-gear"></i><span class="nav-label" data-i18n="nav.settings">高级设置</span>
@@ -170,6 +176,7 @@
                 <button class="nav-item-icon" onclick="switchTab('upload')" data-tab="upload" id="navIconUpload" data-i18n-title="nav.upload" title="上传"><i class="fa-solid fa-upload"></i> </button>
                 <button class="nav-item-icon" onclick="switchTab('assets')" data-tab="assets" id="navIconAssets" data-i18n-title="nav.assets" title="资产"><i class="fa-solid fa-sack-dollar"></i> </button>
                 <button class="nav-item-icon" onclick="switchTab('search')" data-tab="search" id="navIconSearch" data-i18n-title="nav.search" title="搜索"><i class="fa-solid fa-magnifying-glass"></i> </button>
+                <button class="nav-item-icon" onclick="openDirectOpenModal()" id="navIconDirectOpen" data-i18n-title="nav.directOpen" title="Open by ID"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>
                 <hr style="width:70%;border-color:var(--border);margin:2px 0;">
                 <button class="nav-item-icon" onclick="switchTab('settings')" data-tab="settings" id="navIconSettings" data-i18n-title="nav.settings" title="高级设置"><i class="fa-solid fa-gear"></i> </button>
                 <button class="nav-item-icon" onclick="doLogout()" data-i18n-title="nav.logout" title="退出" style="margin-top:auto;color:var(--error);"><i class="fa-solid fa-right-from-bracket"></i> </button>
@@ -716,7 +723,7 @@
                                 <h2>关于 VRCW</h2>
                                 <p>VRChat Web Companion for managing avatars, worlds, friends, groups, and assets.</p>
                             </div>
-                            <span class="about-version-pill" data-app-version>v192</span>
+                            <span class="about-version-pill" data-app-version>v194</span>
                         </div>
 
                         <section class="about-panel">
@@ -730,7 +737,7 @@
                             <div class="about-meta-grid">
                                 <div class="about-meta-item">
                                     <span class="about-meta-label" data-i18n="about.version">版本</span>
-                                    <strong data-app-version>v192</strong>
+                                    <strong data-app-version>v194</strong>
                                 </div>
                                 <div class="about-meta-item">
                                     <span class="about-meta-label" data-i18n="about.author">作者</span>
@@ -870,6 +877,23 @@
         </div>
     </div>
 
+    <!-- ── Direct Open Modal ── -->
+    <div id="directOpenModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="directOpenTitle" onclick="if(event.target===this)closeDirectOpenModal()">
+        <form class="modal-content" style="max-width:480px;width:100%;padding:24px;" onsubmit="return submitDirectOpen()">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <h2 id="directOpenTitle" data-i18n="direct.openTitle" style="margin:0;font-size:1.15rem;">Open avatar, player, or world</h2>
+                <button class="btn btn-icon" type="button" onclick="closeDirectOpenModal()" data-i18n-title="wd.close" title="Close">✕</button>
+            </div>
+            <label for="directOpenInput" data-i18n="direct.openPrompt" style="display:block;margin-top:18px;font-size:0.82rem;color:var(--text-muted);">Paste an exact VRChat ID or official vrchat.com URL</label>
+            <input id="directOpenInput" class="input-field" type="text" autocomplete="off" spellcheck="false" data-i18n-placeholder="direct.openPlaceholder" aria-describedby="directOpenError" style="width:100%;margin-top:8px;">
+            <p id="directOpenError" role="alert" aria-live="polite" style="display:none;color:var(--error);font-size:0.82rem;margin:8px 0 0;"></p>
+            <div class="modal-actions" style="margin-top:18px;">
+                <button class="btn btn-secondary" type="button" onclick="closeDirectOpenModal()" data-i18n="btnCancel">Cancel</button>
+                <button class="btn btn-primary" type="submit" data-i18n="direct.open">Open</button>
+            </div>
+        </form>
+    </div>
+
     <!-- ── World Detail Modal ── -->
     <div id="worldDetailModal" class="modal hidden" onclick="if(event.target===this)closeWorldDetail()">
         <div class="modal-content world-detail-modal-content" style="max-width:900px;width:100%;padding:0;overflow:hidden;background:var(--bg-primary);border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,0.7);display:flex;flex-direction:column;max-height:92vh;">
@@ -883,9 +907,11 @@
                 </div>
                 <div class="world-detail-header-btns" style="display:flex;gap:8px;flex-shrink:0;">
                     <button id="worldDetailDeleteBtn" class="btn btn-icon" style="display:none;" data-i18n-title="wd.delete" title="删除世界" onclick="deleteCurrentWorld()"><i class="fa-solid fa-trash"></i> </button>
+                    <button id="worldDetailLocalFavBtn" class="btn btn-icon" onclick="toggleWorldLocalFavorite()" data-i18n-title="world.saveLocal" title="Save locally"><i class="fa-regular fa-bookmark"></i></button>
+                    <button id="worldDetailDownloadBtn" class="btn btn-icon" onclick="downloadCurrentWorld()" data-i18n-title="world.download" title="Download Windows world" hidden aria-hidden="true" disabled><i class="fa-solid fa-download"></i></button>
                     <button id="worldDetailMainFavBtn" onclick="toggleWorldFavMenu(event)" class="btn btn-icon" data-i18n-title="wd.favorite" title="收藏世界"><i class="fa-solid fa-star"></i> </button>
                     <button id="worldDetailJoinBtn" onclick="joinWorldInstance()" class="btn btn-icon" data-i18n-title="wd.join" title="加入世界"><i class="fa-solid fa-bolt"></i> </button>
-                    <button onclick="closeWorldDetail()" class="btn btn-icon" data-i18n-title="wd.close" title="关闭">✕</button>
+                    <button id="worldDetailCloseBtn" onclick="closeWorldDetail()" class="btn btn-icon" data-i18n-title="wd.close" title="关闭">✕</button>
                 </div>
             </div>
 
@@ -970,6 +996,8 @@
 
             <!-- Mobile-only bottom action bar (matches avatar detail style) -->
             <div class="world-detail-mobile-actions" style="display:none;gap:10px;padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0;">
+                <button id="worldDetailMobileLocalFavBtn" class="btn btn-secondary" style="flex:1;" onclick="toggleWorldLocalFavorite()" data-i18n="world.saveLocal">Save locally</button>
+                <button id="worldDetailMobileDownloadBtn" class="btn btn-secondary" style="flex:1;" onclick="downloadCurrentWorld()" data-i18n="world.download" hidden aria-hidden="true" disabled>Download</button>
                 <div style="flex:1;position:relative;">
                     <button class="btn btn-secondary" style="width:100%;" onclick="toggleWorldFavMenu(event)" id="worldDetailFavBtn"><i class="fa-solid fa-star"></i> <span data-i18n="wd.favBtn">收藏</span></button>
                 </div>
@@ -1033,24 +1061,24 @@
     </div>
 
 
-    <script src="js/core.js?v=192" defer></script>
-    <script src="js/i18n.js?v=192" defer></script>
-    <script src="js/common.js?v=192" defer></script>
-    <script src="js/images.js?v=192" defer></script>
-    <script src="js/logging.js?v=192" defer></script>
-    <script src="js/auth.js?v=192" defer></script>
-    <script src="js/ui-controls.js?v=192" defer></script>
-    <script src="js/sidebar-profile.js?v=192" defer></script>
-    <script src="js/worlds-shell.js?v=192" defer></script>
-    <script src="js/groups-instance-shell.js?v=192" defer></script>
-    <script src="js/shell.js?v=192" defer></script>
-    <script src="js/avatars.js?v=192" defer></script>
-    <script src="js/friends.js?v=192" defer></script>
-    <script src="js/friend-profile-shell.js?v=192" defer></script>
-    <script src="js/groups-shell.js?v=192" defer></script>
-    <script src="js/search-shell.js?v=192" defer></script>
-    <script src="js/context-menu.js?v=192" defer></script>
-    <script src="js/profile-actions.js?v=192" defer></script>
+    <script src="js/core.js?v=194" defer></script>
+    <script src="js/i18n.js?v=194" defer></script>
+    <script src="js/common.js?v=194" defer></script>
+    <script src="js/images.js?v=194" defer></script>
+    <script src="js/logging.js?v=194" defer></script>
+    <script src="js/auth.js?v=194" defer></script>
+    <script src="js/ui-controls.js?v=194" defer></script>
+    <script src="js/sidebar-profile.js?v=194" defer></script>
+    <script src="js/worlds-shell.js?v=194" defer></script>
+    <script src="js/groups-instance-shell.js?v=194" defer></script>
+    <script src="js/shell.js?v=194" defer></script>
+    <script src="js/avatars.js?v=194" defer></script>
+    <script src="js/friends.js?v=194" defer></script>
+    <script src="js/friend-profile-shell.js?v=194" defer></script>
+    <script src="js/groups-shell.js?v=194" defer></script>
+    <script src="js/search-shell.js?v=194" defer></script>
+    <script src="js/context-menu.js?v=194" defer></script>
+    <script src="js/profile-actions.js?v=194" defer></script>
 
     <!-- ── avtrDB Avatar Detail Modal ── -->
     <div id="avtrdbDetailModal" class="modal hidden" onclick="if(event.target===this)closeAvtrdbDetail()">

@@ -36,7 +36,8 @@ function renderWorldFavGroupButtons(message) {
       return makeCatBtn(`${icon} ${escHtml(g.displayName || g.name)}`, `switchWorldCategory('fav_${escJsAttr(g.name)}')`, `worldCatFav_${g.name}`);
     }).join('');
 
-  html += makeCatBtn('My Worlds', "switchWorldCategory('mine')", 'worldCatMine');
+  html += makeCatBtn(t('world.myUploads'), "switchWorldCategory('mine')", 'worldCatMine');
+  html += makeCatBtn(`<i class="fa-solid fa-bookmark"></i> ${escHtml(t('world.localCount', {count: localWorldFavs.length}))}`, "switchWorldCategory('local')", 'worldCatLocal');
   if (message) html = `<div style="font-size:0.75em;color:var(--text-muted);padding:4px 0 8px;line-height:1.5;">${escHtml(message)}</div>` + html;
   container.innerHTML = html || '<div style="font-size:0.75em;color:var(--text-muted);padding:4px 0;">No favorite groups</div>';
 }
@@ -96,6 +97,9 @@ function unfavoriteSelectedWorlds() { return _callWorld('unfavoriteSelectedWorld
 function toggleSelectWorld(id, e) { return _callWorld('toggleSelectWorld', arguments); }
 function switchWorldDetailTab(tab) { return _callWorld('switchWorldDetailTab', arguments); }
 function openWorldDetail(worldId, worldObj) { return _callWorld('openWorldDetail', arguments); }
+function toggleWorldLocalFavorite() { return _callWorld('toggleWorldLocalFavorite', arguments); }
+function downloadCurrentWorld() { return _callWorld('downloadCurrentWorld', arguments); }
+function quickWorldLocalFav(id, event) { return _callWorld('quickWorldLocalFav', arguments); }
 function closeWorldDetail() { return _callWorld('closeWorldDetail', arguments); }
 function deleteCurrentWorld() { return _callWorld('deleteCurrentWorld', arguments); }
 function showCacheClearModal() { return _callWorld('showCacheClearModal', arguments); }

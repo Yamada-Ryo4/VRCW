@@ -714,6 +714,58 @@ function startUpload() {
 }
 
 
+// ── Strict direct-open for avatar/user/world IDs and VRChat URLs ──
+function openDirectOpenModal() {
+  const modal = document.getElementById('directOpenModal');
+  const input = document.getElementById('directOpenInput');
+  const error = document.getElementById('directOpenError');
+  if (!modal || !input) return;
+  if (modal.classList.contains('hidden')) {
+    modal._directOpenReturnFocus = document.activeElement;
+    lockBodyScroll();
+    modal.classList.remove('hidden');
+    modal.style.zIndex = modalZTop();
+  }
+  if (error) { error.textContent = ''; error.style.display = 'none'; }
+  requestAnimationFrame(() => input.focus());
+}
+
+function closeDirectOpenModal() {
+  const modal = document.getElementById('directOpenModal');
+  const input = document.getElementById('directOpenInput');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  unlockBodyScroll();
+  input?.blur();
+  const trigger = modal._directOpenReturnFocus;
+  modal._directOpenReturnFocus = null;
+  if (trigger?.isConnected) trigger.focus();
+}
+
+function submitDirectOpen() {
+  const input = document.getElementById('directOpenInput');
+  const error = document.getElementById('directOpenError');
+  const parsed = typeof parseDirectOpenId === 'function' ? parseDirectOpenId(input?.value) : null;
+  if (!parsed) {
+    if (error) { error.textContent = t('direct.openInvalid'); error.style.display = 'block'; }
+    input?.focus();
+    return false;
+  }
+  if (error) { error.textContent = ''; error.style.display = 'none'; }
+  closeDirectOpenModal();
+  if (input) input.value = '';
+  if (parsed.type === 'avtr') {
+    loadScriptOnce('js/search.js?v=' + APP_CACHE_VERSION).then(() => openLocalDetail(parsed.id));
+  } else if (parsed.type === 'usr') {
+    openFriendProfileById(parsed.id);
+  } else if (parsed.type === 'wrld') {
+    switchTab('worlds');
+    Promise.resolve().then(() => openWorldDetail(parsed.id));
+  }
+  return false;
+}
+
+
 // ── Tabs ──
 function switchTab(tab) {
   // No-op when already on this tab. Re-clicking the active nav item used to

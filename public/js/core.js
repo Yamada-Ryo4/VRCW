@@ -15,9 +15,9 @@ const APP_BUILD_LABEL = "Workers Edition";
 const APP_CACHE_VERSION = (() => {
   try {
     const src = document.currentScript?.src || "";
-    return new URL(src, location.href).searchParams.get("v") || "80";
+    return new URL(src, location.href).searchParams.get("v") || "194";
   } catch (_) {
-    return "82";
+    return "194";
   }
 })();
 const API_BASE = location.origin; // Worker serves from same origin
@@ -87,6 +87,8 @@ let friendFavoriteIdMap = new Map(); // userId -> favoriteId
 window._localNameMap = new Map(); // GLOBAL CACHE: avatarId -> name (for recovery)
 let localAvatarFavs = []; // Local favorites collection (max 200)
 let localAvatarIdMap = new Map(); // avatarId -> true (for UI binary check)
+let localWorldFavs = []; // Browser-only world favorites, separate from VRChat favorite groups
+let localWorldIdMap = new Map(); // worldId -> true
 
 function bumpUiEpoch() {
   currentUiEpoch += 1;
@@ -459,7 +461,7 @@ const idb = {
     if (this.db) return;
     if (this._initPromise) return this._initPromise;
     this._initPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open("vrcw_DB", 4); // Upgrade to v4 for image cache
+      const request = indexedDB.open("vrcw_DB", 5); // Upgrade to v5 for local world favorites
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         this.db = request.result;
@@ -475,6 +477,8 @@ const idb = {
           db.createObjectStore("local_avatars", { keyPath: "id" });
         if (!db.objectStoreNames.contains("images"))
           db.createObjectStore("images"); // Persistent Blob Cache
+        if (!db.objectStoreNames.contains("local_worlds"))
+          db.createObjectStore("local_worlds", { keyPath: "id" });
       };
     });
     return this._initPromise;
@@ -663,6 +667,56 @@ const idb = {
     await this.init();
     const tx = this.db.transaction("local_avatars", "readwrite");
     tx.objectStore("local_avatars").delete(id);
+  },
+  async getLocalWorlds() {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction("local_worlds", "readonly");
+      const req = tx.objectStore("local_worlds").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async saveLocalWorld(world) {
+    if (!world || !/^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(world.id || '')) {
+      throw new Error('Invalid world ID');
+    }
+    await this.init();
+    const record = {
+      id: world.id,
+      name: String(world.name || '').slice(0, 500),
+      description: String(world.description || '').slice(0, 10000),
+      thumbnailImageUrl: String(world.thumbnailImageUrl || ''),
+      imageUrl: String(world.imageUrl || ''),
+      authorName: String(world.authorName || '').slice(0, 300),
+      authorId: String(world.authorId || ''),
+      occupants: Number(world.occupants) || 0,
+      releaseStatus: String(world.releaseStatus || ''),
+      isInvalid: !!world.isInvalid,
+      platforms: Array.isArray(world.platforms) ? world.platforms : [],
+      unityPackages: Array.isArray(world.unityPackages) ? world.unityPackages : [],
+      updatedAt: world.updated_at || world.updatedAt || null,
+      localFavorite: true,
+      localFavoriteAt: Date.now(),
+    };
+    const tx = this.db.transaction("local_worlds", "readwrite");
+    tx.objectStore("local_worlds").put(record);
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error || new Error('Local world save failed'));
+    });
+  },
+  async removeLocalWorld(id) {
+    if (!/^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '')) {
+      throw new Error('Invalid world ID');
+    }
+    await this.init();
+    const tx = this.db.transaction("local_worlds", "readwrite");
+    tx.objectStore("local_worlds").delete(id);
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error || new Error('Local world removal failed'));
+    });
   }
 };
 
@@ -742,7 +796,46 @@ async function persistName(id, name) {
    }, 2000);
 }
 
-idb.initAndLoadMap().then(() => syncLocalFavorites());
+idb.initAndLoadMap().then(() => Promise.all([syncLocalFavorites(), syncLocalWorldFavorites()]));
+
+async function syncLocalWorldFavorites() {
+  try {
+    localWorldFavs = await idb.getLocalWorlds();
+    localWorldIdMap.clear();
+    localWorldFavs.forEach(world => { if (world?.id) localWorldIdMap.set(world.id, true); });
+    if (typeof renderWorldFavGroupButtons === 'function') renderWorldFavGroupButtons();
+    if (typeof syncWorldLocalFavoriteButtons === 'function') syncWorldLocalFavoriteButtons();
+    if (currentWorldCategory === 'local') {
+      allWorlds = localWorldFavs.slice();
+      filterWorlds();
+      const stats = document.getElementById('worldStats');
+      if (stats) stats.textContent = t('world.localCount', {count: allWorlds.length});
+    }
+  } catch (e) { console.warn('syncLocalWorldFavorites', e); }
+}
+
+async function saveToLocalWorldFavorite(world) {
+  if (!world?.id || localWorldIdMap.has(world.id)) return;
+  const record = Object.assign({}, world, { id: world.id, localFavoriteAt: Date.now() });
+  await idb.saveLocalWorld(record);
+  await syncLocalWorldFavorites();
+  if (currentWorldCategory === 'local') {
+    allWorlds = localWorldFavs.slice();
+    filterWorlds();
+  }
+  showToast(t('toast.worldSavedLocal', {name: record.name || record.id}), 'success');
+  if (currentWorldDetail?.id === record.id) _refreshWorldLocalFavoriteButton();
+}
+
+async function removeFromLocalWorldFavorite(worldId, confirmRemoval = true) {
+  if (!localWorldIdMap.has(worldId)) return;
+  const world = localWorldFavs.find(item => item.id === worldId);
+  if (confirmRemoval && !confirm(t('confirm.removeLocalWorld', {name: world?.name || worldId}))) return;
+  await idb.removeLocalWorld(worldId);
+  await syncLocalWorldFavorites();
+  if (currentWorldDetail?.id === worldId) _refreshWorldLocalFavoriteButton();
+  showToast(t('toast.worldRemovedLocal'), 'info');
+}
 
 async function syncLocalFavorites() {
   try {
@@ -1004,6 +1097,7 @@ document.addEventListener('keydown', (e) => {
   const id = top.id || '';
   const closers = {
     'worldDetailModal': 'closeWorldDetail',
+    'directOpenModal': 'closeDirectOpenModal',
     'friendProfileModal': 'closeFriendProfile',
     'groupDetailModal': 'closeGroupDetail',
     'instanceDetailModal': 'closeInstanceDetail',
