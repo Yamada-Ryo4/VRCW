@@ -159,7 +159,7 @@ function _findFavGroupNode(favList, attr, groupName) {
 
 function _buildFavGroupListHtml(favList, id, opts = {}) {
   const saved = localAvatarIdMap.has(id);
-  let html = '<button class="avtrdb-fav-group-btn' + (saved ? ' avtrdb-fav-group-active' : '') + '" aria-pressed="' + saved + '" onclick="event.stopPropagation();toggleAvatarMenuLocalFavorite(\'' + escJsAttr(id) + '\',this)">' + (saved ? t('label.localFav') : t('search.saveToLocalSlots')) + '</button>';
+  let html = '<button class="avtrdb-fav-group-btn' + (saved ? ' avtrdb-fav-group-active' : '') + '" aria-pressed="' + saved + '" onclick="event.stopPropagation();toggleAvatarMenuLocalFavorite(\'' + escJsAttr(id) + '\',this)">' + (saved ? '<span class="favorite-menu-check" aria-hidden="true">✓ </span>' : '') + '<span>' + escHtml(saved ? t('label.localFav') : t('search.saveToLocalSlots')) + '</span></button>';
   html += favoriteFolderRows('avatar', id, favoriteGroups);
   favList.innerHTML = html;
 }
@@ -1262,18 +1262,13 @@ function displayAvatarDetail(av, opts = {}) {
   document.getElementById("avtrdbFavMenu")?.classList.add("hidden");
 
   const favBtn = document.getElementById("avtrdbDetailFavBtn");
-  const isLocalFaved = localAvatarIdMap.has(id);
-  const isCloudFaved = favoriteIdMap.has(id);
-
-  if (isCloudFaved || isLocalFaved) {
-     favBtn.innerHTML = t('avatar.favoritedBtn');
-     favBtn.className = "btn btn-success-full";
-  } else {
-     favBtn.innerHTML = t('avatar.favoriteBtn');
-     favBtn.className = "btn btn-secondary";
+  if (favBtn) {
+    favBtn.innerHTML = t('avatar.favoriteBtn');
+    favBtn.className = "btn btn-secondary";
+    favBtn.setAttribute('aria-haspopup', 'true');
+    favBtn.setAttribute('aria-expanded', 'false');
+    favBtn.onclick = toggleAvtrdbFavMenu;
   }
-  // Always open the group selector — for adding or removing
-  favBtn.onclick = toggleAvtrdbFavMenu;
 
   // Pre-build the group list so it's ready when the menu opens
   const favList = document.getElementById("avtrdbFavGroupList");
@@ -1642,14 +1637,12 @@ function _refreshDetailAfterFavChange(avtrId) {
   if (displayedId !== avtrId) return;
 
   const favBtn = document.getElementById('avtrdbDetailFavBtn');
-  const isCloudFaved = favoriteIdMap.has(avtrId);
-  const isLocalFaved = localAvatarIdMap.has(avtrId);
-  if (isCloudFaved || isLocalFaved) {
-    favBtn.innerHTML = t('avatar.favoritedBtn');
-    favBtn.className = 'btn btn-success-full';
-  } else {
+  if (favBtn) {
     favBtn.innerHTML = t('avatar.favoriteBtn');
     favBtn.className = 'btn btn-secondary';
+    favBtn.setAttribute('aria-haspopup', 'true');
+    favBtn.setAttribute('aria-expanded', String(!document.getElementById('avtrdbFavMenu')?.classList.contains('hidden')));
+    favBtn.onclick = toggleAvtrdbFavMenu;
   }
   // Rebuild group list to reflect new checkmarks
   const favList = document.getElementById('avtrdbFavGroupList');

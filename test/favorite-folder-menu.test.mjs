@@ -15,7 +15,7 @@ function harness(type, { deleteStatus = 200, addStatus = 200, full = false, stal
     avatarFavoriteIndexByGroup: new Map(), worldFavoriteIndexByGroup: new Map(),
     avatarFavGroupCounts: new Map(), worldFavGroupCounts: new Map(),
     favoriteGroups: [{ name: 'old' }, { name: 'new' }], worldFavGroups: [{ name: 'old' }, { name: 'new' }],
-    localAvatarIdMap: new Map(), currentCategory: 'mine', currentWorldCategory: 'recent',
+    localAvatarIdMap: new Map(), localWorldIdMap: new Map(), currentCategory: 'mine', currentWorldCategory: 'recent', currentWorldDetail: null,
     document: { querySelectorAll: () => [], getElementById: () => null },
     makeAuthSessionToken: () => 1, isAuthSessionCurrent: () => current,
     _refreshDetailAfterFavChange() {}, _refreshWorldFavoriteMenuState() {},
@@ -93,8 +93,17 @@ test('active menu row remains removable at capacity and uses green/checkmark sty
   const html = vm.runInContext(`favoriteFolderRows('avatar','${h.id}',favoriteGroups)`, h.context);
   const active = html.match(/<button[^>]*data-favgroup="old"[^>]*>[\s\S]*?<\/button>/)[0];
   assert.match(active, /avtrdb-fav-group-active/);
-  assert.match(active, /✓ old/);
+  assert.match(active, /favorite-menu-check[^>]*>✓ /);
+  assert.match(active, /<span>old<\/span>/);
   assert.doesNotMatch(active, / disabled/);
+});
+
+test('avatar detail menu trigger stays neutral while folder rows show local/cloud membership', () => {
+  const search = readFileSync(new URL('../public/js/search.js', import.meta.url), 'utf8');
+  const refresh = search.slice(search.indexOf('function _refreshDetailAfterFavChange('), search.indexOf('function openInVRCX('));
+  assert.match(refresh, /favBtn\.className = 'btn btn-secondary'/);
+  assert.doesNotMatch(refresh, /favBtn\.className = 'btn btn-success-full'/);
+  assert.match(refresh, /favBtn\.onclick = toggleAvtrdbFavMenu/);
 });
 
 test('detail world star always opens folders; local actions live in the menu rather than header/footer', () => {
@@ -145,14 +154,14 @@ test('saved local world reopens with the shared star and a checked menu row', ()
   const from = worlds.indexOf('function _worldFavoriteMenuHtml(');
   const to = worlds.indexOf('async function toggleWorldMenuLocalFavorite(', from);
   const id = 'wrld_a';
-  const classes = { toggle() {} };
+  const classes = { toggle() {}, remove() {} };
   const buttons = new Map([
     ['worldDetailMainFavBtn', { classList: classes, setAttribute(name, value) { this[name] = value; } }],
     ['worldDetailFavBtn', { classList: classes, setAttribute(name, value) { this[name] = value; } }],
-    ['worldFavMenu', { dataset: { worldId: id } }], ['worldFavGroupListMenu', {}],
+    ['worldFavMenu', { dataset: { worldId: id }, classList: { contains: () => true } }], ['worldFavGroupListMenu', {}],
   ]);
   const context = vm.createContext({
-    currentWorldDetail: { id }, worldFavoriteIdMap: new Map(),
+    currentWorldDetail: { id }, toggleWorldFavMenu() {}, worldFavoriteIdMap: new Map(),
     localWorldFavIds: new Set([id]), localWorldIdMap: new Map([[id, true]]), worldFavGroups: [],
     document: { getElementById: id => buttons.get(id) || null },
     t: key => key, escHtml: String, escJsAttr: String, favoriteFolderRows: () => '',
@@ -160,7 +169,8 @@ test('saved local world reopens with the shared star and a checked menu row', ()
   vm.runInContext(worlds.slice(from, to), context);
   vm.runInContext(`_refreshWorldFavoriteMenuState('${id}')`, context);
   assert.equal(buttons.get('worldDetailMainFavBtn')['aria-pressed'], 'true');
-  assert.match(buttons.get('worldFavGroupListMenu').innerHTML, /✓ world.localFavorites/);
+  assert.match(buttons.get('worldFavGroupListMenu').innerHTML, /favorite-menu-check[^>]*>✓ /);
+  assert.match(buttons.get('worldFavGroupListMenu').innerHTML, /<span>world.localFavorites<\/span>/);
   assert.match(buttons.get('worldFavGroupListMenu').innerHTML, /aria-pressed="true"/);
 });
 

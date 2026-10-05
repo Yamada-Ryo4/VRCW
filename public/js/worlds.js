@@ -1357,7 +1357,7 @@ async function addWorldToFavorite(worldId, groupName, btn) {
 function _worldFavoriteMenuHtml(worldId) {
   const saved = localWorldIdMap.has(worldId);
   const localLabel = t('world.localFavorites');
-  let html = `<button class="avtrdb-fav-group-btn${saved ? ' avtrdb-fav-group-active' : ''}" data-world-local-menu="${escHtml(worldId)}" aria-pressed="${saved}" onclick="event.stopPropagation();toggleWorldMenuLocalFavorite('${escJsAttr(worldId)}',this)">${saved ? '✓ ' : '+ '}${escHtml(localLabel)} (${localWorldIdMap.size}/500)</button>`;
+  let html = `<button class="avtrdb-fav-group-btn${saved ? ' avtrdb-fav-group-active' : ''}" data-world-local-menu="${escHtml(worldId)}" aria-pressed="${saved}" onclick="event.stopPropagation();toggleWorldMenuLocalFavorite('${escJsAttr(worldId)}',this)">${saved ? '<span class="favorite-menu-check" aria-hidden="true">✓ </span>' : '+ '}<span>${escHtml(localLabel)}</span> (${localWorldIdMap.size}/500)</button>`;
   html += favoriteFolderRows('world', worldId, worldFavGroups);
   if (!worldFavGroups.length) html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">${escHtml(t('world.loadFavGroupsFirst'))}</div>`;
   return html;
@@ -1365,17 +1365,20 @@ function _worldFavoriteMenuHtml(worldId) {
 
 function _refreshWorldFavoriteMenuState(worldId) {
   const saved = worldFavoriteIdMap.has(worldId) || localWorldIdMap.has(worldId);
+  const menu = document.getElementById('worldFavMenu');
   if (currentWorldDetail?.id === worldId) {
     for (const id of ['worldDetailMainFavBtn', 'worldDetailFavBtn']) {
       const button = document.getElementById(id);
       if (!button) continue;
-      button.innerHTML = id === 'worldDetailMainFavBtn' ? '<i class="fa-solid fa-star"></i>' : t(saved ? 'avatar.favoritedBtn' : 'avatar.favoriteBtn');
-      button.classList.toggle('btn-success-full', saved);
+      button.innerHTML = id === 'worldDetailMainFavBtn' ? '<i class="fa-solid fa-star"></i>' : t('avatar.favoriteBtn');
+      button.classList.remove('btn-success-full');
+      button.setAttribute('aria-haspopup', 'true');
+      button.setAttribute('aria-expanded', String(!menu?.classList.contains('hidden')));
       button.setAttribute('aria-pressed', String(saved));
+      button.onclick = toggleWorldFavMenu;
       button.title = t('wd.favorite');
     }
   }
-  const menu = document.getElementById('worldFavMenu');
   if (menu?.dataset.worldId === worldId) {
     const list = document.getElementById('worldFavGroupListMenu');
     if (list) list.innerHTML = _worldFavoriteMenuHtml(worldId);

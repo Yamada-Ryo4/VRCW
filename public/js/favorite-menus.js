@@ -7,6 +7,14 @@ function favoriteGroupNames(type, id) {
   return new Set([...worldFavoriteIndexByGroup].filter(([, ids]) => ids.includes(id)).map(([name]) => name));
 }
 
+function favoriteGroupDisplayText(type, group, count, saved, full) {
+  const cap = type === 'avatar' ? 50 : 100;
+  const countHtml = `<span style="margin-left:4px;font-size:0.8em;opacity:0.7;color:${full && !saved ? '#f87171' : 'inherit'}">(${Number.isFinite(count) ? count : '…'}/${cap})</span>`;
+  const name = escHtml(group.displayName || group.name);
+  if (saved) return `<span class="favorite-menu-check" aria-hidden="true">✓ </span><span>${name}</span> ${countHtml}`;
+  return `<span>${name}</span> ${countHtml}`;
+}
+
 function favoriteFolderRows(type, id, groups) {
   const membership = favoriteGroupNames(type, id);
   const counts = type === 'avatar' ? avatarFavGroupCounts : worldFavGroupCounts;
@@ -19,7 +27,7 @@ function favoriteFolderRows(type, id, groups) {
     const full = Number.isFinite(count) && count >= cap;
     const disabled = busy || (full && !saved);
     const title = saved ? t('world.unfavorite') : full ? t('world.favGroupFull') : '';
-    return `<button class="avtrdb-fav-group-btn${saved ? ' avtrdb-fav-group-active' : ''}" data-favgroup="${escHtml(group.name)}" aria-pressed="${saved}" ${disabled ? 'disabled' : ''} title="${escHtml(title)}" onclick="event.stopPropagation();${action}('${escJsAttr(id)}','${escJsAttr(group.name)}',this)">${saved ? '✓ ' : ''}${escHtml(group.displayName || group.name)} <span data-favcount="${escHtml(group.name)}" style="margin-left:4px;font-size:0.8em;opacity:0.7;">(${Number.isFinite(count) ? count : '…'}/${cap})</span></button>`;
+    return `<button class="avtrdb-fav-group-btn${saved ? ' avtrdb-fav-group-active' : ''}" data-favgroup="${escHtml(group.name)}" aria-pressed="${saved}" ${disabled ? 'disabled' : ''} title="${escHtml(title)}" onclick="event.stopPropagation();${action}('${escJsAttr(id)}','${escJsAttr(group.name)}',this)">${favoriteGroupDisplayText(type, group, count, saved, full)}</button>`;
   }).join('');
 }
 
@@ -78,6 +86,16 @@ function refreshFavoriteViews(type, id) {
     }
   }
   if (type === 'avatar') {
+    const detail = document.getElementById('avtrdbDetailModal');
+    const detailId = document.getElementById('avtrdbDetailId')?.textContent;
+    const detailButton = document.getElementById('avtrdbDetailFavBtn');
+    if (detail && !detail.classList.contains('hidden') && detailId === id && detailButton) {
+      detailButton.innerHTML = t('avatar.favoriteBtn');
+      detailButton.className = 'btn btn-secondary';
+      detailButton.setAttribute('aria-haspopup', 'true');
+      detailButton.setAttribute('aria-expanded', String(!document.getElementById('avtrdbFavMenu')?.classList.contains('hidden')));
+      detailButton.onclick = toggleAvtrdbFavMenu;
+    }
     if (typeof _refreshDetailAfterFavChange === 'function') _refreshDetailAfterFavChange(id);
     document.querySelectorAll(`[data-avid="${id}"] .card-fav-quick`).forEach(button => {
       const saved = favoriteIdMap.has(id) || localAvatarIdMap.has(id);
@@ -91,6 +109,15 @@ function refreshFavoriteViews(type, id) {
     }
   } else if (typeof _refreshWorldFavoriteMenuState === 'function') {
     _refreshWorldFavoriteMenuState(id);
+    if (currentWorldDetail?.id === id) {
+      for (const buttonId of ['worldDetailMainFavBtn', 'worldDetailFavBtn']) {
+        const button = document.getElementById(buttonId);
+        if (!button) continue;
+        button.setAttribute('aria-haspopup', 'true');
+        button.setAttribute('aria-expanded', String(!document.getElementById('worldFavMenu')?.classList.contains('hidden')));
+        button.onclick = toggleWorldFavMenu;
+      }
+    }
     document.querySelectorAll(`[data-fav-btn="${id}"]`).forEach(button => {
       const saved = worldFavoriteIdMap.has(id);
       button.innerHTML = saved ? '<i class="fa-solid fa-star"></i>' : '☆';
