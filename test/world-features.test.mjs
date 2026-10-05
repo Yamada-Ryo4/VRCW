@@ -87,10 +87,10 @@ test('direct-open UI is available from expanded, collapsed, and mobile navigatio
   const mobileCssStart = css.indexOf('@media (max-width: 768px)', css.indexOf('@media (max-width: 768px)') + 1);
   const mobileCss = css.slice(mobileCssStart);
   assert.match(mobileCss, /#worldDetailDeleteBtn\s*,\s*#worldDetailCloseBtn\s*\{\s*display:\s*flex !important/);
-  assert.match(mobileCss, /#worldDetailLocalFavBtn\s*,[\s\S]*?#worldDetailJoinBtn\s*\{\s*display:\s*none !important/);
+  assert.match(mobileCss, /#worldDetailMainFavBtn\s*,\s*#worldDetailJoinBtn\s*\{\s*display:\s*none !important/);
   assert.doesNotMatch(mobileCss, /world-detail-header-btns \.btn-icon:not\(\[title=/, 'mobile CSS does not depend on localized title text');
   const mobileActions = html.slice(html.indexOf('class="world-detail-mobile-actions"'), html.indexOf('id="worldDetailFavStatus"'));
-  assert.match(mobileActions, /<button(?=[^>]*id="worldDetailMobileLocalFavBtn")(?=[^>]*onclick="toggleWorldLocalFavorite\(\)")[^>]*>/);
+  assert.doesNotMatch(html, /id="worldDetail(?:Mobile)?LocalFavBtn"/, 'local favorites are selected from the shared star menu');
   assert.match(mobileActions, /<button(?=[^>]*id="worldDetailFavBtn")(?=[^>]*onclick="toggleWorldFavMenu\(event\)")[^>]*>/);
   assert.match(mobileActions, /onclick="joinWorldInstance\(\)"/);
   assert.match(mobileActions, /<button(?=[^>]*id="worldDetailMobileDownloadBtn")(?=[^>]*onclick="downloadCurrentWorld\(\)")[^>]*>/);

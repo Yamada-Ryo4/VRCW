@@ -158,36 +158,9 @@ function _findFavGroupNode(favList, attr, groupName) {
 }
 
 function _buildFavGroupListHtml(favList, id, opts = {}) {
-  const favedGroups = avatarFavTagMap.get(id) || new Set();
-  const isLocalFaved = localAvatarIdMap.has(id);
-  const localSaveAction = opts.localSaveAction || `saveCurrentDetailToLocal(); _refreshDetailAfterFavChange('${escJsAttr(id)}')`;
-
-  let html = '';
-  // Local favorites row
-  if (isLocalFaved) {
-    html += `<button class="avtrdb-fav-group-btn avtrdb-fav-group-active" onclick="removeFromLocalFavorite('${escJsAttr(id)}'); _refreshDetailAfterFavChange('${escJsAttr(id)}');">${t('label.localFav')}</button>`;
-  } else {
-    html += `<button class="avtrdb-fav-group-btn" style="color:var(--secondary);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:4px;" onclick="${localSaveAction}">${t('search.saveToLocalSlots')}</button>`;
-  }
-
-  // Cloud groups
-  if (favoriteGroups.length === 0) {
-    html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">${escHtml(t('search.loadFavGroupsFirst'))}</div>`;
-  } else {
-    html += favoriteGroups.map(g => {
-      const isFavedInGroup = favedGroups.has(g.name);
-      const lbl = `<span data-favcount="${escHtml(g.name)}" style="margin-left:4px;font-size:0.8em;opacity:0.7;">(…/50)</span>`;
-      const displayName = escHtml(g.displayName || g.name);
-
-      if (isFavedInGroup) {
-        // Already in this group — click to unfavorite
-        return `<button class="avtrdb-fav-group-btn avtrdb-fav-group-active" data-favgroup="${escHtml(g.name)}" onclick="unfavoriteFromGroup('${escJsAttr(id)}','${escJsAttr(g.name)}',this)">✓ ${displayName} ${lbl}</button>`;
-      } else {
-        // Not in this group — click to add
-        return `<button class="avtrdb-fav-group-btn" data-favgroup="${escHtml(g.name)}" onclick="addToFavorite('${escJsAttr(id)}','${escJsAttr(g.name)}',this)">${displayName} ${lbl}</button>`;
-      }
-    }).join("");
-  }
+  const saved = localAvatarIdMap.has(id);
+  let html = '<button class="avtrdb-fav-group-btn' + (saved ? ' avtrdb-fav-group-active' : '') + '" aria-pressed="' + saved + '" onclick="event.stopPropagation();toggleAvatarMenuLocalFavorite(\'' + escJsAttr(id) + '\',this)">' + (saved ? t('label.localFav') : t('search.saveToLocalSlots')) + '</button>';
+  html += favoriteFolderRows('avatar', id, favoriteGroups);
   favList.innerHTML = html;
 }
 
@@ -1306,7 +1279,7 @@ function displayAvatarDetail(av, opts = {}) {
   const favList = document.getElementById("avtrdbFavGroupList");
   if (favList) {
      _buildFavGroupListHtml(favList, id);
-     _refreshFavGroupCountsLive(favList, id);
+     loadFavoriteMembership('avatar', id).then(() => _refreshDetailAfterFavChange(id)).catch(() => {});
   }
 
   // 5. Actions
@@ -1570,7 +1543,7 @@ function toggleAvatarFavGridMenu(event, id, name, btn) {
   });
 }
 
-function toggleAvtrdbFavMenu(event) {
+async function toggleAvtrdbFavMenu(event) {
   const menu = document.getElementById("avtrdbFavMenu");
   const btn = document.getElementById("avtrdbDetailFavBtn");
   if (!menu || !btn) return;
@@ -1583,6 +1556,14 @@ function toggleAvtrdbFavMenu(event) {
     _buildFavGroupListHtml(tmp, id);
     return tmp.innerHTML;
   });
+  if (menu.classList.contains('hidden')) return;
+  const id = menu.dataset.avatarId;
+  try {
+    await loadFavoriteMembership('avatar', id);
+    if (menu.dataset.avatarId === id) _refreshDetailAfterFavChange(id);
+  } catch (error) {
+    showToast(t('toast.favGroupLoadFail'), 'error');
+  }
 }
 
 function toggleFavMenuGeneric(event, menu, btn, contentFn) {
@@ -1594,7 +1575,7 @@ function toggleFavMenuGeneric(event, menu, btn, contentFn) {
   const list = menu.querySelector('div:last-child');
   if (list) {
     list.innerHTML = contentFn();
-    if (menu.dataset.avatarId) _refreshFavGroupCountsLive(list, menu.dataset.avatarId);
+
   }
 
   menu.classList.remove("hidden");
@@ -1631,59 +1612,16 @@ function toggleFavMenuGeneric(event, menu, btn, contentFn) {
 }
 
 async function addToFavorite(avtrId, groupName, btn) {
-  document.getElementById("avtrdbFavMenu")?.classList.add("hidden");
-  const statusEl = document.getElementById("avtrdbFavStatus");
-  statusEl.style.color = "var(--text-muted)";
-  statusEl.textContent = t('world.favoritingTo', {name: groupName});
-  if (btn) { btn.disabled = true; btn.style.opacity = "0.6"; }
-
+  const item = visibleAvatars.find(avatar => avatar.id === avtrId)
+    || avatars.find(avatar => avatar.id === avtrId)
+    || (_currentDetailAvatar && (_currentDetailAvatar.id || _currentDetailAvatar.vrc_id) === avtrId ? { ..._currentDetailAvatar, id: avtrId } : { id: avtrId });
+  if (btn) btn.disabled = true;
   try {
-    const resp = await apiCall("/api/vrc/favorites", {
-      method: "POST",
-      json: { type: "avatar", favoriteId: avtrId, tags: [groupName] },
-    });
-    if (resp.ok) {
-      statusEl.style.color = "var(--success)";
-      statusEl.textContent = t('world.favoritedTo', {name: groupName});
-      // Track the new favoriteId so the user can immediately unfavorite without
-      // first refetching the whole favorites list. Same shape as syncAllFavoriteIds.
-      const data = await resp.json().catch(() => null);
-      if (data && data.id) favoriteIdMap.set(avtrId, data.id);
-      // Track which group this avatar is now in
-      const existing = avatarFavTagMap.get(avtrId);
-      if (existing) existing.add(groupName);
-      else avatarFavTagMap.set(avtrId, new Set([groupName]));
-      // Bump the per-group counter so the sidebar "x/50" hint and the
-      // disabled-when-full state are accurate without a roundtrip.
-      avatarFavGroupCounts.set(groupName, (avatarFavGroupCounts.get(groupName) || 0) + 1);
-      // Keep IDB in step with this local mutation. Normal category switches are
-      // IDB-first; startup index sync handles out-of-band changes.
-      const knownAvatar = visibleAvatars.find(a => a.id === avtrId)
-        || (_currentDetailAvatar && ((_currentDetailAvatar.id || _currentDetailAvatar.vrc_id) === avtrId) ? _currentDetailAvatar : null)
-        || { id: avtrId };
-      await upsertAvatarIntoFavoriteCache(groupName, knownAvatar);
-      // INSTANT UI: flip the unified card-fav-quick toggle from ☆ to ★ on the
-      // currently-rendered card so the user sees the favorite land immediately.
-      const card = document.getElementById("card-" + avtrId);
-      if (card) {
-        const fq = card.querySelector('.card-fav-quick');
-        if (fq) {
-          fq.innerHTML = '<i class="fa-solid fa-star"></i> ';
-          fq.title = t('avatar.favoritedLabel');
-        }
-      }
-      // Refresh the detail modal button to show "已收藏" state
-      _refreshDetailAfterFavChange(avtrId);
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      statusEl.style.color = "var(--error)";
-      statusEl.textContent = t('toast.favAddFailColon', {msg: err.error?.message || resp.status});
-    }
-  } catch (e) {
-    statusEl.style.color = "var(--error)";
-    statusEl.textContent = t('toast.networkError', {msg: e.message});
+    await changeFavoriteFolder('avatar', avtrId, groupName, item);
+  } catch (error) {
+    showToast(t('toast.favAddFailColon', { msg: error.message }), 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.style.opacity = ""; }
+    _refreshDetailAfterFavChange(avtrId);
   }
 }
 
@@ -1691,52 +1629,8 @@ async function addToFavorite(avtrId, groupName, btn) {
 // Unlike the old unfavorite() which removes the avatar from the current view list,
 // this only removes the favorite link. The detail modal stays open.
 async function unfavoriteFromGroup(avtrId, groupName, btn) {
-  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; btn.textContent = t('avatar.removing'); }
-  const statusEl = document.getElementById("avtrdbFavStatus");
-  try {
-    // Resolve the favoriteId for this avatar
-    const favId = favoriteIdMap.get(avtrId);
-    if (!favId) {
-      // Try live lookup
-      const r = await apiCall(`/api/vrc/favorites?type=avatar&tag=${groupName}&n=100`);
-      if (r.ok) {
-        const list = await r.json();
-        const hit = (list || []).find(f => f.favoriteId === avtrId);
-        if (hit) favoriteIdMap.set(avtrId, hit.id);
-      }
-    }
-    const resolvedFavId = favoriteIdMap.get(avtrId);
-    if (!resolvedFavId) {
-      if (statusEl) { statusEl.style.color = 'var(--error)'; statusEl.textContent = t('toast.favRecordNotFound'); }
-      return;
-    }
-    const resp = await apiCall(`/api/vrc/favorites/${resolvedFavId}`, { method: 'DELETE' });
-    if (!resp.ok && resp.status !== 404) {
-      throw new Error('HTTP ' + resp.status);
-    }
-    // Update state
-    favoriteIdMap.delete(avtrId);
-    const tags = avatarFavTagMap.get(avtrId);
-    if (tags) { tags.delete(groupName); if (tags.size === 0) avatarFavTagMap.delete(avtrId); }
-    const cur = avatarFavGroupCounts.get(groupName) || 0;
-    avatarFavGroupCounts.set(groupName, Math.max(0, cur - 1));
-    await removeAvatarFromFavoriteCache(groupName, avtrId);
-    if (statusEl) { statusEl.style.color = 'var(--success)'; statusEl.textContent = t('toast.removedFromGroup', {name: groupName}); }
-    // Flip the card star back
-    const card = document.getElementById('card-' + avtrId);
-    if (card) {
-      const fq = card.querySelector('.card-fav-quick');
-      if (fq && !favoriteIdMap.has(avtrId) && !localAvatarIdMap.has(avtrId)) {
-        fq.textContent = '☆'; fq.title = t('world.addToFavorites');
-      }
-    }
-    // Refresh detail modal
-    _refreshDetailAfterFavChange(avtrId);
-  } catch (e) {
-    if (statusEl) { statusEl.style.color = 'var(--error)'; statusEl.textContent = t('toast.unfavoriteFailMsg', {msg: e.message}); }
-  } finally {
-    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
-  }
+  if (!favoriteGroupNames('avatar', avtrId).has(groupName)) return;
+  return addToFavorite(avtrId, groupName, btn);
 }
 
 // Refresh the detail modal's favorite button and group list after a fav change.
@@ -1761,7 +1655,7 @@ function _refreshDetailAfterFavChange(avtrId) {
   const favList = document.getElementById('avtrdbFavGroupList');
   if (favList) {
     _buildFavGroupListHtml(favList, avtrId);
-    _refreshFavGroupCountsLive(favList, avtrId);
+
   }
 }
 
@@ -1867,6 +1761,7 @@ VRCW.registerModule('search', {
   toggleAvtrdbFavMenu,
   addToFavorite,
   unfavoriteFromGroup,
+  toggleAvatarMenuLocalFavorite,
   _refreshDetailAfterFavChange,
   openInVRCX,
   switchAvatar,
@@ -1875,3 +1770,23 @@ VRCW.registerModule('search', {
   deleteImpostor,
 });
 renderAppVersionInfo();
+
+async function toggleAvatarMenuLocalFavorite(avtrId, btn) {
+  const key = `local-avatar:${avtrId}`;
+  if (favoriteMenuFlights.has(key)) return;
+  favoriteMenuFlights.set(key, true);
+  if (btn) btn.disabled = true;
+  try {
+    if (localAvatarIdMap.has(avtrId)) await removeFromLocalFavorite(avtrId);
+    else {
+      const item = (_currentDetailAvatar && (_currentDetailAvatar.id || _currentDetailAvatar.vrc_id) === avtrId ? _currentDetailAvatar : null)
+        || visibleAvatars.find(avatar => avatar.id === avtrId) || avatars.find(avatar => avatar.id === avtrId);
+      if (item) await saveToLocalFavorite({ ...item, id: avtrId });
+    }
+  } catch (error) {
+    showToast(t('toast.favAddFailColon', { msg: error.message }), 'error');
+  } finally {
+    favoriteMenuFlights.delete(key);
+    _refreshDetailAfterFavChange(avtrId);
+  }
+}

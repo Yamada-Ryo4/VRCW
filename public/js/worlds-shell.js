@@ -107,6 +107,8 @@ function joinWorldInstance() { return _callWorld('joinWorldInstance', arguments)
 function joinSpecificInstance(worldId, instanceId) { return _callWorld('joinSpecificInstance', arguments); }
 function addWorldToFavorite(worldId, groupName, btn) { return _callWorld('addWorldToFavorite', arguments); }
 function toggleWorldFavMenu(event) { return _callWorld('toggleWorldFavMenu', arguments); }
+function selectWorldFavoriteGroup(id, group, btn) { return _callWorld('selectWorldFavoriteGroup', arguments); }
+function toggleWorldMenuLocalFavorite(id, btn) { return _callWorld('toggleWorldMenuLocalFavorite', arguments); }
 function toggleWorldFavorite() { return _callWorld('toggleWorldFavorite', arguments); }
 
 VRCW.registerModule('worldsShell', {

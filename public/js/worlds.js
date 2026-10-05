@@ -29,18 +29,7 @@ function syncWorldLocalFavoriteButtons() {
 }
 
 function _refreshWorldLocalFavoriteButton() {
-  const id = currentWorldDetail?.id;
-  if (!id) return;
-  const saved = localWorldIdMap.has(id);
-  const label = saved ? t('world.removeLocal') : t('world.saveLocal');
-  ['worldDetailLocalFavBtn', 'worldDetailMobileLocalFavBtn'].forEach(buttonId => {
-    const button = document.getElementById(buttonId);
-    if (!button) return;
-    button.innerHTML = `<i class="fa-solid fa-bookmark"></i> ${escHtml(label)}`;
-    button.classList.toggle('btn-warning', saved);
-    button.classList.toggle('btn-secondary', !saved);
-    button.setAttribute('aria-pressed', saved ? 'true' : 'false');
-  });
+  if (currentWorldDetail) _refreshWorldFavoriteMenuState(currentWorldDetail.id);
 }
 
 async function toggleWorldLocalFavorite() {
@@ -1064,14 +1053,7 @@ async function openWorldDetail(worldId, worldObj = null) {
       instContainer.innerHTML = friendsHtml + instContainer.innerHTML;
     }
 
-    const favBtn  = document.getElementById('worldDetailFavBtn');
-    const isFaved = worldFavoriteIdMap.has(w.id) || !!w.favoriteId;
-    if (isFaved && w.favoriteId) worldFavoriteIdMap.set(w.id, w.favoriteId);
-    _refreshWorldLocalFavoriteButton();
-    if (favBtn) {
-      favBtn.innerHTML  = isFaved ? `<i class="fa-solid fa-star"></i> ${escHtml(t('world.unfavorite'))}` : `<i class="fa-solid fa-star"></i> ${escHtml(t('world.favorite'))}`;
-      favBtn.className  = isFaved ? 'btn btn-warning' : 'btn btn-secondary';
-    }
+    _refreshWorldFavoriteMenuState(w.id);
   } catch(e) {
     // apiCall converts abort into a Response with status 499 rather than
     // throwing AbortError, so isAbortError(e) never fires here. The 499 check
@@ -1093,6 +1075,7 @@ function closeWorldDetail() {
     modal.classList.add('hidden');
     if (modal.dataset.scrollLocked === '1') { unlockBodyScroll(); modal.dataset.scrollLocked = ''; }
   }
+  document.getElementById('worldFavMenu')?.classList.add('hidden');
   currentWorldDetail = null;
   updateWorldDownloadButtons(null);
   if (typeof flushPendingAvatarCardUpdates === 'function') flushPendingAvatarCardUpdates();
@@ -1371,32 +1354,79 @@ async function addWorldToFavorite(worldId, groupName, btn) {
   }
 }
 
-function toggleWorldFavMenu(event) {
-  const menu = document.getElementById("worldFavMenu");
-  // Use whichever fav button is currently visible
-  const isMobile = window.innerWidth <= 768;
-  const btn = document.getElementById(isMobile ? "worldDetailFavBtn" : "worldDetailMainFavBtn");
-  if (!menu || !btn) return;
+function _worldFavoriteMenuHtml(worldId) {
+  const saved = localWorldIdMap.has(worldId);
+  const localLabel = t('world.localFavorites');
+  let html = `<button class="avtrdb-fav-group-btn${saved ? ' avtrdb-fav-group-active' : ''}" data-world-local-menu="${escHtml(worldId)}" aria-pressed="${saved}" onclick="event.stopPropagation();toggleWorldMenuLocalFavorite('${escJsAttr(worldId)}',this)">${saved ? '✓ ' : '+ '}${escHtml(localLabel)} (${localWorldIdMap.size}/500)</button>`;
+  html += favoriteFolderRows('world', worldId, worldFavGroups);
+  if (!worldFavGroups.length) html += `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">${escHtml(t('world.loadFavGroupsFirst'))}</div>`;
+  return html;
+}
 
-  const w = currentWorldDetail;
-  if (!w) return;
-
-  // If already favorited, clicking should toggle unfavorite
-  if (worldFavoriteIdMap.has(w.id)) {
-    toggleWorldFavorite();
-    return;
+function _refreshWorldFavoriteMenuState(worldId) {
+  const saved = worldFavoriteIdMap.has(worldId) || localWorldIdMap.has(worldId);
+  if (currentWorldDetail?.id === worldId) {
+    for (const id of ['worldDetailMainFavBtn', 'worldDetailFavBtn']) {
+      const button = document.getElementById(id);
+      if (!button) continue;
+      button.innerHTML = id === 'worldDetailMainFavBtn' ? '<i class="fa-solid fa-star"></i>' : t(saved ? 'avatar.favoritedBtn' : 'avatar.favoriteBtn');
+      button.classList.toggle('btn-success-full', saved);
+      button.setAttribute('aria-pressed', String(saved));
+      button.title = t('wd.favorite');
+    }
   }
+  const menu = document.getElementById('worldFavMenu');
+  if (menu?.dataset.worldId === worldId) {
+    const list = document.getElementById('worldFavGroupListMenu');
+    if (list) list.innerHTML = _worldFavoriteMenuHtml(worldId);
+  }
+}
 
-  toggleFavMenuGeneric(event, menu, btn, () => {
-    if (worldFavGroups.length === 0) return `<div style="padding:8px 12px;font-size:0.8em;color:var(--text-muted);">${escHtml(t('world.loadFavGroupsFirst'))}</div>`;
-    return worldFavGroups.map(g => {
-      const count = worldFavGroupCounts.get(g.name) || 0;
-      const cap = 100;
-      const full = count >= cap;
-      const countLabel = `<span style="margin-left:4px;font-size:0.8em;opacity:0.7;color:${full?'#f87171':'inherit'}">(${count}/${cap})</span>`;
-      return `<button class="avtrdb-fav-group-btn" ${full?`disabled title="${t('world.favGroupFull')}"`:''} onclick="addWorldToFavorite('${escJsAttr(w.id)}','${escJsAttr(g.name)}',this)">${escHtml(g.displayName || g.name)} ${countLabel}</button>`;
-    }).join("");
-  });
+async function toggleWorldMenuLocalFavorite(worldId, button) {
+  if (currentWorldDetail?.id !== worldId) return;
+  const key = `local-world:${worldId}`;
+  if (favoriteMenuFlights.has(key)) return;
+  favoriteMenuFlights.set(key, true);
+  if (button) button.disabled = true;
+  try { await toggleWorldLocalFavorite(); }
+  catch (error) { showToast(t('toast.favAddFailColon', { msg: error.message }), 'error'); }
+  finally {
+    favoriteMenuFlights.delete(key);
+    _refreshWorldFavoriteMenuState(worldId);
+  }
+}
+
+async function selectWorldFavoriteGroup(worldId, groupName, button) {
+  const world = currentWorldDetail?.id === worldId ? { ...currentWorldDetail } : allWorlds.find(item => item.id === worldId);
+  if (!world) return;
+  if (button) button.disabled = true;
+  try {
+    await changeFavoriteFolder('world', worldId, groupName, world);
+  } catch (error) {
+    showToast(t('toast.favAddFailColon', { msg: error.message }), 'error');
+  } finally {
+    _refreshWorldFavoriteMenuState(worldId);
+  }
+}
+
+async function toggleWorldFavMenu(event) {
+  event.stopPropagation();
+  const menu = document.getElementById('worldFavMenu');
+  const button = document.getElementById(window.innerWidth <= 768 ? 'worldDetailFavBtn' : 'worldDetailMainFavBtn');
+  const worldId = currentWorldDetail?.id;
+  if (!menu || !button || !worldId) return;
+  await _loadSearchModule();
+  if (currentWorldDetail?.id !== worldId) return;
+  menu.dataset.worldId = worldId;
+  delete menu.dataset.avatarId;
+  toggleFavMenuGeneric(event, menu, button, () => _worldFavoriteMenuHtml(worldId));
+  if (menu.classList.contains('hidden')) return;
+  try {
+    await loadFavoriteMembership('world', worldId);
+    if (menu.dataset.worldId === worldId) _refreshWorldFavoriteMenuState(worldId);
+  } catch (error) {
+    showToast(t('toast.favGroupLoadFail'), 'error');
+  }
 }
 
 async function toggleWorldFavorite() {
@@ -1466,6 +1496,8 @@ VRCW.registerModule('worlds', {
   joinSpecificInstance,
   addWorldToFavorite,
   toggleWorldFavMenu,
+  selectWorldFavoriteGroup,
+  toggleWorldMenuLocalFavorite,
   toggleWorldFavorite,
   getLatestWindowsWorldPackage,
   updateWorldDownloadButtons,

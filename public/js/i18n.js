@@ -189,6 +189,7 @@ const I18N = {
     "world.refresh": "Refresh",
     "world.searchPlaceholder": "Search worlds...",
     "world.localCount": "Local Worlds ({count})",
+    "world.localFavorites": "Local Favorites",
     "nav.directOpen": "Open by ID",
     "direct.openTitle": "Open avatar, player, or world",
     "direct.openPrompt": "Paste an exact VRChat ID or an official vrchat.com URL.",

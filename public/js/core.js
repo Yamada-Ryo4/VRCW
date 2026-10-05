@@ -816,6 +816,10 @@ async function syncLocalWorldFavorites() {
 
 async function saveToLocalWorldFavorite(world) {
   if (!world?.id || localWorldIdMap.has(world.id)) return;
+  if (localWorldIdMap.size >= 500) {
+    showToast(t('world.favGroupFull'), 'warning');
+    return;
+  }
   const record = Object.assign({}, world, { id: world.id, localFavoriteAt: Date.now() });
   await idb.saveLocalWorld(record);
   await syncLocalWorldFavorites();

@@ -34,6 +34,7 @@ function toggleAvatarFavGridMenu(event, id, name, btn) { return _callSearch('tog
 function toggleAvtrdbFavMenu(event) { return _callSearch('toggleAvtrdbFavMenu', arguments); }
 function addToFavorite(avtrId, groupName, btn) { return _callSearch('addToFavorite', arguments); }
 function unfavoriteFromGroup(avtrId, groupName, btn) { return _callSearch('unfavoriteFromGroup', arguments); }
+function toggleAvatarMenuLocalFavorite(id, btn) { return _callSearch('toggleAvatarMenuLocalFavorite', arguments); }
 function _refreshDetailAfterFavChange(avtrId) { return _callSearch('_refreshDetailAfterFavChange', arguments); }
 function saveCurrentDetailToLocal() { return _callSearch('saveCurrentDetailToLocal', arguments); }
 function openLocalDetail(id) { return _callSearch('openLocalDetail', arguments); }
