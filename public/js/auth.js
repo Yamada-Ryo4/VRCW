@@ -308,6 +308,8 @@ async function doVerify2FA() {
 function doLogout() {
   advanceAuthSession();
   abortAllApiRequests();
+  if (typeof clearImageResources === 'function') clearImageResources();
+  window.myProfileData = null;
   if (typeof clearBackgroundQueue === 'function') clearBackgroundQueue();
   if (typeof setSearchActive === 'function') setSearchActive(false);
   pendingLoginSessionToken = null;
@@ -375,6 +377,9 @@ function doLogout() {
 }
 
 function showMainApp() {
+  if (typeof clearImageResources === 'function') clearImageResources();
+  window.myProfileData = null;
+  currentUserId = '';
   document.getElementById("loginPage").classList.add("hidden");
   document.getElementById("mainApp").classList.remove("hidden");
 

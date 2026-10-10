@@ -182,6 +182,7 @@ async function uploadToVRCStyled(inputId, tag, refreshPage) {
           else res();
         };
         img.onerror = () => { URL.revokeObjectURL(objUrl); res(); }; // if can't load dimensions, proceed anyway
+        img.referrerPolicy = 'no-referrer';
         img.src = objUrl;
       });
       fd.append('filestring', file, file.name);
@@ -256,14 +257,15 @@ async function fetchGalleryOnly(container, gen) {
       container.innerHTML += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;">' +
         files.map(f => {
           const imgUrl = proxyImg(extractFileVersionUrl(f));
-          return '<div style="border-radius:8px;overflow:hidden;background:var(--bg-glass);border:1px solid var(--border);cursor:pointer;" onclick="if(this.querySelector(\'img\').src)window.open(this.querySelector(\'img\').src,\'_blank\')">' +
-            '<img src="' + escHtml(imgUrl) + '" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block;" loading="lazy" onerror="this.style.display=\'none\'">' +
+          return '<div style="border-radius:8px;overflow:hidden;background:var(--bg-glass);border:1px solid var(--border);cursor:pointer;" onclick="openImageSafely(this.querySelector(\'img\'))">' +
+            '<img ' + imageSrcAttrs(imgUrl) + ' style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block;" loading="lazy" onerror="this.style.display=\'none\'">' +
             '<div style="padding:4px 6px;font-size:0.68em;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(f.name||'') + '</div>' +
           '</div>';
         }).join('') + '</div>';
     } else {
       container.innerHTML += '<div style="color:var(--text-muted);font-size:0.85em;">' + escHtml(t('media.noGalleryImages')) + '</div>';
     }
+    observeImages(container);
   } catch(e) {
     if (isAbortError(e)) return;
     container.innerHTML = '<div style="color:var(--error);">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</div>';
@@ -329,7 +331,7 @@ async function fetchPrints(container, gen) {
         const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString(getLocale()) : '';
         return '<div class="print-card" style="position:relative;cursor:pointer;background:#fff;border-radius:4px;padding:10px 10px 20px;box-shadow:0 4px 18px rgba(0,0,0,0.45);transition:transform 0.15s;" onmouseover="this.style.transform=\'scale(1.03)\'" onmouseout="this.style.transform=\'\'">' +
           '<button title="' + t('media.delete') + '" onclick="event.stopPropagation(); deletePrint(\'' + escJsAttr(p.id) + '\', this)" style="position:absolute;top:6px;right:6px;z-index:3;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:0.8em;line-height:1;">×</button>' +
-          '<img onclick="window.open(\'' + escJsAttr(imgUrl) + '\',\'_blank\')" src="' + escHtml(imgUrl) + '" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:2px;" loading="lazy" onerror="this.style.display=\'none\'">' +
+          '<img onclick="openImageSafely(this)" ' + imageSrcAttrs(imgUrl) + ' style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:2px;" loading="lazy" onerror="this.style.display=\'none\'">' +
           '<div style="margin-top:8px;">' +
             '<div style="font-size:0.7em;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;">' + escHtml(world) + '</div>' +
             '<div style="font-size:0.65em;color:#888;font-family:sans-serif;display:flex;justify-content:space-between;">' +
@@ -338,6 +340,7 @@ async function fetchPrints(container, gen) {
           '</div>' +
         '</div>';
       }).join('') + '</div>';
+    observeImages(container);
   } catch(e) {
     if (isAbortError(e)) return;
     container.innerHTML = '<div style="color:var(--error);">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</div>';
@@ -408,6 +411,7 @@ async function uploadPrint(inputId) {
     await new Promise((res, rej) => {
       img.onload = res;
       img.onerror = () => rej(new Error(t('media.imgParseError')));
+      img.referrerPolicy = 'no-referrer';
       img.src = imgUrl;
     });
     

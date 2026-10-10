@@ -170,7 +170,7 @@ async function fetchStore(container, gen) {
             const price = item.priceTokens != null ? `<i class="fa-solid fa-gem" style="color: #00f2fe;"></i> ${item.priceTokens}` : (item.price ? `$${(item.price/100).toFixed(2)}` : '');
             const type = escHtml(item.productType || item.type || '');
             return `<div style="background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;" onclick="window.open('https://vrchat.com/home/marketplace','_blank')">
-              ${img ? `<img src="${img}" style="width:100%;aspect-ratio:4/3;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:4/3;background:var(--bg-secondary);"></div>'}
+              ${img ? `<img ${imageSrcAttrs(img)} style="width:100%;aspect-ratio:4/3;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:4/3;background:var(--bg-secondary);"></div>'}
               <div style="padding:8px 10px;">
                 <div style="font-size:0.85em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
                 <div style="font-size:0.72em;color:var(--text-muted);">${type}</div>
@@ -191,6 +191,7 @@ async function fetchStore(container, gen) {
     }
 
     container.innerHTML = `<h2 style="margin-bottom:16px;"><i class="fa-solid fa-shop"></i> ${t('assets.store')}</h2>` + balHtml + listingsHtml;
+    observeImages(container);
   } catch(e) {
     if (isAbortError(e)) return;
     container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: e.message})}</div>`;
@@ -316,12 +317,12 @@ async function fetchEmoji(container, gen) {
           const TILE = 56;
           let media;
           if (animMeta) {
-            const innerStyle = animatedEmojiStyle(imgUrl, animMeta.fps, animMeta.frames, animMeta.loopStyle, TILE);
+            const innerStyle = animatedEmojiStyle('', animMeta.fps, animMeta.frames, animMeta.loopStyle, TILE);
             media = '<div style="width:' + TILE + 'px;height:' + TILE + 'px;overflow:hidden;position:relative;">' +
-                      '<div style="' + innerStyle + '"></div>' +
+                      '<div data-bg-src="' + escHtml(imgUrl) + '" style="' + innerStyle + '"></div>' +
                     '</div>';
           } else {
-            media = '<img src="' + escHtml(imgUrl) + '" style="width:' + TILE + 'px;height:' + TILE + 'px;object-fit:contain;" loading="lazy" onerror="this.style.opacity=\'0.3\'">';
+            media = '<img ' + imageSrcAttrs(imgUrl) + ' style="width:' + TILE + 'px;height:' + TILE + 'px;object-fit:contain;" loading="lazy" onerror="this.style.opacity=\'0.3\'">';
           }
           return '<div title="' + escHtml(f.name || f.id) + '" style="background:var(--bg-glass);border:1px solid var(--border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:6px;gap:4px;position:relative;">' +
             (isAnimated ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55em;background:#52525b;color:#fff;padding:1px 4px;border-radius:3px;z-index:2;">${t('assets.animated')}</span>` : '') +
@@ -342,6 +343,7 @@ async function fetchEmoji(container, gen) {
       renderFileGrid(allEmojis, t('assets.noCustomEmojis')) +
       `<h3 style="font-size:0.9rem;margin-bottom:10px;">${t('assets.stickers', {count: stickers.length})}</h3>` +
       renderFileGrid(stickers, t('assets.noStickers'));
+    observeImages(container);
   } catch(e) {
     if (isAbortError(e)) return;
     container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: e.message})}</div>`;
@@ -393,7 +395,7 @@ async function fetchInventory(container, gen) {
       const slot = it.equipSlot || (it.metadata && it.metadata.equipSlot);
       const canEquip = ['drone', 'portal', 'warp', 'loadingscreen'].includes(slot);
       return '<div style="background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;">' +
-        (img ? `<img src="${escHtml(img)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:1/1;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2em;"><i class="fa-solid fa-gift"></i> </div>') +
+        (img ? `<img ${imageSrcAttrs(img)} style="width:100%;aspect-ratio:1/1;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:1/1;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2em;"><i class="fa-solid fa-gift"></i> </div>') +
         '<div style="padding:8px 10px;display:flex;flex-direction:column;gap:4px;">' +
           `<div style="font-size:0.8em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(it.name || it.id || '')}</div>` +
           (slot ? `<div style="font-size:0.65em;color:var(--text-muted);">${t('assets.slotLabel')}: ${escHtml(_equipSlotLabels[slot] || slot)}</div>` : '') +
@@ -412,6 +414,7 @@ async function fetchInventory(container, gen) {
       }
     }
     container.innerHTML = html;
+    observeImages(container);
   } catch(e) {
     if (isAbortError(e)) return;
     container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: escHtml(e.message)})}</div>`;
@@ -469,7 +472,7 @@ async function fetchProps(container, gen) {
           const img = proxyImg(p.imageUrl || p.thumbnailImageUrl || '');
           const published = p.releaseStatus === 'public' || p.published;
           return '<div style="background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;overflow:hidden;">' +
-            (img ? `<img src="${escHtml(img)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:1/1;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2em;"><i class="fa-solid fa-wand-magic-sparkles"></i> </div>') +
+            (img ? `<img ${imageSrcAttrs(img)} style="width:100%;aspect-ratio:1/1;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:100%;aspect-ratio:1/1;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2em;"><i class="fa-solid fa-wand-magic-sparkles"></i> </div>') +
             '<div style="padding:8px 10px;">' +
               `<div style="font-size:0.82em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.name || p.id || '')}</div>` +
               `<div style="font-size:0.65em;color:${published ? '#4ade80' : 'var(--text-muted)'};margin-top:2px;">${published ? t('assets.published') : t('assets.unpublished')}</div>` +
@@ -477,6 +480,7 @@ async function fetchProps(container, gen) {
         }).join('') + '</div>';
     }
     container.innerHTML = html;
+    observeImages(container);
   } catch(e) {
     if (isAbortError(e)) return;
     container.innerHTML = `<div style="color:var(--error);">${t('toast.loadFailMsg', {msg: escHtml(e.message)})}</div>`;

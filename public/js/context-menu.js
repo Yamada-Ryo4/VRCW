@@ -578,9 +578,10 @@ async function sendBoop(userId, name) {
           const url = proxyImg(extractFileVersionUrl(f));
           return `<div class="boop-custom" data-emoji="${escJsAttr(f.id)}" title="${escHtml(f.name || '')}"
             style="cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:4px;background:var(--bg-glass);display:flex;align-items:center;justify-content:center;">
-            <img src="${escHtml(url)}" style="width:48px;height:48px;object-fit:contain;" loading="lazy" onerror="this.style.opacity='0.3'"></div>`;
+            <img ${imageSrcAttrs(url)} style="width:48px;height:48px;object-fit:contain;" loading="lazy" onerror="this.style.opacity='0.3'"></div>`;
         }).join('');
         document.getElementById('boopCustomWrap').style.display = '';
+        observeImages(grid);
         grid.querySelectorAll('.boop-custom').forEach(el => {
           el.addEventListener('click', () => { submitBoop(userId, el.dataset.emoji); modal.remove(); });
         });

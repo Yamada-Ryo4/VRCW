@@ -175,30 +175,34 @@ function worldLogMsg(msg, type = 'info') {
 }
 
 function proxyImg(url) {
-  if (!url) return '';
-  // Parse the hostname instead of searching the whole URL. A community URL
-  // containing "vrchat.com" in its path/query must not become a credentialed
-  // VRChat image request. Keep auth= for native <img> compatibility; the
-  // opaque bucket is only a cache partition and never contains the credential.
+  if (!url || typeof url !== 'string') return '';
   try {
     const parsed = new URL(url, location.href);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return url;
-    if (parsed.origin === location.origin) return url; // already same-origin
-    const host = parsed.hostname.toLowerCase();
-    const isVrchatHost = host === 'vrchat.com' || host.endsWith('.vrchat.com')
-      || host === 'vrchat.cloud' || host.endsWith('.vrchat.cloud');
-    // All remote images must load through the same-origin /api/image proxy:
-    // images.js fetches thumbnails, and the page CSP forbids cross-origin
-    // fetch (connect-src 'self' blob:), so a raw community URL always dies.
-    // VRChat files additionally carry the credential query so the Worker can
-    // authenticate the upstream fetch; community hosts are proxied cookie-free
-    // (the Worker never attaches credentials to non-VRChat targets).
-    if (isVrchatHost) {
-      return `${API_BASE}/api/image?url=${encodeURIComponent(parsed.href)}&auth=${encodeURIComponent(vrcAuth || '')}&bucket=${encodeURIComponent(_apiAuthBucket())}`;
+    // Locally generated placeholders and upload previews do not use the proxy.
+    if (parsed.protocol === 'data:') return /^data:image\//i.test(url) ? url : '';
+    if (parsed.protocol === 'blob:') return parsed.origin === location.origin ? url : '';
+    if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) return '';
+    if (parsed.origin === location.origin) {
+      if (parsed.pathname !== '/api/image') return url;
+      // Normalize legacy proxy URLs, never the signed upstream url= value.
+      // URLSearchParams decodes exactly the outer layer, preserving signatures,
+      // including upstream parameters that happen to be named auth or bucket.
+      for (const key of [...parsed.searchParams.keys()]) {
+        if (['auth', 'bucket'].includes(key.toLowerCase())) parsed.searchParams.delete(key);
+      }
+      parsed.searchParams.set('image-cache', '4');
+      parsed.hash = '';
+      return parsed.pathname + parsed.search;
     }
-    return `${API_BASE}/api/image?url=${encodeURIComponent(parsed.href)}`;
-  } catch (_) {}
-  return url;
+    // Remote images (including community hosts) stay behind the CSP-compatible
+    // same-origin proxy. Credentials belong only in images.js request headers.
+    const proxy = new URL(`${API_BASE}/api/image`, location.href);
+    if (proxy.origin !== location.origin) return '';
+    proxy.searchParams.set('url', parsed.href);
+    // Bypass old browser HTTP cache entries from the query-auth implementation.
+    proxy.searchParams.set('image-cache', '4');
+    return proxy.href;
+  } catch (_) { return ''; }
 }
 
 // 根据当前 i18n 语言返回 BCP 47 locale,供 toLocaleString 使用

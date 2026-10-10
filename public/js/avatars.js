@@ -582,14 +582,7 @@ function _applyFiltersToList(list, q, state, plat) {
 
 function _disposeAvatarCard(card) {
   if (!card) return;
-  card.querySelectorAll(".avatar-thumb[data-src]").forEach((img) => {
-    try { avatarObserver.unobserve(img); } catch (_) {}
-    const idx = imageQueue.findIndex(it => it.img === img);
-    if (idx !== -1) imageQueue.splice(idx, 1);
-    if (img._abortCtrl) {
-      try { img._abortCtrl.abort(); } catch (_) {}
-    }
-  });
+  disposeImages(card);
 }
 
 function _buildAvatarCard(av) {
@@ -605,10 +598,7 @@ function _buildAvatarCard(av) {
   const isCloudFaved = favoriteIdMap.has(av.id);
   const isFaved = isLocalFaved || isCloudFaved;
 
-  const isCached = loadedImageUrls.has(imageCacheKey(thumb));
-  const imgHtml = isCached
-      ? `<img class="avatar-thumb" src="${escHtml(thumb)}" alt="${escHtml(av.name || '')}">`
-      : `<img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(thumb)}" alt="">`;
+  const imgHtml = `<img class="avatar-thumb loading" ${imageSrcAttrs(thumb)} alt="${escHtml(av.name || '')}">`;
 
   const releaseBadge = isOwner
     ? (av.releaseStatus === 'public'
@@ -616,7 +606,7 @@ function _buildAvatarCard(av) {
         : '<div class="card-release-badge release-private">Private</div>')
     : '';
 
-  card.innerHTML = `<div class="avatar-thumb-wrapper ${isCached ? '' : 'img-loading'}">
+  card.innerHTML = `<div class="avatar-thumb-wrapper img-loading">
     ${imgHtml}
     <div class="avatar-name-overlay">${escHtml(av.name || t('avatar.invalidAvatar'))}</div>
     <div class="card-tl-overlay">
@@ -635,7 +625,7 @@ function _buildAvatarCard(av) {
 
 function _observeAvatarCardImages(card) {
   if (!card) return;
-  card.querySelectorAll(".avatar-thumb[data-src]").forEach((img) => avatarObserver.observe(img));
+  observeImages(card);
 }
 
 function _replaceAvatarCard(av) {
@@ -717,8 +707,7 @@ function renderGrid(list) {
 
   // Show empty state when no avatars
   if (list.length === 0) {
-    grid.querySelectorAll(".avatar-thumb[data-src]").forEach((img) => avatarObserver.unobserve(img));
-    imageQueue.length = 0; 
+    disposeImages(grid);
     grid.innerHTML = `<div style="grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:rgba(255,255,255,0.4);gap:12px;">
       <div style="font-size:3em;"><i class="fa-solid fa-masks-theater"></i> </div>
       <div style="font-size:1.1em;">${t('avatar.noAvatars')}</div>
@@ -740,7 +729,7 @@ function renderGrid(list) {
       avatarCardElements.set(av.id, card);
     });
     grid.appendChild(frag);
-    grid.querySelectorAll(".avatar-thumb[data-src]").forEach((img) => avatarObserver.observe(img));
+    observeImages(grid);
     const statEl = document.getElementById("statTotal");
     if (statEl) statEl.textContent = list.length;
     return;
@@ -1219,7 +1208,7 @@ function editAvatar(id) {
   const note = document.getElementById("editThumbNote");
   const input = document.getElementById("editThumbInput");
   if (preview) {
-    preview.src = thumb ? proxyImg(thumb) : "";
+    loadImage(preview, thumb);
   }
   if (note) note.textContent = "";
   if (input) input.value = ""; // Reset file picker
@@ -1239,9 +1228,8 @@ function onEditThumbSelected(input) {
   if (!file) return;
   const preview = document.getElementById("editThumbPreview");
   const note = document.getElementById("editThumbNote");
-  // Revoke previous blob URL if one existed
-  if (preview && preview.src && preview.src.startsWith('blob:')) URL.revokeObjectURL(preview.src);
-  if (preview) preview.src = URL.createObjectURL(file);
+  // Cancel a pending remote preview before assigning the selected local file.
+  if (preview) { disposeImage(preview); setImageBlobSrc(preview, file); }
   if (note) note.textContent = t('avatar.willUpload', {name: file.name, size: (file.size / 1024).toFixed(0)});
 }
 
@@ -1252,6 +1240,7 @@ function closeEditModal() {
     unlockBodyScroll();
     delete editModal.dataset.scrollLocked;
   }
+  disposeImage(document.getElementById("editThumbPreview"));
   currentEditGeneration += 1;
   currentEditId = null;
 }
@@ -1338,10 +1327,7 @@ async function saveEditAvatar() {
       if (newImageUrl) {
         const img = card.querySelector(".avatar-thumb");
         if (img) {
-          const proxyUrl = proxyImg(newImageUrl);
-          img.classList.remove("failed");
-          img.src = proxyUrl;
-          loadedImageUrls.add(proxyUrl);
+          loadImage(img, newImageUrl);
         }
       }
     }

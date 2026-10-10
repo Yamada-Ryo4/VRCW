@@ -365,6 +365,46 @@ async function authBucket(authCookies) {
     return `auth:v2:${bytesToBase64Url(new Uint8Array(digest))}`;
 }
 
+// Separate internal cache keys from public image URLs and all pre-v4 entries.
+const IMAGE_CACHE_PATH = '/__vrcw_image_cache/v4';
+const IMAGE_CACHE_CONTROL = 'public, max-age=604800, immutable';
+
+function imageCacheKey(request, targetUrl, bucket) {
+    return new Request(new URL(`${IMAGE_CACHE_PATH}?bucket=${encodeURIComponent(bucket)}&url=${encodeURIComponent(targetUrl)}`, request.url), { method: 'GET' });
+}
+
+function imageResponseHeaders(contentType, auth, internal = false) {
+    // Never forward upstream Location, Set-Cookie, or credential-bearing headers.
+    const headers = new Headers(CORS_HEADERS);
+    if (contentType) headers.set('Content-Type', String(contentType).split(';', 1)[0].trim().toLowerCase());
+    headers.set('Cache-Control', internal || !auth ? IMAGE_CACHE_CONTROL : 'private, no-store');
+    headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set('Referrer-Policy', 'no-referrer');
+    if (!internal) headers.set('Vary', 'X-VRC-Auth');
+    return headers;
+}
+
+function imageResponse(response, auth, internal = false) {
+    return new Response(response.body, { status: 200, headers: imageResponseHeaders(response.headers.get('Content-Type'), auth, internal) });
+}
+
+function imageError(message, status, auth) {
+    const headers = imageResponseHeaders('text/plain', auth);
+    headers.set('Cache-Control', auth ? 'private, no-store' : 'no-store');
+    return new Response(message, { status, headers });
+}
+
+function legacyImageRedirect(url, auth) {
+    const cleanUrl = new URL('/api/image', url.origin);
+    const targetUrl = url.searchParams.get('url');
+    if (targetUrl !== null) cleanUrl.searchParams.set('url', targetUrl);
+    cleanUrl.searchParams.set('v', '4');
+    const headers = imageResponseHeaders(null, auth);
+    headers.set('Cache-Control', auth ? 'private, no-store' : 'no-store');
+    headers.set('Location', cleanUrl.href);
+    return new Response(null, { status: 302, headers });
+}
+
 // ── VRChat identity resolution ────────────────────────────────────────────
 // Resolve the caller's real VRChat id by replaying their X-VRC-Auth cookie
 // against VRChat /auth/user. This is the authoritative identity for
@@ -406,6 +446,9 @@ export default {
         if (request.method === "OPTIONS") {
             return new Response(null, { status: 204, headers: CORS_HEADERS });
         }
+
+        // Cache API keys are internal storage addresses, never public routes.
+        if (path === IMAGE_CACHE_PATH) return imageError('Not found', 404, getAuth(request));
 
         // ── Static assets ──
         // Any non-API path (/, /index.html, /style.css, /js/*.js,
@@ -551,27 +594,26 @@ export default {
             }
         }
 
-        // GET /api/image?url=...&auth=...
-        // Proxies image requests through the worker, following redirects, to bypass browser CORS / Referer blocks.
-        // Uses Cache API for instant hits after batch prefetch.
+        // GET /api/image?url=... — credentials are accepted only via X-VRC-Auth.
+        // Old credential URLs redirect before either cache lookup or upstream IO.
         if (path === "/api/image" && request.method === "GET") {
+            if (url.searchParams.has('auth')) return legacyImageRedirect(url, auth);
             const targetUrl = url.searchParams.get("url");
-            let imgAuth = auth;
-            const authParam = url.searchParams.get("auth");
-            if (!imgAuth && authParam) {
-                try { imgAuth = atob(authParam); } catch { imgAuth = authParam; }
+            const imgAuth = auth;
+            if (!targetUrl) return imageError("Missing url", 400, imgAuth);
+            if (!isAllowedTarget(targetUrl)) {
+                return imageError("Target host not allowed", 403, imgAuth);
             }
             const imageBucket = await authBucket(imgAuth);
-            if (!targetUrl) return new Response("Missing url", { status: 400 });
-            if (!isAllowedTarget(targetUrl)) {
-                return new Response("Target host not allowed", { status: 403, headers: CORS_HEADERS });
-            }
 
-            // Check CF Cache API first
-            const cacheKey = new Request(new URL(`/api/image?bucket=${encodeURIComponent(imageBucket)}&url=${encodeURIComponent(targetUrl)}`, request.url).toString(), { method: "GET" });
+            const cacheKey = imageCacheKey(request, targetUrl, imageBucket);
             const cache = caches.default;
-            let cached = await cache.match(cacheKey);
-            if (cached) return cached;
+            try {
+                const cached = await cache.match(cacheKey);
+                if (cached && cached.status === 200 && isAllowedImageContentType(cached.headers.get('content-type'))) {
+                    return imageResponse(cached, imgAuth);
+                }
+            } catch (_) { /* A cache outage must not prevent a network fetch. */ }
 
             try {
                 const headers = {
@@ -591,30 +633,27 @@ export default {
                     signal: AbortSignal.timeout(20000)
                 });
 
-                if (!imgResp.ok) {
-                    return new Response("Image fetch failed", { status: imgResp.status, headers: CORS_HEADERS });
+                if (imgResp.status !== 200) {
+                    const status = imgResp.status >= 400 && imgResp.status <= 599 ? imgResp.status : 502;
+                    return imageError("Image fetch failed", status, imgAuth);
                 }
                 if (!isAllowedImageContentType(imgResp.headers.get('content-type'))) {
-                    return new Response("Image type not allowed", { status: 415, headers: CORS_HEADERS });
+                    return imageError("Image type not allowed", 415, imgAuth);
                 }
 
-                // Clone and cache the response
-                const resp = new Response(imgResp.body, {
-                    status: 200,
-                    headers: {
-                        "Content-Type": imgResp.headers.get("content-type") || "image/jpeg",
-                        "Cache-Control": "public, max-age=604800, immutable",
-                        ...CORS_HEADERS
-                    }
-                });
-                // Cache a clone (can't consume body twice)
-                const respClone = resp.clone();
-                // Ensure caching completes in the background without killing the worker or hanging the stream
-                ctx.waitUntil(cache.put(cacheKey, respClone));
+                // Stream to the caller. Only the separate internal copy may use
+                // public cache headers; auth responses must never be HTTP-cached.
+                const resp = imageResponse(imgResp, imgAuth);
+                const internalCopy = imageResponse(resp.clone(), imgAuth, true);
+                ctx.waitUntil(Promise.resolve().then(() => cache.put(cacheKey, internalCopy)).catch(() => {
+                    // Discard the failed tee branch so it cannot buffer the
+                    // entire image while the caller continues streaming.
+                    if (internalCopy.body) return internalCopy.body.cancel().catch(() => {});
+                }));
                 return resp;
             } catch (e) {
                 const status = e && e.name === 'TimeoutError' ? 504 : 502;
-                return new Response("Image proxy unavailable", { status, headers: CORS_HEADERS });
+                return imageError("Image proxy unavailable", status, imgAuth);
             }
         }
 
@@ -659,7 +698,7 @@ export default {
             } catch (_) {
                 return jsonResp({ error: "Invalid JSON" }, 400);
             }
-            const urls = (body.urls || []).filter(isAllowedTarget);
+            const urls = (Array.isArray(body.urls) ? body.urls : []).filter(isAllowedTarget);
             const imageBucket = await authBucket(auth);
             if (!urls.length) return jsonResp({ ok: true, cached: 0 });
 
@@ -671,32 +710,26 @@ export default {
 
             // Fire all fetches concurrently
             const promises = batch.map(async (rawUrl) => {
-                const cacheKey = new Request(new URL(`/api/image?bucket=${encodeURIComponent(imageBucket)}&url=${encodeURIComponent(rawUrl)}`, request.url).toString(), { method: "GET" });
-                // Skip if already cached
-                const existing = await cache.match(cacheKey);
-                if (existing) { cachedCount++; return; }
-
+                const cacheKey = imageCacheKey(request, rawUrl, imageBucket);
                 try {
+                    const existing = await cache.match(cacheKey).catch(() => null);
+                    if (existing && existing.status === 200 && isAllowedImageContentType(existing.headers.get('content-type'))) {
+                        cachedCount++;
+                        return;
+                    }
                     const headers = {
                         "User-Agent": USER_AGENT,
                         "Referer": "https://vrchat.com/"
                     };
                     if (auth && isCredentialAllowedTarget(rawUrl)) headers["Cookie"] = auth;
 
-                    const { response: imgResp, url: finalUrl } = await fetchAllowedWithRedirects(rawUrl, {
+                    const { response: imgResp } = await fetchAllowedWithRedirects(rawUrl, {
                         method: "GET",
                         headers,
+                        signal: AbortSignal.timeout(20000)
                     });
-                    if (imgResp.ok && isAllowedImageContentType(imgResp.headers.get('content-type'))) {
-                        const resp = new Response(imgResp.body, {
-                            status: 200,
-                            headers: {
-                                "Content-Type": imgResp.headers.get("content-type") || "image/jpeg",
-                                "Cache-Control": "public, max-age=86400",
-                                ...CORS_HEADERS
-                            }
-                        });
-                        await cache.put(cacheKey, resp);
+                    if (imgResp.status === 200 && isAllowedImageContentType(imgResp.headers.get('content-type'))) {
+                        await cache.put(cacheKey, imageResponse(imgResp, auth, true));
                         fetchedCount++;
                     }
                 } catch (e) {

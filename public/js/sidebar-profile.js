@@ -12,12 +12,13 @@ function renderSidebarMiniProfile(u) {
   const statusText = u.statusDescription || u.bio || '????????';
   el.innerHTML = `
     <div class="mini-dot" style="background:${statusColor};"></div>
-    <img class="mini-avatar" src="${escHtml(thumb)}" onerror="this.style.display='none'">
+    <img class="mini-avatar" ${imageSrcAttrs(thumb)} onerror="this.style.display='none'">
     <div class="mini-profile-text">
       <div class="mini-name" title="${escHtml(u.displayName || '')}">${escHtml(u.displayName || '')}${vrcP ? ' <span class="mini-vrc-plus">VRC+</span>' : ''}</div>
       <div class="mini-status" title="${escHtml(statusText)}">${escHtml(statusText)}</div>
     </div>
   `;
+  observeImages(el, { lazy: false });
   el.onclick = () => fetchMyProfile();
 }
 

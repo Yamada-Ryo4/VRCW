@@ -89,13 +89,13 @@ function _renderFriendProfileUI(f, modal) {
   const bigImg = proxyImg(f.profilePicOverride||f.profilePicOverrideThumbnail||f.userIcon||f.currentAvatarThumbnailImageUrl||'');
   const avatarThumbUrl = f.currentAvatarThumbnailImageUrl || '';
 
-  document.getElementById('fpBannerBg').src = bigImg;
-  document.getElementById('fpAvatar').src   = bigImg;
+  loadImage(document.getElementById('fpBannerBg'), bigImg);
+  loadImage(document.getElementById('fpAvatar'), bigImg);
 
   // Hide avatar thumb container when no URL
   const thumbWrap = document.getElementById('fpAvatarThumbWrap');
   if (thumbWrap) thumbWrap.style.display = avatarThumbUrl ? '' : 'none';
-  document.getElementById('fpAvatarThumb').src = proxyImg(avatarThumbUrl);
+  loadImage(document.getElementById('fpAvatarThumb'), avatarThumbUrl);
 
   const trust     = getTrustInfo(f.tags||[]);
   const statusCss = {active:'online','join me':'join-me','ask me':'ask-me',busy:'busy',offline:'offline'}[f.status]||'online';
@@ -141,7 +141,7 @@ function _renderFriendProfileUI(f, modal) {
   const showcased = (f.badges||[]).filter(b=>b.showcased).slice(0,8);
   const bdRow = document.getElementById('fpBadgesRow');
   if (bdRow) bdRow.innerHTML = showcased.map(b=>
-    `<img src="${escHtml(b.badgeImageUrl||'')}" title="${escHtml(b.badgeName||'')}" style="width:30px;height:30px;border-radius:5px;" onerror="this.style.display='none'">`
+    `<img ${imageSrcAttrs(b.badgeImageUrl||'')} title="${escHtml(b.badgeName||'')}" style="width:30px;height:30px;border-radius:5px;" onerror="this.style.display='none'">`
   ).join('') || `<span style="font-size:0.75em;color:var(--text-muted);">${t('friend.noShowcasedBadges')}</span>`;
 
   // Bug#1 fix: show formatted location
@@ -268,6 +268,7 @@ function _renderFriendProfileUI(f, modal) {
 
   switchFriendProfileTab('info');
   modal.classList.remove('hidden');
+  observeImages(modal);
 }
 
 function closeFriendProfile() {
@@ -278,6 +279,7 @@ function closeFriendProfile() {
   const modal = document.getElementById('friendProfileModal');
   if (modal) {
     modal.classList.add('hidden');
+    disposeImages(modal);
     if (modal.dataset.scrollLocked === '1') { unlockBodyScroll(); modal.dataset.scrollLocked = ''; }
   }
   currentFriendProfile = null;
@@ -324,7 +326,7 @@ async function _loadFriendProfileGroups(userId, isFriend) {
     gSummaryList.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
       ${finalGroups.map(g => `
         <div class="group-pill" onclick="openGroupDetail('${escJsAttr(g.groupId)}')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-glass);border:1px solid var(--border);border-radius:99px;font-size:0.82em;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='var(--bg-glass)'">
-          <img src="${proxyImg(g.iconUrl || g.bannerUrl || '')}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;background:rgba(0,0,0,0.2);">
+          <img ${imageSrcAttrs(g.iconUrl || g.bannerUrl || '')} style="width:20px;height:20px;border-radius:50%;object-fit:cover;background:rgba(0,0,0,0.2);">
           <div style="display:flex;flex-direction:column;line-height:1.1;max-width:120px;">
             <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
             <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
@@ -333,6 +335,7 @@ async function _loadFriendProfileGroups(userId, isFriend) {
         </div>
       `).join('')}
     </div>`;
+    observeImages(gSummaryList);
   } catch (e) {
     if (!_isFriendProfileScopeCurrent()) return;
     console.error('Group load failed:', e);
@@ -398,7 +401,7 @@ async function fetchFriendGroups(userId, seq) {
     const renderGroup = (g, badge) => {
       const badgeHtml = badge || '';
       return `<div onclick="openGroupDetail('${escJsAttr(g.groupId||g.id)}')" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-glass);border-radius:8px;font-size:0.82em;cursor:pointer;border:1px solid var(--border);margin-bottom:6px;">
-        <img src="${escHtml(proxyImg(g.iconUrl||g.bannerUrl||''))}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;" onerror="this.style.display=\'none\'">
+        <img ${imageSrcAttrs(g.iconUrl||g.bannerUrl||'')} style="width:36px;height:36px;border-radius:6px;object-fit:cover;" onerror="this.style.display=\'none\'">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:500;">${escHtml(g.name||'')}${badgeHtml}</div>
           <div style="font-size:0.8em;color:var(--text-muted);">.${escHtml(g.shortCode||'')} \u00b7 \ud83d\udc65 ${g.memberCount||0}</div>
@@ -422,6 +425,7 @@ async function fetchFriendGroups(userId, seq) {
       html += remaining.map(g => renderGroup(g, '')).join('');
     }
     el.innerHTML = html;
+    observeImages(el);
   } catch(e) {
     if (!_isFriendProfileScopeCurrent()) return;
     el.innerHTML = '<div style="padding:20px;color:var(--error);">' + escHtml(e.message) + '</div>'; 
@@ -445,10 +449,10 @@ async function fetchFriendWorlds(userId, seq) {
     const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     el.innerHTML = worlds.map(w => `<div class="avatar-card" style="cursor:pointer;" onclick="openWorldDetail('${escJsAttr(w.id)}')">
       <div class="avatar-thumb-wrapper img-loading">
-        <img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(proxyImg(w.thumbnailImageUrl||w.imageUrl||''))}" alt="">
+        <img class="avatar-thumb loading" ${imageSrcAttrs(w.thumbnailImageUrl||w.imageUrl||'')} alt="">
         <div class="avatar-name-overlay">${escHtml(w.name||'')}</div>
       </div></div>`).join('');
-    el.querySelectorAll('.avatar-thumb[data-src]').forEach(img => avatarObserver.observe(img));
+    observeImages(el);
   } catch(e) {
     if (!_isFriendProfileScopeCurrent()) return;
     el.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:var(--error);">${escHtml(e.message)}</div>`;
@@ -629,7 +633,7 @@ async function fetchFriendAvatars(userId, seq) {
 
         return `<div class="avatar-card" data-id="${av.id}" style="cursor:pointer;" onclick="displayAvatarDetail(window._friendAvatars[${idx}])">
           <div class="avatar-thumb-wrapper img-loading">
-            <img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(proxyImg(av.thumbnailImageUrl||av.imageUrl||''))}" alt="">
+            <img class="avatar-thumb loading" ${imageSrcAttrs(av.thumbnailImageUrl||av.imageUrl||'')} alt="">
             <div class="avatar-name-overlay">${escHtml(av.name||'')}</div>
             <div class="avatar-plat-badges" style="position:absolute;top:6px;right:6px;display:flex;gap:4px;z-index:11;">${platBadges}</div>
           </div>
@@ -645,7 +649,7 @@ async function fetchFriendAvatars(userId, seq) {
       });
     });
     
-    el.querySelectorAll('.avatar-thumb[data-src]').forEach(img => avatarObserver.observe(img));
+    observeImages(el);
 
     // ═══════════════════════════════════════════════════════════════
     // Global Queued Background Recovery (Speed Optimized)

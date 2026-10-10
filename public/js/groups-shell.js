@@ -187,7 +187,7 @@ function renderGroupsList(area, cat, groups) {
     filtered.map(g => {
       const icon = proxyImg(g.iconUrl || g.bannerUrl || '');
       return '<div onclick="openGroupDetail(\'' + escJsAttr(g.groupId || g.id) + '\')" style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;cursor:pointer;">' +
-        '<img src="' + escHtml(icon) + '" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display=\'none\'">' +
+        '<img ' + imageSrcAttrs(icon) + ' style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display=\'none\'">' +
         '<div style="flex:1;min-width:0;">' +
           '<div style="font-weight:600;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(g.name || '') + '</div>' +
           '<div style="font-size:0.75em;color:var(--text-muted);">.' + escHtml(g.shortCode || '') + ' · <i class="fa-solid fa-user-group"></i> ' + (g.memberCount || 0) + '</div>' +
@@ -195,6 +195,7 @@ function renderGroupsList(area, cat, groups) {
       '</div>';
     }).join('') +
   '</div>';
+  observeImages(area);
 }
 
 // Invalidate the cache after a join/leave so the next open re-fetches.
@@ -224,7 +225,7 @@ async function searchGroups() {
       groups.map(g => {
         const icon = proxyImg(g.iconUrl || g.bannerUrl || '');
         return '<div onclick="openGroupDetail(\'' + escJsAttr(g.id || '') + '\')" style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;cursor:pointer;">' +
-          '<img src="' + escHtml(icon) + '" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display=\'none\'">' +
+          '<img ' + imageSrcAttrs(icon) + ' style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display=\'none\'">' +
           '<div style="flex:1;min-width:0;">' +
             '<div style="font-weight:600;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(g.name || '') + '</div>' +
             '<div style="font-size:0.75em;color:var(--text-muted);">.' + escHtml(g.shortCode || '') + ' · <i class="fa-solid fa-user-group"></i> ' + (g.memberCount || 0) + '</div>' +
@@ -232,6 +233,7 @@ async function searchGroups() {
         '</div>';
       }).join('') +
     '</div>';
+    observeImages(results);
   } catch (e) {
     results.innerHTML = '<div style="color:var(--error);">' + escHtml(t('group.searchFail', {msg: e.message})) + '</div>';
   }

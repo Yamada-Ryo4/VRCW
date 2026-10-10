@@ -557,8 +557,7 @@ function renderWorldGrid(list) {
   list.forEach(w => {
     const card = _buildWorldCard(w);
     gridEl.appendChild(card);
-    const img = card.querySelector('.avatar-thumb[data-src]');
-    if (img) avatarObserver.observe(img);
+    observeImages(card);
   });
 }
 
@@ -578,13 +577,12 @@ function _buildWorldCard(w) {
 
   const friendsHere = (allFriends || []).filter(f => f.location && f.location.startsWith(w.id)).length;
   card.onclick = () => openWorldDetail(w.id, w);
-  const isCached = loadedImageUrls.has(imageCacheKey(thumb));
   const isFaved  = worldFavoriteIdMap.has(w.id);
   const isLocalFaved = localWorldIdMap.has(w.id);
   const sel = selectedWorldIds.has(w.id);
 
-  card.innerHTML = `<div class="avatar-thumb-wrapper ${isCached?'':'img-loading'}">
-      ${isCached ? `<img class="avatar-thumb" src="${escHtml(thumb)}" alt="">` : `<img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(thumb)}" alt="">`}
+  card.innerHTML = `<div class="avatar-thumb-wrapper img-loading">
+      <img class="avatar-thumb loading" ${imageSrcAttrs(thumb)} alt="">
       <div class="avatar-name-overlay">${escHtml(w.name||t('world.unknownWorld'))}</div>
       <div class="card-tl-overlay">
         <div class="card-checkbox ${sel ? 'on' : ''}" onclick="toggleSelectWorld('${escJsAttr(w.id)}', event)" title="${t('world.toggleSelect')}">${sel ? '✓' : ''}</div>
@@ -624,8 +622,7 @@ function _appendWorldCards(batch) {
     if (document.getElementById('world-card-' + w.id)) return; // already shown
     const card = _buildWorldCard(w);
     gridEl.appendChild(card);
-    const img = card.querySelector('.avatar-thumb[data-src]');
-    if (img) avatarObserver.observe(img);
+    observeImages(card);
   });
 }
 
@@ -880,7 +877,7 @@ async function openWorldDetail(worldId, worldObj = null) {
   if (safe('worldDetailRawJson'))       safe('worldDetailRawJson').textContent = '';
 
   switchWorldDetailTab('info');
-  if (worldObj) { const img = safe('worldDetailImg'); if (img) img.src = proxyImg(worldObj.thumbnailImageUrl||worldObj.imageUrl||''); }
+  loadImage(safe('worldDetailImg'), worldObj ? worldObj.thumbnailImageUrl||worldObj.imageUrl||'' : '');
 
   try {
     const r = await apiCall(`/api/vrc/worlds/${worldId}`, { signal: detailCtrl.signal, noDedupe: true });
@@ -893,7 +890,7 @@ async function openWorldDetail(worldId, worldObj = null) {
     if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('worldDetail', detailCtrl)) return;
 
     // Fill Basic Info
-    document.getElementById('worldDetailImg').src = proxyImg(w.thumbnailImageUrl||w.imageUrl||'');
+    loadImage(document.getElementById('worldDetailImg'), w.thumbnailImageUrl||w.imageUrl||'');
     document.getElementById('worldDetailName').textContent = w.name || 'Unknown World';
     document.getElementById('worldDetailBreadcrumbName').textContent = w.name || 'World';
     document.getElementById('worldDetailBreadcrumbAuthor').textContent = w.authorName || 'Unknown';
@@ -963,7 +960,7 @@ async function openWorldDetail(worldId, worldObj = null) {
             ${friends.map(f => {
               const trust = getTrustInfo(f.tags||[]);
               return `<div onclick="openFriendProfileById('${escJsAttr(f.id)}')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;border:1px solid transparent;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.08)';this.style.borderColor='var(--border)'" onmouseout="this.style.background='rgba(255,255,255,0.05)';this.style.borderColor='transparent'">
-                <img src="${proxyImg(f.currentAvatarThumbnailImageUrl||f.userIcon||'')}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid ${trust.color}66;">
+                <img ${imageSrcAttrs(f.currentAvatarThumbnailImageUrl||f.userIcon||'')} style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid ${trust.color}66;">
                 <span style="font-size:0.85em;font-weight:600;color:${trust.color};">${escHtml(f.displayName)}</span>
               </div>`;
             }).join('')}
@@ -1008,7 +1005,7 @@ async function openWorldDetail(worldId, worldObj = null) {
             ${friends.map(f => {
               const trust = getTrustInfo(f.tags||[]);
               return `<div onclick="openFriendProfileById('${escJsAttr(f.id)}')" style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:rgba(255,255,255,0.04);border-radius:6px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'">
-                <img src="${proxyImg(f.currentAvatarThumbnailImageUrl||f.userIcon||'')}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid ${trust.color}44;">
+                <img ${imageSrcAttrs(f.currentAvatarThumbnailImageUrl||f.userIcon||'')} style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid ${trust.color}44;">
                 <span style="font-size:0.78em;font-weight:600;color:${trust.color};">${escHtml(f.displayName)}</span>
               </div>`;
             }).join('')}
@@ -1053,6 +1050,7 @@ async function openWorldDetail(worldId, worldObj = null) {
       instContainer.innerHTML = friendsHtml + instContainer.innerHTML;
     }
 
+    observeImages(instContainer);
     _refreshWorldFavoriteMenuState(w.id);
   } catch(e) {
     // apiCall converts abort into a Response with status 499 rather than

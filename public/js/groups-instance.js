@@ -32,6 +32,7 @@ async function loadMyGroups() {
     }
     html += other.map(g => groupCardHtml(g, me.id)).join('');
     el.innerHTML = html;
+    observeImages(el);
     document.getElementById('friendStats').textContent = t('group.totalGroupsCount', {count: groups.length});
   } catch(e) {
     if (isAbortError(e)) return;
@@ -43,7 +44,7 @@ function groupCardHtml(g, myId) {
   const isOwner = g.ownerId === myId;
   return '<div class="friend-card" onclick="openGroupDetail(' + JSON.stringify(g.groupId||g.id) + ')" style="cursor:pointer;">' +
     '<div class="friend-avatar-wrap" style="border-radius:10px;">' +
-      '<img src="' + escHtml(proxyImg(g.iconUrl||'')) + '" style="border-radius:10px;object-fit:cover;" onerror="this.style.display=\'none\'">' +
+      '<img ' + imageSrcAttrs(g.iconUrl||'') + ' style="border-radius:10px;object-fit:cover;" onerror="this.style.display=\'none\'">' +
     '</div>' +
     '<div class="friend-info">' +
       '<div class="friend-name">' + escHtml(g.name||'') + (isOwner ? ' <span style="font-size:0.65em;background:rgba(255,255,255,0.13);color:#d4d4d8;border:1px solid rgba(255,255,255,0.27);padding:2px 6px;border-radius:99px;">' + escHtml(t('group.owner')) + '</span>' : '') + '</div>' +
@@ -114,12 +115,12 @@ async function openGroupDetail(groupId) {
   document.getElementById('gdName').textContent = t('loading');
   document.getElementById('gdDesc').textContent = '';
   document.getElementById('gdStats').innerHTML = '';
-  document.getElementById('gdBanner').style.backgroundImage = '';
+  loadBackgroundImage(document.getElementById('gdBanner'), '');
   // Reset icon: hide img, clear fallback letter; populated once group data arrives.
   const _gdIconImg = document.getElementById('gdIcon');
   const _gdIconFallback = document.getElementById('gdIconFallback');
   _gdIconImg.style.display = 'none';
-  _gdIconImg.removeAttribute('src');
+  disposeImage(_gdIconImg);
   _gdIconFallback.textContent = '';
   document.getElementById('gdShortCode').textContent = '';
   try {
@@ -127,13 +128,13 @@ async function openGroupDetail(groupId) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const g = await r.json();
     if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('groupDetail', detailCtrl)) return;
-    document.getElementById('gdBanner').style.backgroundImage = g.bannerUrl ? 'url(' + proxyImg(g.bannerUrl) + ')' : '';
+    loadBackgroundImage(document.getElementById('gdBanner'), g.bannerUrl);
     // Group icons are nullable in VRChat API. Try iconUrl, then bannerUrl, then fall
     // back to a letter avatar (first character of group name). The <img> only shows
     // on successful load; the fallback letter sits underneath it.
     const _iconSrc = g.iconUrl || g.bannerUrl || '';
     if (_iconSrc) {
-      _gdIconImg.src = proxyImg(_iconSrc);
+      loadImage(_gdIconImg, _iconSrc);
     }
     _gdIconFallback.textContent = (g.name || '?').trim().charAt(0).toUpperCase();
     document.getElementById('gdName').textContent = g.name || '';
@@ -179,6 +180,7 @@ function closeGroupDetail() {
   const modal = document.getElementById('groupDetailModal');
   if (!modal) return;
   modal.classList.add('hidden');
+  disposeImages(modal);
   if (modal.dataset.scrollLocked) {
     unlockBodyScroll();
     delete modal.dataset.scrollLocked;
@@ -383,7 +385,7 @@ async function fetchGroupMembers(groupId, token = null, signal = null) {
         const fJson = escAttrJson(u);
         return `
           <div class="group-member-card" onclick="openFriendProfile(this)" data-friend="${fJson}" style="cursor:pointer;">
-            <img src="${escHtml(getUserThumbUrl(u))}" class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
+            <img ${imageSrcAttrs(getUserThumbUrl(u))} class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
             <div class="member-info">
               <div class="member-name" title="${escHtml(u.displayName || '')}">${escHtml(u.displayName || 'Unknown')}</div>
               <div class="member-role">${escHtml(m.roleNames?.[0] || 'Member')}</div>
@@ -392,6 +394,7 @@ async function fetchGroupMembers(groupId, token = null, signal = null) {
       }).join('');
       const more = state.done ? '' : `<button type="button" class="btn btn-secondary btn-xs" data-group-members-more style="width:100%;margin-top:8px;">${escHtml(t('group.loadMoreMembers'))}</button>`;
       el.innerHTML = cards + more;
+      observeImages(el);
       const moreBtn = el.querySelector('[data-group-members-more]');
       if (moreBtn) moreBtn.onclick = () => loadMore();
     }
@@ -544,6 +547,7 @@ async function openInstanceDetail(loc) {
   } else {
     inviteBtn.style.display = 'none';
   }
+  loadBackgroundImage(document.getElementById('insBanner'), '');
   document.getElementById('insWorldName').textContent = t('loading');
   document.getElementById('insAuthorLine').innerHTML = '';
   document.getElementById('insDesc').textContent = '';
@@ -560,7 +564,7 @@ async function openInstanceDetail(loc) {
       const w = await wResp.json();
       if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('instanceDetail', detailCtrl)) return;
       document.getElementById('insWorldName').textContent = w.name;
-      document.getElementById('insBanner').style.backgroundImage = `url(${proxyImg(w.imageUrl)})`;
+      loadBackgroundImage(document.getElementById('insBanner'), w.imageUrl);
       document.getElementById('insAuthorLine').innerHTML = `by <a href="#" onclick="openFriendProfileById('${escJsAttr(w.authorId)}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${escHtml(w.authorName)}</a>`;
       document.getElementById('insDesc').textContent = w.description || t('group.noWorldDesc');
       
@@ -600,7 +604,7 @@ async function openInstanceDetail(loc) {
         const safeJson = escAttrJson(f);
         return `<div class="friend-card" style="padding:10px;margin:0;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;transition:all 0.2s;cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.background='rgba(255,255,255,0.03)'" onclick="openFriendProfile(this)" data-friend="${safeJson}">
           <div style="position:relative;">
-            <img src="${proxyImg(f.currentAvatarThumbnailImageUrl||f.userIcon||'')}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid ${trust.color}44;">
+            <img ${imageSrcAttrs(f.currentAvatarThumbnailImageUrl||f.userIcon||'')} style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid ${trust.color}44;">
           </div>
           <div style="flex:1;">
             <div style="font-size:0.95em;font-weight:600;color:${trust.color};display:flex;align-items:center;gap:6px;">
@@ -612,6 +616,7 @@ async function openInstanceDetail(loc) {
           <div style="font-size:0.7em;color:var(--text-muted);">${getPlatformEmoji(f.last_platform)}</div>
         </div>`;
       }).join('');
+      observeImages(listEl);
     }
   } catch(e) {
     if (!isUiTokenCurrent(detailToken) || !isScopedAbortCurrent('instanceDetail', detailCtrl)) return;
@@ -633,6 +638,7 @@ function closeInstanceDetail() {
   const modal = document.getElementById('instanceDetailModal');
   if (!modal) return;
   modal.classList.add('hidden');
+  disposeImages(modal);
   if (modal.dataset.scrollLocked) {
     unlockBodyScroll();
     delete modal.dataset.scrollLocked;
@@ -659,10 +665,11 @@ async function fetchMutualGroups(userId, containerId) {
     if (!mutual.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('group.noMutualGroups')) + '</span>'; return; }
     el.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + mutual.map(g => 
       '<div onclick="openGroupDetail(' + JSON.stringify(g.groupId||g.id) + ')" style="background:var(--bg-glass);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75em;display:flex;align-items:center;gap:6px;">' +
-        '<img src="' + escHtml(proxyImg(g.iconUrl||'')) + '" style="width:18px;height:18px;border-radius:3px;" onerror="this.style.display=\'none\'">' +
+        '<img ' + imageSrcAttrs(g.iconUrl||'') + ' style="width:18px;height:18px;border-radius:3px;" onerror="this.style.display=\'none\'">' +
         escHtml(g.name) +
       '</div>'
     ).join('') + '</div>';
+    observeImages(el);
   } catch(e) {
     el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('group.loadFailedShort')) + '</span>';
   }
@@ -734,7 +741,7 @@ async function fetchMutualFriends(userId, containerId, seq) {
       const thumb = getUserThumbUrl(u);
       return `
         <div class="group-member-card" onclick="openFriendProfile(this);" data-friend="${safeJson}" style="cursor:pointer;width:100%;max-width:none;">
-          <img src="${escHtml(thumb)}" class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
+          <img ${imageSrcAttrs(thumb)} class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
           <div class="member-info">
             <div class="member-name" style="color:${t.color};" title="${escHtml(u.displayName || '')}">${escHtml(u.displayName || 'Unknown')}</div>
             <div class="member-role">${t.text || 'User'}</div>
@@ -746,6 +753,7 @@ async function fetchMutualFriends(userId, containerId, seq) {
       <div class="group-member-list">
         ${list.map(renderUser).join('')}
       </div>`;
+    observeImages(el);
   } catch(e) {
     el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8em;">' + escHtml(t('toast.loadFailMsg', {msg: e.message})) + '</span>';
   }
@@ -779,7 +787,7 @@ async function fetchMutualFriendsFallback(userId, el) {
     const thumb = getUserThumbUrl(u);
     return `
       <div class="group-member-card" onclick="openFriendProfile(this);" data-friend="${safeJson}" style="cursor:pointer;width:100%;max-width:none;">
-        <img src="${escHtml(thumb)}" class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
+        <img ${imageSrcAttrs(thumb)} class="member-avatar" onerror="this.onerror=null; this.src='${escHtml(blankAvatarDataUrl(u.displayName || u.username || '?'))}';">
         <div class="member-info">
           <div class="member-name" style="color:${t.color};" title="${escHtml(u.displayName || '')}">${escHtml(u.displayName || 'Unknown')}</div>
           <div class="member-role">${t.text || 'User'}</div>
@@ -793,6 +801,7 @@ async function fetchMutualFriendsFallback(userId, el) {
       <div class="group-member-list">
         ${colocated.map(renderUser).join('')}
       </div>`;
+    observeImages(el);
   } else {
     el.innerHTML = '<div style="color:var(--text-muted);font-size:0.8em;line-height:1.6;padding:8px 0;">' + escHtml(t('group.mutualFriendsRollout')) + '<br>' +
       (targetLoc && targetLoc.startsWith('wrld_') ? escHtml(t('group.userNotInFriendInstance')) : escHtml(t('group.userOfflineOrHidden'))) + '</div>';

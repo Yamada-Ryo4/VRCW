@@ -336,7 +336,7 @@ async function vrcdbFetch(cat, query, signal) {
         const fJson = escAttrJson(u);
         return `<div class="friend-card search-user-card" onclick="openFriendProfile(this);" data-friend="${fJson}">
           <div class="friend-avatar-wrap">
-            <img src="${escHtml(proxyImg(u.userIcon||u.profilePicOverride||u.currentAvatarThumbnailImageUrl||''))}" onerror="this.style.display=\'none\'">
+            <img ${imageSrcAttrs(u.userIcon||u.profilePicOverride||u.currentAvatarThumbnailImageUrl||'')} onerror="this.style.display=\'none\'">
           </div>
           <div class="friend-info">
             <div class="friend-name">${escHtml(u.displayName)}</div>
@@ -350,15 +350,12 @@ async function vrcdbFetch(cat, query, signal) {
       filteredData.forEach(w => {
         const thumb = proxyImg(w.thumbnailImageUrl || w.imageUrl || '');
         const isFaved = worldFavoriteIdMap.has(w.id);
-        const isCached = loadedImageUrls.has(imageCacheKey(thumb));
         const card = document.createElement('div');
         card.className = 'avatar-card';
         card.style.cursor = 'pointer';
         card.onclick = () => openWorldDetail(w.id, w);
-        card.innerHTML = `<div class="avatar-thumb-wrapper ${isCached?'':'img-loading'}">
-          ${isCached
-            ? `<img class="avatar-thumb" src="${escHtml(thumb)}" alt="">`
-            : `<img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(thumb)}" alt="">`}
+        card.innerHTML = `<div class="avatar-thumb-wrapper img-loading">
+          <img class="avatar-thumb loading" ${imageSrcAttrs(thumb)} alt="">
           <div class="avatar-name-overlay">${escHtml(w.name||t('world.unknownWorld'))}</div>
           <div style="position:absolute;bottom:6px;left:6px;z-index:10;">
             <div data-fav-btn="${escHtml(w.id)}" onclick="quickWorldFav('${escJsAttr(w.id)}',event)"
@@ -370,17 +367,14 @@ async function vrcdbFetch(cat, query, signal) {
           </div>
         </div>`;
         grid.appendChild(card);
-        if (!isCached && thumb) {
-          const img = card.querySelector('.avatar-thumb[data-src]');
-          if (img) avatarObserver.observe(img);
-        }
+        observeImages(card);
       });
 
     } else if (cat === 'groups') {
       grid.innerHTML = filteredData.map(g => {
         return `<div class="friend-card" style="box-shadow: 0 4px 12px rgba(0,0,0,0.5);border:1px solid var(--border);">
           <div class="friend-avatar-wrap" style="border-radius:12px;">
-            <img src="${escHtml(proxyImg(g.iconUrl||''))}" style="border-radius:12px;" onerror="this.style.display=\'none\'">
+            <img ${imageSrcAttrs(g.iconUrl||'')} style="border-radius:12px;" onerror="this.style.display=\'none\'">
           </div>
           <div class="friend-info">
             <div class="friend-name">${escHtml(g.name)} <span style="font-size:0.7em;opacity:0.6;">${escHtml(g.shortCode)}</span></div>
@@ -389,6 +383,7 @@ async function vrcdbFetch(cat, query, signal) {
         </div>`;
       }).join('');
     }
+    observeImages(grid);
   } catch(e) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--error);padding:40px;">${escHtml(t('search.searchFailed', {msg: String(e.message || e)}))}</div>`;
   }
@@ -697,15 +692,10 @@ function _buildAvtrdbCard(av) {
     `<span class="avtrdb-badge">${{ pc: "PC", android: "Quest", ios: "Apple" }[p] || p}</span>`
   ).join("");
   const thumb = proxyImg(av.image_url || av.imageUrl || av.thumbnailImageUrl || "");
-  const isCached = thumb && loadedImageUrls.has(imageCacheKey(thumb));
-  const imgHtml = thumb
-    ? (isCached
-      ? `<img class="avatar-thumb" src="${escHtml(thumb)}" alt="${escHtml(av.name || "")}">`
-      : `<img class="avatar-thumb loading" src="${BLANK}" data-src="${escHtml(thumb)}" alt="${escHtml(av.name || "")}">`)
-    : `<img class="avatar-thumb" src="${BLANK}" alt="">`;
+  const imgHtml = `<img class="avatar-thumb loading" ${imageSrcAttrs(thumb)} alt="${escHtml(av.name || "")}">`;
 
   card.innerHTML = `
-    <div class="avatar-thumb-wrapper ${thumb && !isCached ? 'img-loading' : ''}">
+    <div class="avatar-thumb-wrapper ${thumb ? 'img-loading' : ''}">
       ${imgHtml}
       <div class="avatar-name-overlay">${escHtml(av.name || t('avatar.unknownAvatar'))}</div>
     </div>
@@ -716,8 +706,7 @@ function _buildAvtrdbCard(av) {
   `;
 
   // Lazy metadata enrichment when the card scrolls into view
-  const lazyImg = card.querySelector('.avatar-thumb[data-src]');
-  if (lazyImg) avatarObserver.observe(lazyImg);
+  observeImages(card);
 
   if (!(av.unityPackages && av.unityPackages.length > 0)) {
     const metaObs = _ensureAvtrdbMetaObserver();
@@ -837,19 +826,12 @@ function _restoreCard(card) {
   const img = card.querySelector('.avatar-thumb');
   if (img) {
     const thumb = proxyImg(av.image_url || av.imageUrl || av.thumbnailImageUrl || "");
-    const isCached = thumb && loadedImageUrls.has(imageCacheKey(thumb));
     const wrapper = img.closest('.avatar-thumb-wrapper');
     if (thumb) {
-      if (isCached) {
-        clearImageFailureUi(img);
-        img.src = thumb;
-      } else {
-        clearImageFailureUi(img);
-        img.dataset.src = thumb;
-        img.classList.add('loading');
-        if (wrapper) wrapper.classList.add('img-loading');
-        if (typeof avatarObserver !== 'undefined') avatarObserver.observe(img);
-      }
+      clearImageFailureUi(img);
+      loadImage(img, thumb, { lazy: true });
+      img.classList.add('loading');
+      if (wrapper) wrapper.classList.add('img-loading');
     }
   }
 }
@@ -861,20 +843,8 @@ function _recycleCard(card) {
   if (card.dataset.recycled === '1') return; // already torn down
   const img = card.querySelector('.avatar-thumb');
   if (img) {
-    if (typeof avatarObserver !== 'undefined') {
-      try { avatarObserver.unobserve(img); } catch (_) {}
-    }
-    if (img._abortCtrl) { try { img._abortCtrl.abort(); } catch (_) {} }
-    if (img.src && img.src.startsWith('blob:')) { try { URL.revokeObjectURL(img.src); } catch (_) {} }
-    // Remove this image from the pending imageQueue to prevent a stale fetch
-    // from loading a now-recycled card (which would waste bandwidth + leak a
-    // blob URL that nobody ever sees).
-    if (typeof _imageQueueSet !== 'undefined' && _imageQueueSet.has(img)) {
-      _removeFromImageQueue(img);
-    }
+    disposeImage(img);
     img.removeAttribute('data-src');
-    // Using an embedded 1x1 transparent gif instead of global BLANK to be safe
-    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
     delete img.dataset.loading;
     delete img.dataset.cancelled;
     img.classList.remove('loading');
@@ -1192,7 +1162,7 @@ function displayAvatarDetail(av, opts = {}) {
   const updatedAt = av.updated_at || av.updatedAt;
 
   // 2. Populate UI
-  document.getElementById("avtrdbDetailImg").src = thumb;
+  loadImage(document.getElementById("avtrdbDetailImg"), thumb);
   document.getElementById("avtrdbDetailName").textContent = name;
   const authorEl = document.getElementById("avtrdbDetailAuthor");
   if (authorEl) authorEl.innerHTML = `by ${authorLinkHtml(author, authorId)}`;

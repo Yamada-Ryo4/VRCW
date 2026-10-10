@@ -160,12 +160,12 @@ function renderMyProfile(u) {
   view.innerHTML = `<div class="my-profile-card">
     <!-- Banner + avatar row -->
     <div class="my-profile-banner" style="position:relative;height:120px;overflow:hidden;background:var(--bg-secondary);">
-      <img src="${escHtml(profileBig)}" style="width:100%;height:100%;object-fit:cover;filter:blur(6px) brightness(0.35);" onerror="this.style.display=\'none\'">
+      <img ${imageSrcAttrs(profileBig)} style="width:100%;height:100%;object-fit:cover;filter:blur(6px) brightness(0.35);" onerror="this.style.display=\'none\'">
       <div style="position:absolute;inset:0;background:linear-gradient(to top,var(--bg-primary) 0%,transparent 70%);"></div>
     </div>
     <div class="my-profile-avatar-row" style="display:flex;align-items:flex-end;gap:16px;margin:-40px 0 12px;position:relative;">
       <div style="width:80px;height:80px;border-radius:50%;overflow:hidden;border:3px solid var(--bg-primary);background:var(--bg-card);flex-shrink:0;">
-        <img src="${escHtml(profileBig)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">
+        <img ${imageSrcAttrs(profileBig)} style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">
       </div>
       <div style="flex:1;min-width:0;padding-bottom:4px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -177,7 +177,7 @@ function renderMyProfile(u) {
         <div style="font-size:0.75em;color:var(--text-muted);">${escHtml(u.username||'')}</div>
       </div>
       <div style="width:64px;height:64px;border-radius:10px;overflow:hidden;border:2px solid var(--border);background:var(--bg-card);flex-shrink:0;" title="${t('friend.currentAvatar')}">
-        <img src="${escHtml(avatarThumb)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">
+        <img ${imageSrcAttrs(avatarThumb)} style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">
       </div>
     </div>
 
@@ -191,7 +191,7 @@ function renderMyProfile(u) {
 
     <!-- Showcase badges -->
     ${showcasedBadges.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-      ${showcasedBadges.map(b=>`<img src="${escHtml(b.badgeImageUrl||'')}" title="${escHtml(b.badgeName||'')}" style="width:32px;height:32px;border-radius:6px;" onerror="this.style.display=\'none\'">`).join('')}
+      ${showcasedBadges.map(b=>`<img ${imageSrcAttrs(b.badgeImageUrl||'')} title="${escHtml(b.badgeName||'')}" style="width:32px;height:32px;border-radius:6px;" onerror="this.style.display=\'none\'">`).join('')}
     </div>`:''}
 
     <!-- Status msg -->
@@ -243,6 +243,8 @@ function renderMyProfile(u) {
     </div>
   </div>`;
 
+  observeImages(view);
+
   // Async: load location display — always show the row, populate after fetch
   {
     const locRow = document.getElementById('myProfileLocRow');
@@ -281,7 +283,7 @@ function renderMyProfile(u) {
       el.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
         ${displayed.map(g => `
           <div class="group-pill" onclick="openGroupDetail('${escJsAttr(g.groupId || g.id)}')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-glass);border:1px solid var(--border);border-radius:99px;font-size:0.85em;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='var(--bg-glass)'">
-            <img src="${proxyImg(g.iconUrl || g.bannerUrl || '')}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">
+            <img ${imageSrcAttrs(g.iconUrl || g.bannerUrl || '')} style="width:20px;height:20px;border-radius:50%;object-fit:cover;">
             <div style="display:flex;flex-direction:column;line-height:1.1;max-width:120px;">
               <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
               <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
@@ -305,7 +307,7 @@ function renderMyProfile(u) {
         el.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
           ${filtered.map(g => `
             <div class="group-pill" onclick="openGroupDetail('${escJsAttr(g.groupId)}')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-glass);border:1px solid var(--border);border-radius:99px;font-size:0.85em;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='var(--bg-glass)'">
-              <img src="${proxyImg(g.iconUrl || g.bannerUrl || '')}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">
+              <img ${imageSrcAttrs(g.iconUrl || g.bannerUrl || '')} style="width:20px;height:20px;border-radius:50%;object-fit:cover;">
               <div style="display:flex;flex-direction:column;line-height:1.1;max-width:120px;">
                 <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
                 <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
@@ -314,6 +316,7 @@ function renderMyProfile(u) {
             </div>
           `).join('')}
         </div>`;
+        observeImages(el);
       }).catch(() => {
         // First attempt failed — retry once after 1.5 s before showing error
         setTimeout(() => {
@@ -327,7 +330,7 @@ function renderMyProfile(u) {
             el.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
               ${filtered.map(g => `
                 <div class="group-pill" onclick="openGroupDetail('${escJsAttr(g.groupId)}')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-glass);border:1px solid var(--border);border-radius:99px;font-size:0.85em;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='var(--bg-glass)'">
-                  <img src="${proxyImg(g.iconUrl || g.bannerUrl || '')}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">
+                  <img ${imageSrcAttrs(g.iconUrl || g.bannerUrl || '')} style="width:20px;height:20px;border-radius:50%;object-fit:cover;">
                   <div style="display:flex;flex-direction:column;line-height:1.1;max-width:120px;">
                     <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(g.name)}</span>
                     <span style="font-size:0.7em;opacity:0.5;">${escHtml(g.shortCode)}</span>
@@ -336,12 +339,14 @@ function renderMyProfile(u) {
                 </div>
               `).join('')}
             </div>`;
+            observeImages(el);
           }).catch((e) => {
             el.innerHTML = '<div style="font-size:0.85em;color:var(--text-muted);opacity:0.6;">' + escHtml(t('toast.groupsLoadFail', {msg: String(e.message || e)})) + '</div>';
           });
         }, 1500);
       });
     }
+    observeImages(el);
   }
 }
 
@@ -917,6 +922,7 @@ function renderFriendList(list) {
   }
 
   el.innerHTML = html;
+  observeImages(el);
 
   // Async: resolve world names in group headers
   document.querySelectorAll('.loc-group-header[data-loc]').forEach(async div => {
@@ -962,7 +968,7 @@ function friendCardHtml(f) {
 
     return `<div class="friend-card" onclick="openFriendProfile(this);" data-friend="${fJson}">
       <div class="friend-avatar-wrap">
-        ${thumb ? `<img src="${escHtml(thumb)}" alt="" onerror="this.style.display=\'none\'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.3em;"><i class="fa-solid fa-user"></i> </div>'}
+        ${thumb ? `<img ${imageSrcAttrs(thumb)} alt="" onerror="this.style.display=\'none\'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.3em;"><i class="fa-solid fa-user"></i> </div>'}
         <span class="friend-status-dot ${statusCss}"></span>
       </div>
       <div class="friend-info">
