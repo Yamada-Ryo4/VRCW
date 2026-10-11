@@ -352,6 +352,7 @@ async function vrcdbFetch(cat, query, signal) {
         const isFaved = worldFavoriteIdMap.has(w.id);
         const card = document.createElement('div');
         card.className = 'avatar-card';
+        card.setAttribute('data-worldid', w.id);
         card.style.cursor = 'pointer';
         card.onclick = () => openWorldDetail(w.id, w);
         card.innerHTML = `<div class="avatar-thumb-wrapper img-loading">

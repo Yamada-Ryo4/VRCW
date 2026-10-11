@@ -550,8 +550,7 @@ const idb = {
       req.onerror = () => reject(req.error);
     });
   },
-  async keys() {
-    const token = makeAuthSessionToken();
+  async keys(token = makeAuthSessionToken()) {
     const scope = await _authCacheScope(token);
     if (!scope) return [];
     await this.init();
@@ -677,11 +676,12 @@ const idb = {
       req.onerror = () => reject(req.error);
     });
   },
-  async saveLocalWorld(world) {
+  async saveLocalWorld(world, token = makeAuthSessionToken()) {
     if (!world || !/^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(world.id || '')) {
       throw new Error('Invalid world ID');
     }
     await this.init();
+    if (!isAuthSessionCurrent(token)) return;
     const record = {
       id: world.id,
       name: String(world.name || '').slice(0, 500),
@@ -706,11 +706,12 @@ const idb = {
       tx.onerror = tx.onabort = () => reject(tx.error || new Error('Local world save failed'));
     });
   },
-  async removeLocalWorld(id) {
+  async removeLocalWorld(id, token = makeAuthSessionToken()) {
     if (!/^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '')) {
       throw new Error('Invalid world ID');
     }
     await this.init();
+    if (!isAuthSessionCurrent(token)) return;
     const tx = this.db.transaction("local_worlds", "readwrite");
     tx.objectStore("local_worlds").delete(id);
     await new Promise((resolve, reject) => {
@@ -1101,6 +1102,8 @@ document.addEventListener('keydown', (e) => {
   const id = top.id || '';
   const closers = {
     'worldDetailModal': 'closeWorldDetail',
+    'worldEditModal': 'closeWorldEditModal',
+    'worldDeleteConfirmModal': 'closeWorldDeleteConfirm',
     'directOpenModal': 'closeDirectOpenModal',
     'friendProfileModal': 'closeFriendProfile',
     'groupDetailModal': 'closeGroupDetail',
@@ -1463,6 +1466,11 @@ function advanceAuthSession() {
   authSessionCredential = null;
   _resetAuthSessionScope();
   clearApiMemoryCache();
+  if (typeof VRCW !== 'undefined') {
+    VRCW.modules?.worlds?.cancelWorldDownloads?.();
+    VRCW.modules?.worldManagement?.resetWorldManagementDialogs();
+    VRCW.modules?.worldManagement?.updateWorldOwnerActions(null, true);
+  }
   return authSessionEpoch;
 }
 

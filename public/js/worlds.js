@@ -63,14 +63,197 @@ function getLatestWindowsWorldPackage(world) {
     .reduce((best, pkg) => !best || (Number(pkg.assetVersion) || 0) > (Number(best.assetVersion) || 0) ? pkg : best, null);
 }
 
+// A single owner covers detail actions, batches, and direct helper callers.
+// Cancellation keeps ownership until the in-flight body settles.
+let _worldDownloadTask = null;
+
+function _beginWorldDownloadTask(kind, guard = () => true) {
+  if (_worldDownloadTask) return null;
+  const task = {
+    kind, guard, sessionToken: makeAuthSessionToken(),
+    accountId: typeof currentUserId === 'string' ? currentUserId : '',
+    category: currentWorldCategory, fetchSeq: currentWorldFetchSeq,
+    controller: new AbortController(), cancelled: false, fileActive: false,
+    index: 0, total: 0
+  };
+  _worldDownloadTask = task;
+  return task;
+}
+
+function _worldDownloadContextCurrent(task) {
+  return !!vrcAuth && isAuthSessionCurrent(task.sessionToken)
+    && task.accountId === (typeof currentUserId === 'string' ? currentUserId : '')
+    && task.category === currentWorldCategory && task.fetchSeq === currentWorldFetchSeq
+    && task.guard();
+}
+
+function _worldDownloadIsCurrent(task) {
+  return _worldDownloadTask === task && !task.cancelled
+    && !task.controller.signal.aborted && _worldDownloadContextCurrent(task);
+}
+
+// Hooks may pass 'detail' when closing/replacing a modal without cancelling a batch.
+// This never changes the list or selectedWorldIds.
+function cancelWorldDownloads(kind) {
+  const task = _worldDownloadTask;
+  if (!task || (kind && task.kind !== kind)) return false;
+  if (!task.cancelled && task.kind === 'batch' && _worldDownloadContextCurrent(task)) {
+    worldLogMsg(t('world.downloadBatchStopped'), 'info');
+    task.stopReported = true;
+  }
+  task.cancelled = true;
+  task.controller.abort();
+  _updateWorldActionBtns();
+  return true;
+}
+
 function updateWorldDownloadButtons(world, loading = false) {
   const available = !loading && !!getLatestWindowsWorldPackage(world);
+  const task = _worldDownloadTask;
+  const downloading = available && task?.kind === 'detail'
+    && task.worldId === world.id && _worldDownloadIsCurrent(task);
   for (const id of ['worldDetailDownloadBtn', 'worldDetailMobileDownloadBtn']) {
     const button = document.getElementById(id);
     if (!button) continue;
     button.hidden = !available;
     button.setAttribute('aria-hidden', available ? 'false' : 'true');
-    button.disabled = !available || button.dataset.downloading === '1';
+    button.disabled = !available || !!task;
+    button.title = available ? t('world.download') : '';
+    button.dataset.available = available ? '1' : '0';
+    if (downloading) {
+      button.dataset.downloading = '1';
+      button.textContent = t('world.downloading');
+    } else {
+      delete button.dataset.downloading;
+      if (id === 'worldDetailDownloadBtn') button.innerHTML = '<i class="fa-solid fa-download"></i>';
+      else button.textContent = t('world.download');
+    }
+  }
+}
+
+function _worldDownloadFilename(response, worldId, name) {
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const extended = disposition.match(/(?:^|;)\s*filename\*\s*=\s*UTF-8''([^;]+)/i);
+  const ordinary = disposition.match(/(?:^|;)\s*filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
+  let filename = ordinary ? (ordinary[1] || ordinary[2]).trim() : '';
+  if (extended) {
+    try { filename = decodeURIComponent(extended[1].trim()); } catch (_) { filename = ''; }
+  }
+  filename = filename.normalize('NFKC');
+  if (filename.length <= 180 && /\.vrcw$/i.test(filename)
+      && !/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069<>:"/\\|?*]/.test(filename)
+      && !/^[. ]|[. ]$/.test(filename)
+      && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])\./i.test(filename)) return filename;
+  const base = String(name || 'world').normalize('NFKC')
+    .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069<>:"/\\|?*]/g, '_')
+    .replace(/^[. ]+|[. ]+$/g, '').slice(0, 100).replace(/[. ]+$/g, '') || 'world';
+  return `${base}_${String(worldId).slice(-8)}_windows.vrcw`;
+}
+
+async function _discardWorldDownloadBody(response) {
+  try { await response.body?.cancel(); } catch (_) {}
+}
+
+async function _releaseWorldDownloadUrl(objectUrl, signal, started) {
+  try {
+    // Give the browser a short chance to consume the clicked URL, then revoke
+    // before another package can start. Cancellation ends this grace immediately.
+    if (started && !signal.aborted) await new Promise(resolve => {
+      let timer;
+      const done = () => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', done);
+        resolve();
+      };
+      timer = setTimeout(done, 1000);
+      signal.addEventListener('abort', done, { once: true });
+      if (signal.aborted) done();
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+// UI-neutral result: {status: 'started'|'skipped'|'stopped'|'busy', filename?}.
+// Errors carry HTTP status. options.isCurrent can add a caller guard; options.task
+// is an internal batch/detail owner. No package URL or credential enters a URL.
+async function downloadWorldWindows(worldId, name, options = {}) {
+  if (!vrcAuth) return { status: 'stopped' };
+  const task = options.task || _beginWorldDownloadTask('single', options.isCurrent);
+  if (!task) return { status: 'busy' };
+  const ownsTask = !options.task;
+  let acquired = false;
+  const isCurrent = () => _worldDownloadIsCurrent(task)
+    && (!options.isCurrent || options.isCurrent());
+  try {
+    if (!isCurrent()) return { status: 'stopped' };
+    if (task.fileActive) return { status: 'busy' };
+    if (!/^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worldId)) {
+      throw new Error('Invalid world ID');
+    }
+    task.fileActive = true;
+    acquired = true;
+    const response = await apiCall('/api/world-download', {
+      method: 'POST', noAbort: true, signal: task.controller.signal,
+      headers: { 'Content-Type': 'application/json', 'X-VRC-Auth': vrcAuth },
+      body: JSON.stringify({ worldId })
+    });
+    if (!isCurrent()) {
+      await _discardWorldDownloadBody(response);
+      return { status: 'stopped' };
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      if (!isCurrent() || response.status === 499) return { status: 'stopped' };
+      if (response.status === 404 && payload?.error === 'Windows world package unavailable') {
+        return { status: 'skipped' };
+      }
+      const error = new Error(typeof payload?.error === 'string' ? payload.error : `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+    const contentType = (response.headers.get('Content-Type') || '').toLowerCase();
+    if (/^text\/|json|html|xml|javascript|x-www-form-urlencoded/.test(contentType)) {
+      await _discardWorldDownloadBody(response);
+      throw new Error('Invalid Windows world package response');
+    }
+    const blob = await response.blob();
+    if (!isCurrent()) return { status: 'stopped' };
+    if (!blob.size || /^text\/|json|html|xml|javascript/.test(blob.type.toLowerCase())) {
+      throw new Error('Invalid Windows world package response');
+    }
+    // VRCW is a Unity asset bundle, not a JSON/text error disguised as octet-stream.
+    const signature = new TextDecoder().decode(await blob.slice(0, 16).arrayBuffer());
+    if (!isCurrent()) return { status: 'stopped' };
+    if (!/^Unity(?:FS|Raw|Web)\u0000/.test(signature)) {
+      throw new Error('Invalid Windows world package response');
+    }
+    const filename = _worldDownloadFilename(response, worldId, name);
+    const objectUrl = URL.createObjectURL(blob);
+    let anchor;
+    let started = false;
+    try {
+      if (!isCurrent()) return { status: 'stopped' };
+      anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      if (!isCurrent()) return { status: 'stopped' };
+      anchor.click();
+      started = true;
+      return { status: 'started', filename };
+    } finally {
+      anchor?.remove();
+      await _releaseWorldDownloadUrl(objectUrl, task.controller.signal, started);
+    }
+  } catch (error) {
+    if (!isCurrent() || error?.name === 'AbortError' || error?.status === 499) {
+      return { status: 'stopped' };
+    }
+    throw error;
+  } finally {
+    if (acquired) task.fileActive = false;
+    if (ownsTask && _worldDownloadTask === task) _worldDownloadTask = null;
   }
 }
 
@@ -79,44 +262,100 @@ async function downloadCurrentWorld() {
   const detailToken = window._worldDetailActiveToken;
   if (!world?.id || !detailToken || !isUiTokenCurrent(detailToken)
       || document.getElementById('worldDetailId')?.textContent !== world.id) return;
-  if (!getLatestWindowsWorldPackage(world)) {
-    showToast(t('world.noWindowsPackage'), 'error');
+  if (_worldDownloadTask) return;
+  if (!vrcAuth) {
+    showToast(t('toast.uidMissingRelogin'), 'error');
+    return;
+  }
+  const worldId = world.id;
+  const name = String(world.name || worldId);
+  const guard = () => window._worldDetailActiveToken === detailToken
+    && isUiTokenCurrent(detailToken) && currentWorldDetail?.id === worldId
+    && document.getElementById('worldDetailId')?.textContent === worldId;
+  const task = _beginWorldDownloadTask('detail', guard);
+  if (!task) return;
+  task.worldId = worldId;
+  updateWorldDownloadButtons(world);
+  _updateWorldActionBtns();
+  try {
+    const result = await downloadWorldWindows(worldId, name, { task });
+    if (!_worldDownloadIsCurrent(task)) return;
+    if (result.status === 'started') showToast(t('world.downloadStarted'), 'success');
+    if (result.status === 'skipped') showToast(t('world.noWindowsPackage'), 'error');
+  } catch (error) {
+    if (_worldDownloadIsCurrent(task)) showToast(t('world.downloadFailed', {msg: error.message}), 'error');
+  } finally {
+    if (_worldDownloadTask === task) {
+      _worldDownloadTask = null;
+      const contextCurrent = _worldDownloadContextCurrent(task);
+      _updateWorldActionBtns(contextCurrent);
+      if (contextCurrent) updateWorldDownloadButtons(currentWorldDetail);
+    }
+  }
+}
+
+async function downloadSelectedWorlds() {
+  if (_worldDownloadTask) return;
+  // Only the id/name needed by this task are copied. Cached packages are NOT
+  // authoritative: every selected ID goes through the fresh server lookup.
+  const snapshot = Object.freeze(Array.from(selectedWorldIds, id => {
+    const world = allWorlds.find(item => item.id === id);
+    return Object.freeze({ id, name: String(world?.name || id) });
+  }));
+  if (!snapshot.length) {
+    worldLogMsg(t('world.noSelection'), 'info');
     return;
   }
   if (!vrcAuth) {
     showToast(t('toast.uidMissingRelogin'), 'error');
     return;
   }
-  const buttons = ['worldDetailDownloadBtn', 'worldDetailMobileDownloadBtn'].map(id => document.getElementById(id)).filter(Boolean);
-  if (buttons.some(button => button.dataset.downloading === '1')) return;
-  buttons.forEach(button => { button.dataset.downloading = '1'; button.disabled = true; });
+  const task = _beginWorldDownloadTask('batch');
+  if (!task) return;
+  task.total = snapshot.length;
+  task.index = 1;
+  const counts = { started: 0, skipped: 0, failed: 0, stopped: false };
+  _updateWorldActionBtns();
+  worldLogMsg(t('world.downloadBatchStart', {count: task.total}), 'info');
   try {
-    const response = await fetch(`${API_BASE}/api/world-download`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-VRC-Auth': btoa(vrcAuth) },
-      body: JSON.stringify({ worldId: world.id })
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `HTTP ${response.status}`);
+    for (const [index, world] of snapshot.entries()) {
+      if (!_worldDownloadIsCurrent(task)) { counts.stopped = true; break; }
+      task.index = index + 1;
+      _updateWorldActionBtns();
+      worldLogMsg(t('world.downloadProgress', {index: task.index, total: task.total}), 'info');
+      try {
+        const result = await downloadWorldWindows(world.id, world.name, { task });
+        if (!_worldDownloadIsCurrent(task) || result.status === 'stopped' || result.status === 'busy') {
+          counts.stopped = true;
+          break;
+        }
+        if (result.status === 'started') {
+          counts.started += 1;
+          worldLogMsg(t('world.downloadItemStarted', {name: world.name}), 'success');
+        } else if (result.status === 'skipped') {
+          counts.skipped += 1;
+          worldLogMsg(t('world.downloadItemSkipped', {name: world.name}), 'info');
+        }
+      } catch (error) {
+        if (!_worldDownloadIsCurrent(task) || error?.name === 'AbortError' || error?.status === 499) {
+          counts.stopped = true;
+          break;
+        }
+        counts.failed += 1;
+        worldLogMsg(t('world.downloadItemFailed', {name: world.name, msg: error.message}), 'error');
+        if (error.status === 401) { counts.stopped = true; break; }
+      }
     }
-    const blob = await response.blob();
-    if (blob.type.includes('text/html') || blob.type.includes('application/json') || blob.size === 0) {
-      throw new Error(t('world.noWindowsPackage'));
+    if (_worldDownloadContextCurrent(task) && !task.stopReported) {
+      worldLogMsg(counts.stopped ? t('world.downloadBatchStopped')
+        : t('world.downloadBatchDone', counts), counts.stopped ? 'info' : 'success');
     }
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = objectUrl;
-    anchor.download = `${String(world.name || 'world').normalize('NFKC').replace(/[\\u0000-\\u001f\\u007f<>:"/\\\\|?*]/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || 'world'}_${world.id.slice(-8)}_windows.vrcw`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
-    showToast(t('world.downloadStarted'), 'success');
-  } catch (error) {
-    showToast(t('world.downloadFailed', {msg: error.message}), 'error');
+    return counts;
   } finally {
-    buttons.forEach(button => { delete button.dataset.downloading; button.disabled = !getLatestWindowsWorldPackage(currentWorldDetail); });
+    if (_worldDownloadTask === task) {
+      _worldDownloadTask = null;
+      _updateWorldActionBtns(_worldDownloadContextCurrent(task));
+    }
   }
 }
 
@@ -201,6 +440,7 @@ async function loadWorldFavGroups() {
 }
 
 function switchWorldCategory(cat) {
+  cancelWorldDownloads();
   currentWorldCategory = cat;
   runPriorityTask(async () => {
     document.querySelectorAll('#worldsPanel .cat-btn, #worldsPanel .category-btn').forEach(b => {
@@ -241,12 +481,22 @@ function _worldBasicForWorldsCache(w) {
 
 async function _saveWorldBasicsForCurrentCategory(cat = currentWorldCategory) {
     if (!cat) return;
+    const token = makeAuthSessionToken();
+    const seq = currentWorldFetchSeq;
+    const current = () => isAuthSessionCurrent(token) && seq === currentWorldFetchSeq && cat === currentWorldCategory;
     const basics = (allWorlds || []).map(_worldBasicForWorldsCache).filter(Boolean);
-    await idb.set(WORLD_CACHE_PREFIX + cat, basics);
-    await idb.set('world_basics_age_' + cat, Date.now());
+    const next = _worldManagementCacheQueue.catch(() => {}).then(async () => {
+      if (!current()) return;
+      await idb.set(WORLD_CACHE_PREFIX + cat, basics, token);
+      if (!current()) return;
+      await idb.set('world_basics_age_' + cat, Date.now(), token);
+    });
+    _worldManagementCacheQueue = next;
+    return next;
 }
 
 async function fetchWorlds(category, forceRefresh = false) {
+  cancelWorldDownloads();
   const seq = ++currentWorldFetchSeq;
   const sessionToken = makeAuthSessionToken();
   const isCurrent = () => seq === currentWorldFetchSeq && category === currentWorldCategory && isAuthSessionCurrent(sessionToken);
@@ -539,11 +789,37 @@ function filterWorlds() {
 renderWorldGrid(list);
 }
 
-function _updateWorldActionBtns() {
+function _updateWorldActionBtns(updateDetail = true) {
   const isFav = currentWorldCategory && currentWorldCategory.startsWith('fav_');
-  // Match avatar panel behavior exactly: show both buttons whenever in a favorites category
-  document.getElementById('btnWorldCleanInvalid')?.classList.toggle('hidden', !isFav);
-  document.getElementById('btnWorldUnfavoriteSelected')?.classList.toggle('hidden', !isFav);
+  const task = _worldDownloadTask;
+  const count = selectedWorldIds.size;
+  // Match avatar panel behavior exactly: show both buttons whenever in a favorites category.
+  const clean = document.getElementById('btnWorldCleanInvalid');
+  const unfavorite = document.getElementById('btnWorldUnfavoriteSelected');
+  clean?.classList.toggle('hidden', !isFav);
+  unfavorite?.classList.toggle('hidden', !isFav);
+  if (clean) clean.disabled = !!task;
+  if (unfavorite) unfavorite.disabled = !!task || !count;
+  const download = document.getElementById('btnWorldDownloadSelected');
+  if (download) {
+    download.disabled = !count || !!task || !vrcAuth;
+    download.setAttribute('aria-busy', task ? 'true' : 'false');
+    // The dynamic count/progress must not be overwritten by static i18n repainting.
+    download.removeAttribute('data-i18n');
+    download.textContent = task?.kind === 'batch' && _worldDownloadIsCurrent(task)
+      ? t('world.downloadProgress', {index: task.index, total: task.total})
+      : task ? t('world.downloading')
+      : count ? t('world.downloadSelectedCount', {count}) : t('world.downloadSelected');
+  }
+  const token = window._worldDetailActiveToken;
+  if (updateDetail && (!task || _worldDownloadContextCurrent(task))
+      && token && isUiTokenCurrent(token) && currentWorldDetail?.id
+      && document.getElementById('worldDetailId')?.textContent === currentWorldDetail.id) {
+    for (const id of ['worldDetailDownloadBtn', 'worldDetailMobileDownloadBtn']) {
+      const button = document.getElementById(id);
+      if (button) button.disabled = button.dataset.available !== '1' || !!task;
+    }
+  }
 }
 
 function renderWorldGrid(list) {
@@ -854,6 +1130,12 @@ async function openWorldDetail(worldId, worldObj = null) {
   if (currentWorldCategory === 'local') switchWorldCategory('local');
   const modal = document.getElementById('worldDetailModal');
   if (!modal) return;
+  VRCW.modules.worldManagement?.resetWorldManagementDialogs();
+  VRCW.modules.worldManagement?.updateWorldOwnerActions(null, true);
+  cancelWorldDownloads('detail');
+  currentWorldDetail = null;
+  const detailId = document.getElementById('worldDetailId');
+  if (detailId) detailId.textContent = '';
   bumpUiEpoch();
   const detailToken = makeUiToken('worldDetail', worldId);
   window._worldDetailActiveToken = detailToken;
@@ -922,9 +1204,7 @@ async function openWorldDetail(worldId, worldObj = null) {
     const tags = (w.tags||[]).filter(t=>!t.startsWith('author_tag')&&!t.startsWith('system_'));
     document.getElementById('worldDetailTags').innerHTML = tags.slice(0,12).map(t=>`<span class="avtrdb-badge" style="font-size:0.7em;padding:2px 6px;">${escHtml(t)}</span>`).join('');
 
-    // Delete Button (only if I'm the author)
-    const delBtn = document.getElementById('worldDetailDeleteBtn');
-    if (delBtn) delBtn.style.display = (w.authorId === currentUserId) ? 'flex' : 'none';
+    VRCW.modules.worldManagement?.updateWorldOwnerActions(w);
 
     // ── Instances & Friends ──
     const instContainer = document.getElementById('worldDetailInstances');
@@ -1065,6 +1345,9 @@ async function openWorldDetail(worldId, worldObj = null) {
 }
 
 function closeWorldDetail() {
+  VRCW.modules.worldManagement?.resetWorldManagementDialogs();
+  VRCW.modules.worldManagement?.updateWorldOwnerActions(null);
+  cancelWorldDownloads('detail');
   bumpUiEpoch();
   window._worldDetailActiveToken = null;
   cancelScopedAbort('worldDetail');
@@ -1079,41 +1362,145 @@ function closeWorldDetail() {
   if (typeof flushPendingAvatarCardUpdates === 'function') flushPendingAvatarCardUpdates();
 }
 
-// Delete the world the user is currently viewing.
-// Wired from #worldDetailDeleteBtn (only visible for the user's own worlds —
-// see openWorldDetail logic that flips its display:none). Without this binding
-// the trash icon was a no-op: there was no JS handler at all.
-async function deleteCurrentWorld() {
+function _worldManagementIsCurrent(options) {
+  return !!options?.sessionToken && options.isSessionCurrent()
+    && options.isOperationCurrent() && isAuthSessionCurrent(options.sessionToken);
+}
+
+function _refreshManagedWorldDetail(world, options) {
+  if (!_worldManagementIsCurrent(options) || !options.isDetailCurrent()) return;
+  currentWorldDetail = { ...currentWorldDetail, ...world };
   const w = currentWorldDetail;
-  if (!w) return;
-  if (!confirm(t('confirm.deleteWorld', {name: w.name || w.id}))) return;
-  try {
-    const r = await apiCall(`/api/vrc/worlds/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      showToast(t('toast.deleteWorldFail', {msg: err.error?.message || ('HTTP ' + r.status)}), 'error');
+  const text = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  text('worldDetailName', w.name || t('world.unknownWorld'));
+  text('worldDetailBreadcrumbName', w.name || t('world.unknownWorld'));
+  text('worldDetailDesc', w.description || '');
+  text('worldDetailUpdated', formatDate(w.updated_at || w.updatedAt));
+  text('worldDetailRawJson', JSON.stringify(w, null, 2));
+  const descRow = document.getElementById('worldDetailDescRow');
+  if (descRow) descRow.style.display = w.description ? '' : 'none';
+  const platforms = _getWorldPlatforms(w).map(platform => ({ pc: 'PC', android: 'Android', ios: 'iOS' }[platform] || platform));
+  const badges = document.getElementById('worldDetailBadges');
+  if (badges) badges.innerHTML = `
+    <span class="avtrdb-badge">${escHtml(String(w.releaseStatus || '').toUpperCase())}</span>
+    <span class="avtrdb-badge"><i class="fa-solid fa-user-group"></i> ${Number(w.capacity) || 0}</span>
+    <span class="avtrdb-badge">v${Number(w.version) || 1}</span>
+    ${platforms.map(platform => `<span class="avtrdb-badge">${escHtml(platform)}</span>`).join('')}`;
+  const tags = document.getElementById('worldDetailTags');
+  if (tags) tags.innerHTML = (Array.isArray(w.tags) ? w.tags : [])
+    .filter(tag => typeof tag === 'string' && !tag.startsWith('system_'))
+    .slice(0, 12).map(tag => `<span class="avtrdb-badge" style="font-size:0.7em;padding:2px 6px;">${escHtml(tag.replace(/^author_tag_/, ''))}</span>`).join('');
+  updateWorldDownloadButtons(w);
+  VRCW.modules.worldManagement?.updateWorldOwnerActions(w);
+}
+
+function _refreshManagedWorldList(worldId, world = null) {
+  if (world) allWorlds = allWorlds.map(item => item.id === worldId ? { ...item, ...world, favoriteId: item.favoriteId } : item);
+  else {
+    allWorlds = allWorlds.filter(item => item.id !== worldId);
+    selectedWorldIds.delete(worldId);
+    worldFavoriteIdMap.delete(worldId);
+  }
+  filterWorlds();
+  const stats = document.getElementById('worldStats');
+  if (stats) stats.textContent = t('world.worldCount', { count: allWorlds.length });
+  const selectAll = document.getElementById('btnWorldSelectAll');
+  if (selectAll) selectAll.textContent = selectedWorldIds.size ? t('world.unselectAll') : t('world.selectAll');
+  _updateWorldActionBtns();
+  document.querySelectorAll('#avtrdbGrid [data-worldid]').forEach(card => {
+    if (card.dataset.worldid !== worldId) return;
+    if (!world) {
+      if (typeof disposeImages === 'function') disposeImages(card);
+      card.remove();
       return;
     }
-    logMsg(t('log.worldDeleted', {name: w.name || w.id}), 'success');
-    closeWorldDetail();
-    // Drop from in-memory list and re-filter so the card disappears without
-    // needing a tab reload.
-    if (Array.isArray(allWorlds)) {
-      allWorlds = allWorlds.filter(x => x.id !== w.id);
-      if (typeof filterWorlds === 'function') filterWorlds();
-    }
-    // Invalidate the IDB cache for this category so it isn't resurrected from
-    // the 60s TTL on the next reload. Delete the basics payload entirely (not
-    // just age=0) so a cold load doesn't briefly show the deleted world before
-    // the API refresh lands.
-    if (currentWorldCategory) {
-      try {
-        await idb.set('world_basics_age_' + currentWorldCategory, 0);
-        await idb.del(WORLD_CACHE_PREFIX + currentWorldCategory);
-      } catch(_) {}
-    }
-  } catch(e) {
-    showToast(t('toast.deleteWorldFail', {msg: e.message}), 'error');
+    const name = card.querySelector('.avatar-name-overlay');
+    if (name) name.textContent = world.name || t('world.unknownWorld');
+    const image = card.querySelector('.avatar-thumb');
+    if (image) loadImage(image, world.thumbnailImageUrl || world.imageUrl || '');
+    card.onclick = () => openWorldDetail(worldId, world);
+  });
+}
+
+let _worldManagementCacheQueue = Promise.resolve();
+function _syncManagedWorldCaches(worldId, world, options) {
+  const next = _worldManagementCacheQueue.catch(() => {}).then(() => _persistManagedWorldCaches(worldId, world, options));
+  _worldManagementCacheQueue = next;
+  return next;
+}
+
+async function _persistManagedWorldCaches(worldId, world, options) {
+  if (!_worldManagementIsCurrent(options)) return;
+  const token = options.sessionToken;
+  const current = () => _worldManagementIsCurrent(options);
+  const keys = await idb.keys(token);
+  if (!current()) return;
+  for (const key of keys.filter(key => key.startsWith(WORLD_CACHE_PREFIX))) {
+    const records = await idb.get(key, token);
+    if (!current()) return;
+    if (!Array.isArray(records) || !records.some(item => item?.id === worldId)) continue;
+    const next = world ? records.map(item => item?.id === worldId
+      ? { ...item, ..._worldBasicForWorldsCache(world), favoriteId: item.favoriteId || null } : item)
+      : records.filter(item => item?.id !== worldId);
+    await idb.set(key, next, token);
+    if (!current()) return;
+    await idb.set('world_basics_age_' + key.slice(WORLD_CACHE_PREFIX.length), 0, token);
+    if (!current()) return;
+  }
+  if (options.category && options.category !== 'local') {
+    await idb.set('world_basics_age_' + options.category, 0, token);
+    if (!current()) return;
+  }
+  const names = await idb.get('world_name_cache', token);
+  if (!current()) return;
+  const nextNames = names && typeof names === 'object' && !Array.isArray(names) ? { ...names } : {};
+  if (world) nextNames[worldId] = world.name || worldId;
+  else delete nextNames[worldId];
+  await idb.set('world_name_cache', nextNames, token);
+  if (!current()) return;
+  const local = await idb.getLocalWorlds();
+  if (!current()) return;
+  const saved = local.find(item => item?.id === worldId);
+  if (saved) {
+    if (world) await idb.saveLocalWorld({ ...saved, ...world }, token);
+    else await idb.removeLocalWorld(worldId, token);
+    if (!current()) return;
+    localWorldFavs = world ? local.map(item => item.id === worldId ? { ...item, ...world } : item) : local.filter(item => item.id !== worldId);
+    localWorldIdMap.clear();
+    localWorldFavs.forEach(item => localWorldIdMap.set(item.id, true));
+    syncWorldLocalFavoriteButtons();
+    renderWorldFavGroupButtons();
+  }
+}
+
+async function applyWorldManagementUpdate(world, options) {
+  if (!_worldManagementIsCurrent(options) || world?.id !== options.worldId) return;
+  if (options.category === currentWorldCategory || allWorlds.some(item => item.id === world.id)) currentWorldFetchSeq++;
+  cancelWorldDownloads();
+  worldNameCache.set(world.id, world.name || world.id);
+  _refreshManagedWorldList(world.id, world);
+  _refreshManagedWorldDetail(world, options);
+  await _syncManagedWorldCaches(world.id, world, options);
+}
+
+async function applyWorldManagementDelete(world, options) {
+  if (!_worldManagementIsCurrent(options) || world?.id !== options.worldId) return;
+  if (options.category === currentWorldCategory || allWorlds.some(item => item.id === world.id)) currentWorldFetchSeq++;
+  cancelWorldDownloads();
+  worldNameCache.delete(world.id);
+  _refreshManagedWorldList(world.id);
+  const closeMatchingDetail = () => {
+    if (_worldManagementIsCurrent(options) && options.isDetailCurrent() && options.isDialogCurrent()) closeWorldDetail();
+  };
+  try {
+    await _syncManagedWorldCaches(world.id, null, options);
+  } catch (error) {
+    if (_worldManagementIsCurrent(options)) showToast(t('world.delete.syncFailed', { msg: error.message }), 'error');
+  } finally {
+    closeMatchingDetail();
   }
 }
 
@@ -1245,7 +1632,7 @@ async function joinWorldInstance() {
   // Update both header and mobile action buttons
   const allJoinBtns = [
     document.getElementById('worldDetailJoinBtn'),
-    document.querySelector('.world-detail-mobile-actions .btn-primary')
+    document.getElementById('worldDetailMobileJoinBtn')
   ].filter(Boolean);
   allJoinBtns.forEach(b => { b.disabled = true; b.innerHTML = t('world.creating'); });
 
@@ -1491,7 +1878,9 @@ VRCW.registerModule('worlds', {
   switchWorldDetailTab,
   openWorldDetail,
   closeWorldDetail,
-  deleteCurrentWorld,
+  downloadSelectedWorlds,
+  cancelWorldDownloads,
+  downloadWorldWindows,
   showCacheClearModal,
   joinWorldInstance,
   joinSpecificInstance,

@@ -86,7 +86,9 @@ test('direct-open UI is available from expanded, collapsed, and mobile navigatio
   const css = readFileSync(new URL('../public/style.css', import.meta.url), 'utf8');
   const mobileCssStart = css.indexOf('@media (max-width: 768px)', css.indexOf('@media (max-width: 768px)') + 1);
   const mobileCss = css.slice(mobileCssStart);
-  assert.match(mobileCss, /#worldDetailDeleteBtn\s*,\s*#worldDetailCloseBtn\s*\{\s*display:\s*flex !important/);
+  assert.match(mobileCss, /#worldDetailCloseBtn\s*\{\s*display:\s*flex !important/);
+  assert.doesNotMatch(mobileCss, /#worldDetailDeleteBtn\s*,\s*#worldDetailCloseBtn/);
+  assert.match(css, /#worldDetailOwnerActions\[hidden\][\s\S]*?display:\s*none\s*!important/);
   assert.match(mobileCss, /#worldDetailMainFavBtn\s*,\s*#worldDetailJoinBtn\s*\{\s*display:\s*none !important/);
   assert.doesNotMatch(mobileCss, /world-detail-header-btns \.btn-icon:not\(\[title=/, 'mobile CSS does not depend on localized title text');
   const mobileActions = html.slice(html.indexOf('class="world-detail-mobile-actions"'), html.indexOf('id="worldDetailFavStatus"'));
@@ -107,8 +109,8 @@ test('local world favorites use IndexedDB v5 and a separate local_worlds object 
   assert.match(core, /indexedDB\.open\("vrcw_DB", 5\)/);
   assert.match(core, /createObjectStore\("local_worlds", \{ keyPath: "id" \}\)/);
   assert.match(core, /async getLocalWorlds\(\)/);
-  assert.match(core, /async saveLocalWorld\(world\)/);
-  assert.match(core, /async removeLocalWorld\(id\)/);
+  assert.match(core, /async saveLocalWorld\(world, token = makeAuthSessionToken\(\)\)/);
+  assert.match(core, /async removeLocalWorld\(id, token = makeAuthSessionToken\(\)\)/);
   assert.match(core, /transaction\("local_worlds"/);
   const worlds = await readFile(new URL('../public/js/worlds.js', import.meta.url), 'utf8');
   assert.match(worlds, /if \(category === 'local'\)/);

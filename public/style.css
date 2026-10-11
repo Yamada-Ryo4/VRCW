@@ -1794,6 +1794,59 @@ select.input-field {
   border-color: var(--error);
 }
 
+.world-detail-owner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#worldDetailOwnerActions[hidden],
+#worldDetailEditBtn[hidden],
+#worldDetailDeleteBtn[hidden] {
+  display: none !important;
+}
+
+.world-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.world-editor-fields .form-group {
+  min-width: 0;
+}
+
+#worldEditModal .modal-content {
+  max-width: 580px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#worldEditModal .input-field {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.world-management-status {
+  color: var(--error);
+  font-size: 0.82rem;
+  min-height: 1.2em;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .world-editor-fields {
+    grid-template-columns: 1fr;
+  }
+  .world-detail-header-btns {
+    gap: 5px !important;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .world-detail-owner-actions {
+    gap: 5px;
+  }
+}
+
 .btn-success-full {
   background: rgba(34, 197, 94, 0.15);
   color: var(--success);
@@ -3181,7 +3234,6 @@ select.input-field {
   #worldDetailJoinBtn {
     display: none !important;
   }
-  #worldDetailDeleteBtn,
   #worldDetailCloseBtn {
     display: flex !important;
   }

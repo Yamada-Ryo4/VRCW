@@ -68,11 +68,22 @@ async function loadWorldFavGroups() {
 }
 
 function _loadWorldsModule() {
-  if (VRCW.modules.worlds) return Promise.resolve(VRCW.modules.worlds);
-  return loadScriptOnce('js/worlds.js?v=' + APP_CACHE_VERSION).then(() => {
+  const ready = VRCW.modules.worlds ? Promise.resolve()
+    : loadScriptOnce('js/worlds.js?v=' + APP_CACHE_VERSION);
+  return ready.then(async () => {
     if (!VRCW.modules.worlds) throw new Error('Worlds module did not register');
+    if (!VRCW.modules.worldManagement) await loadScriptOnce('js/world-management.js?v=' + APP_CACHE_VERSION);
+    if (!VRCW.modules.worldManagement) throw new Error('World management module did not register');
     return VRCW.modules.worlds;
   });
+}
+
+function _callWorldManagement(name, args) {
+  return _loadWorldsModule().then(() => {
+    const fn = VRCW.modules.worldManagement?.[name];
+    if (typeof fn !== 'function') throw new Error('World management function not available: ' + name);
+    return fn.apply(window, args);
+  }).catch(error => showToast(t('toast.worldModuleLoadFail', {msg: error.message}), 'error'));
 }
 
 function _callWorld(name, args) {
@@ -101,7 +112,13 @@ function toggleWorldLocalFavorite() { return _callWorld('toggleWorldLocalFavorit
 function downloadCurrentWorld() { return _callWorld('downloadCurrentWorld', arguments); }
 function quickWorldLocalFav(id, event) { return _callWorld('quickWorldLocalFav', arguments); }
 function closeWorldDetail() { return _callWorld('closeWorldDetail', arguments); }
-function deleteCurrentWorld() { return _callWorld('deleteCurrentWorld', arguments); }
+function deleteCurrentWorld() { return _callWorldManagement('deleteCurrentWorld', arguments); }
+function editCurrentWorld() { return _callWorldManagement('editCurrentWorld', arguments); }
+function saveWorldEdit() { return _callWorldManagement('saveWorldEdit', arguments); }
+function closeWorldEditModal() { return _callWorldManagement('closeWorldEditModal', arguments); }
+function confirmWorldDeletion() { return _callWorldManagement('confirmWorldDeletion', arguments); }
+function closeWorldDeleteConfirm() { return _callWorldManagement('closeWorldDeleteConfirm', arguments); }
+function downloadSelectedWorlds() { return _callWorld('downloadSelectedWorlds', arguments); }
 function showCacheClearModal() { return _callWorld('showCacheClearModal', arguments); }
 function joinWorldInstance() { return _callWorld('joinWorldInstance', arguments); }
 function joinSpecificInstance(worldId, instanceId) { return _callWorld('joinSpecificInstance', arguments); }
