@@ -1186,7 +1186,7 @@ async function openWorldDetail(worldId, worldObj = null) {
     // Badges
     const badgesEl = document.getElementById('worldDetailBadges');
     badgesEl.innerHTML = `
-      <span class="avtrdb-badge" style="background:rgba(134,239,172,0.1);color:#4ade80;border-color:rgba(134,239,172,0.2);">${escHtml(w.releaseStatus||'public').toUpperCase()}</span>
+      <span class="avtrdb-badge" style="background:rgba(134,239,172,0.1);color:#4ade80;border-color:rgba(134,239,172,0.2);">${escHtml(w.releaseStatus === 'public' && w.tags?.includes('system_labs') ? t('world.publication.labs') : String(w.releaseStatus || '').toUpperCase())}</span>
       <span class="avtrdb-badge"><i class="fa-solid fa-user-group"></i> ${w.capacity || 0}</span>
       <span class="avtrdb-badge">v${w.version || 1}</span>
     `;
@@ -1385,7 +1385,7 @@ function _refreshManagedWorldDetail(world, options) {
   const platforms = _getWorldPlatforms(w).map(platform => ({ pc: 'PC', android: 'Android', ios: 'iOS' }[platform] || platform));
   const badges = document.getElementById('worldDetailBadges');
   if (badges) badges.innerHTML = `
-    <span class="avtrdb-badge">${escHtml(String(w.releaseStatus || '').toUpperCase())}</span>
+    <span class="avtrdb-badge">${escHtml(w.releaseStatus === 'public' && w.tags?.includes('system_labs') ? t('world.publication.labs') : String(w.releaseStatus || '').toUpperCase())}</span>
     <span class="avtrdb-badge"><i class="fa-solid fa-user-group"></i> ${Number(w.capacity) || 0}</span>
     <span class="avtrdb-badge">v${Number(w.version) || 1}</span>
     ${platforms.map(platform => `<span class="avtrdb-badge">${escHtml(platform)}</span>`).join('')}`;

@@ -118,6 +118,10 @@ function saveWorldEdit() { return _callWorldManagement('saveWorldEdit', argument
 function closeWorldEditModal() { return _callWorldManagement('closeWorldEditModal', arguments); }
 function confirmWorldDeletion() { return _callWorldManagement('confirmWorldDeletion', arguments); }
 function closeWorldDeleteConfirm() { return _callWorldManagement('closeWorldDeleteConfirm', arguments); }
+function openWorldPublicationConfirm() { return _callWorldManagement('openWorldPublicationConfirm', arguments); }
+function closeWorldPublicationConfirm() { return _callWorldManagement('closeWorldPublicationConfirm', arguments); }
+function confirmWorldPublication() { return _callWorldManagement('confirmWorldPublication', arguments); }
+function refreshWorldPublicationStatus() { return _callWorldManagement('refreshWorldPublicationStatus', arguments); }
 function downloadSelectedWorlds() { return _callWorld('downloadSelectedWorlds', arguments); }
 function showCacheClearModal() { return _callWorld('showCacheClearModal', arguments); }
 function joinWorldInstance() { return _callWorld('joinWorldInstance', arguments); }

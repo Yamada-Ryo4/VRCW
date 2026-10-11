@@ -240,6 +240,7 @@ function _worldBasicFromItem(w) {
     authorId: w.authorId,
     occupants: w.occupants,
     releaseStatus: w.releaseStatus,
+    tags: Array.isArray(w.tags) ? w.tags : null,
     isInvalid: !!w.isInvalid,
     favoriteId: w.favoriteId || worldFavoriteIdMap.get(w.id) || null,
     platforms: w.platforms || null,

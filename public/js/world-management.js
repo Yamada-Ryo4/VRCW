@@ -23,10 +23,16 @@
   const flights = new Map();
   const worldGenerations = new Map();
   const deletedWorlds = new Map();
+  // A dispatched publication request may succeed even if its response/refetch
+  // fails. Reconcile before allowing another publication or metadata save.
+  const publicationChanges = new Map();
   let editContext = null;
   let deleteContext = null;
+  let publicationContext = null;
   let editGeneration = 0;
   let deleteGeneration = 0;
+  let publicationGeneration = 0;
+  let publicationReadGeneration = 0;
 
   const element = id => document.getElementById(id);
   const displayValue = value => value == null ? '' : String(value);
@@ -91,10 +97,25 @@
   }
 
   function dialogCurrent(context, sessionToken = context.sessionToken) {
-    const current = context.operation === 'edit' ? editContext : deleteContext;
-    const generation = context.operation === 'edit' ? editGeneration : deleteGeneration;
+    const current = context.operation === 'edit' ? editContext : context.operation === 'delete' ? deleteContext : publicationContext;
+    const generation = context.operation === 'edit' ? editGeneration : context.operation === 'delete' ? deleteGeneration : publicationGeneration;
     return current === context && context.dialogGeneration === generation
       && sessionCurrent(context, sessionToken) && visible(element(context.modalId));
+  }
+
+  function publicationEditorCurrent(context) {
+    const editor = context.operation === 'edit' ? context : context.editorContext;
+    return !!editor && editor === editContext && dialogCurrent(editor)
+      && detailCurrent(editor) && element('worldEditId')?.textContent === editor.worldId;
+  }
+
+  function publicationChange(worldId) {
+    const change = publicationChanges.get(worldId);
+    if (change && (!isAuthSessionCurrent(change.sessionToken) || change.sessionToken.accountId !== currentUserId)) {
+      publicationChanges.delete(worldId);
+      return null;
+    }
+    return change || null;
   }
 
   function status(context, text) {
@@ -123,7 +144,7 @@
       const deleted = alreadyDeleted(context.worldId);
       const button = element(context.buttonId);
       if (button) {
-        button.disabled = busy || deleted;
+        button.disabled = busy || deleted || (context.operation === 'edit' && !!publicationChange(context.worldId));
         button.setAttribute('aria-busy', busy ? 'true' : 'false');
       }
       const statusElement = element(context.statusId);
@@ -133,6 +154,7 @@
         statusElement.textContent = '';
       }
     }
+    syncPublicationUi();
   }
 
   function showDialog(context, focusId) {
@@ -161,7 +183,15 @@
     }
   }
 
+  function closeWorldPublicationConfirm() {
+    publicationContext = null;
+    publicationGeneration += 1;
+    invalidatePublicationRead();
+    hideDialog('worldPublicationConfirmModal');
+  }
+
   function closeWorldEditModal() {
+    closeWorldPublicationConfirm();
     editContext = null;
     editGeneration += 1;
     hideDialog('worldEditModal');
@@ -214,10 +244,10 @@
       originalWorld: frozenCopy(world),
       sourceWorld: source ? frozenCopy(source) : null,
       selected: typeof selectedWorldIds !== 'undefined' && selectedWorldIds.has(world.id),
-      dialogGeneration: operation === 'edit' ? ++editGeneration : ++deleteGeneration,
-      modalId: operation === 'edit' ? 'worldEditModal' : 'worldDeleteConfirmModal',
-      statusId: operation === 'edit' ? 'worldEditStatus' : 'worldDeleteConfirmStatus',
-      buttonId: operation === 'edit' ? 'btnSaveWorldEdit' : 'btnConfirmWorldDelete',
+      dialogGeneration: operation === 'edit' ? ++editGeneration : operation === 'delete' ? ++deleteGeneration : ++publicationGeneration,
+      modalId: operation === 'edit' ? 'worldEditModal' : operation === 'delete' ? 'worldDeleteConfirmModal' : 'worldPublicationConfirmModal',
+      statusId: operation === 'edit' ? 'worldEditStatus' : operation === 'delete' ? 'worldDeleteConfirmStatus' : 'worldPublicationConfirmStatus',
+      buttonId: operation === 'edit' ? 'btnSaveWorldEdit' : operation === 'delete' ? 'btnConfirmWorldDelete' : 'btnConfirmWorldPublication',
     };
   }
 
@@ -241,22 +271,27 @@
     closeWorldDeleteConfirm();
     const context = capture('edit', sessionToken);
     const world = context.originalWorld;
-    for (const field of Object.keys(FIELD_IDS)) {
-      let value = world[field];
-      if (field === 'tags') value = (Array.isArray(value) ? value : []).filter(isAuthorTag).map(tag => tag.slice(11)).join(', ');
-      if (field === 'urlList') value = Array.isArray(value) ? value.map(displayValue).join('\n') : displayValue(value);
-      controls[field].value = displayValue(value);
-    }
+    for (const field of Object.keys(FIELD_IDS)) controls[field].value = editValue(world, field);
     // Capture actual control values (number inputs and textareas may normalize
     // legacy data). Unchanged controls must never clear or default server data.
     context.initialValues = Object.freeze(Object.fromEntries(Object.entries(controls).map(([field, control]) => [field, control.value])));
     editContext = context;
     element('worldEditId').textContent = world.id;
-    element('worldEditReleaseStatus').textContent = displayValue(world.releaseStatus);
+    element('worldEditReleaseStatus').textContent = publicationLabel(world);
     element('worldEditStatus').textContent = activeFlight(world.id)
       ? message('world.manage.busy', 'Another operation on this world is still running.') : '';
     showDialog(context, 'worldEditName');
+    if (publicationWidgets() && publicationAction(world) === 'publish' && !publicationChange(world.id)) {
+      void readPublicationEligibility(context);
+    }
     return true;
+  }
+
+  function editValue(world, field) {
+    let value = world[field];
+    if (field === 'tags') value = (Array.isArray(value) ? value : []).filter(isAuthorTag).map(tag => tag.slice(11)).join(', ');
+    if (field === 'urlList') value = Array.isArray(value) ? value.map(displayValue).join('\n') : displayValue(value);
+    return displayValue(value);
   }
 
   function editPayload(context) {
@@ -323,6 +358,353 @@
     return payload;
   }
 
+  function publicationWidgets() {
+    return !!element('btnWorldPublicationAction') && !!element('worldPublicationEligibility');
+  }
+
+  function publicationAction(world) {
+    if (!world || !Array.isArray(world.tags) || world.tags.some(tag => typeof tag !== 'string')) return null;
+    if (world.releaseStatus === 'public') return 'unpublish';
+    if (world.releaseStatus === 'private' && !world.tags.includes('system_labs') && !world.tags.includes('system_approved')) return 'publish';
+    return null; // Hidden, unknown, and contradictory private + publication markers are managed states.
+  }
+
+  function publicationSignature(world) {
+    return JSON.stringify([world.releaseStatus, world.tags?.includes?.('system_labs'), world.tags?.includes?.('system_approved')]);
+  }
+
+  function publicationLabel(world) {
+    const key = world?.releaseStatus === 'public' && Array.isArray(world.tags) && world.tags.includes('system_labs')
+      ? 'labs' : ['private', 'public'].includes(world?.releaseStatus) ? world.releaseStatus : 'unknown';
+    return message('world.publication.' + key, { private: 'Private', public: 'Public', labs: 'Community Labs', unknown: 'Unknown / managed' }[key]);
+  }
+
+  function invalidatePublicationRead() {
+    publicationReadGeneration += 1;
+    if (editContext?.publicationState === 'checking') editContext.publicationState = 'unchecked';
+  }
+
+  function publicationNotice(context, text) {
+    if (publicationEditorCurrent(context)) {
+      const editor = context.operation === 'edit' ? context : context.editorContext;
+      editor.publicationNotice = text;
+    }
+    if (context.operation !== 'edit' && publicationEditorCurrent(context) && detailCurrent(context)) status(context, text);
+  }
+
+  function syncPublicationUi() {
+    const editor = editContext;
+    if (!editor || !publicationEditorCurrent(editor)) return;
+    const world = editor.originalWorld;
+    const action = publicationAction(world);
+    const busy = !!activeFlight(editor.worldId);
+    const deleted = alreadyDeleted(editor.worldId);
+    const change = publicationChange(editor.worldId);
+    const checking = editor.publicationState === 'checking';
+    const ready = action === 'unpublish' || (action === 'publish' && editor.publicationState === 'eligible');
+    element('worldEditReleaseStatus').textContent = publicationLabel(world);
+    const actionButton = element('btnWorldPublicationAction');
+    if (actionButton) {
+      actionButton.textContent = message('world.publication.' + (action || 'unavailable'), action === 'publish' ? 'Publish' : action === 'unpublish' ? 'Unpublish' : 'Unavailable');
+      actionButton.disabled = busy || deleted || !!change || !ready;
+      actionButton.setAttribute('aria-busy', busy || checking ? 'true' : 'false');
+    }
+    const eligibility = element('worldPublicationEligibility');
+    if (eligibility) eligibility.textContent = change?.message || editor.publicationNotice
+      || (!action ? message('world.publication.managedState', 'This publication state cannot be changed here.')
+        : checking ? message('world.publication.checking', 'Checking publication eligibility…')
+          : ready ? '' : message('world.publication.unavailable', 'Publication eligibility is unavailable. Refresh to retry.'));
+    const refresh = element('btnRefreshWorldPublication');
+    if (refresh) refresh.disabled = busy || checking || deleted;
+    const context = publicationContext;
+    if (!context || !dialogCurrent(context) || !publicationEditorCurrent(context) || !detailCurrent(context)) return;
+    const button = element('btnConfirmWorldPublication');
+    if (button) {
+      button.disabled = busy || deleted || !!change || !ready || context.invalidated
+        || context.action !== action || context.confirmedSignature !== publicationSignature(world);
+      button.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+    const confirmRefresh = element('btnRefreshWorldPublicationConfirm');
+    if (confirmRefresh) confirmRefresh.disabled = busy || checking || deleted;
+  }
+
+  async function publicationEligibility(worldId, current) {
+    const response = await apiCall(`/api/vrc/worlds/${encodeURIComponent(worldId)}/publish`, {
+      noAbort: true, noCache: true, noDedupe: true,
+    });
+    if (!current()) return null;
+    const body = await jsonOrNull(response);
+    if (!current()) return null;
+    if (!response.ok || body?.error) throw new Error(responseMessage(body, response));
+    if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.canPublish !== 'boolean') {
+      throw new Error(message('world.manage.responseInvalid', 'The server did not return a matching world record.'));
+    }
+    return body.canPublish;
+  }
+
+  async function readPublicationEligibility(editor) {
+    if (!publicationWidgets() || !publicationEditorCurrent(editor) || publicationAction(editor.originalWorld) !== 'publish'
+        || alreadyDeleted(editor.worldId) || activeFlight(editor.worldId) || publicationChange(editor.worldId)) return false;
+    const generation = ++publicationReadGeneration;
+    const operationGeneration = worldGenerations.get(editor.worldId) || 0;
+    const current = () => generation === publicationReadGeneration && publicationEditorCurrent(editor)
+      && !alreadyDeleted(editor.worldId) && !activeFlight(editor.worldId)
+      && (worldGenerations.get(editor.worldId) || 0) === operationGeneration;
+    editor.publicationState = 'checking';
+    editor.publicationNotice = '';
+    syncPublicationUi();
+    try {
+      const eligible = await publicationEligibility(editor.worldId, current);
+      if (!current() || eligible === null) return false;
+      editor.publicationState = eligible ? 'eligible' : 'blocked';
+      editor.publicationNotice = eligible ? '' : message('world.publication.cannotPublish', 'VRChat does not currently allow this world to be published.');
+      return eligible;
+    } catch (error) {
+      if (!current()) return false;
+      editor.publicationState = 'blocked';
+      editor.publicationNotice = message('world.publication.checkFailed', 'Checking publication failed: {msg}', { msg: error.message });
+      return false;
+    } finally {
+      if (current()) syncPublicationUi();
+    }
+  }
+
+  function openWorldPublicationConfirm() {
+    const editor = editContext;
+    if (!editor || !publicationWidgets() || !publicationEditorCurrent(editor) || alreadyDeleted(editor.worldId)
+        || activeFlight(editor.worldId) || publicationChange(editor.worldId)) return false;
+    const action = publicationAction(editor.originalWorld);
+    if (!action || (action === 'publish' && editor.publicationState !== 'eligible')
+        || publicationSignature(currentWorldDetail) !== publicationSignature(editor.originalWorld)) return false;
+    for (const id of ['worldPublicationConfirmModal', 'worldPublicationConfirmTitle', 'worldPublicationConfirmName',
+      'worldPublicationConfirmId', 'worldPublicationConfirmWarning', 'worldPublicationConfirmStatus', 'btnCancelWorldPublication', 'btnConfirmWorldPublication']) {
+      if (!element(id)) return false;
+    }
+    closeWorldPublicationConfirm();
+    const context = capture(action, makeAuthSessionToken());
+    context.editorContext = editor;
+    context.originalWorld = editor.originalWorld;
+    context.action = action;
+    context.confirmedSignature = publicationSignature(editor.originalWorld);
+    publicationContext = context;
+    element('worldPublicationConfirmTitle').textContent = message('world.publication.' + (action === 'publish' ? 'confirmPublishTitle' : 'confirmUnpublishTitle'), action === 'publish' ? 'Publish this world?' : 'Unpublish this world?');
+    element('worldPublicationConfirmName').textContent = displayValue(editor.originalWorld.name || editor.worldId);
+    element('worldPublicationConfirmId').textContent = editor.worldId;
+    element('worldPublicationConfirmWarning').textContent = message('world.publication.' + (action === 'publish' ? 'publishWarning' : 'unpublishWarning'), action === 'publish'
+      ? 'Publication is subject to VRChat eligibility and review. Your unsaved edits will not be submitted.'
+      : 'This removes the world from public discovery. Your unsaved edits will not be submitted.');
+    element('btnConfirmWorldPublication').textContent = message('world.publication.' + (action === 'publish' ? 'publishConfirm' : 'unpublishConfirm'), action === 'publish' ? 'Confirm publication' : 'Confirm unpublication');
+    element('worldPublicationConfirmStatus').textContent = '';
+    showDialog(context, 'btnCancelWorldPublication');
+    return true;
+  }
+
+  function publicationFlightCurrent(flight, requireConfirmedState = false) {
+    const context = flight.context;
+    return flights.get(context.worldId) === flight && worldGenerations.get(context.worldId) === flight.generation
+      && sessionCurrent(context, flight.sessionToken) && !alreadyDeleted(context.worldId)
+      && element(context.operation === 'edit' ? 'worldEditId' : 'worldPublicationConfirmId')?.textContent === context.worldId
+      && (!requireConfirmedState || (dialogCurrent(context, flight.sessionToken) && detailCurrent(context, flight.sessionToken)
+        && publicationEditorCurrent(context) && !context.invalidated
+        && publicationSignature(currentWorldDetail) === context.confirmedSignature));
+  }
+
+  function publicationPreflightCurrent(flight) {
+    return publicationFlightCurrent(flight) && dialogCurrent(flight.context, flight.sessionToken)
+      && detailCurrent(flight.context, flight.sessionToken) && publicationEditorCurrent(flight.context);
+  }
+
+  async function publicationWorld(context, current) {
+    const response = await apiCall(`/api/vrc/worlds/${encodeURIComponent(context.worldId)}`, {
+      noAbort: true, noCache: true, noDedupe: true,
+    });
+    if (!current()) return null;
+    const world = await jsonOrNull(response);
+    if (!current()) return null;
+    if (!response.ok || world?.error) throw new Error(responseMessage(world, response));
+    if (!authoritativeWorld(world, context, {}) || typeof world.releaseStatus !== 'string' || !world.releaseStatus
+        || !Array.isArray(world.tags) || world.tags.some(tag => typeof tag !== 'string')) {
+      throw new Error(message('world.manage.responseInvalid', 'The server did not return a matching world record.'));
+    }
+    return world;
+  }
+
+  function rebasePublicationEditor(world, context) {
+    if (!publicationEditorCurrent(context) || !detailCurrent(context)) return;
+    const editor = context.operation === 'edit' ? context : context.editorContext;
+    const controls = editControls();
+    const initialValues = {};
+    for (const field of Object.keys(FIELD_IDS)) {
+      const dirty = controls[field].value !== editor.initialValues[field];
+      const draft = controls[field].value;
+      controls[field].value = editValue(world, field);
+      initialValues[field] = controls[field].value; // Read normalized browser control values.
+      if (dirty) controls[field].value = draft;
+    }
+    editor.originalWorld = frozenCopy(world);
+    editor.initialValues = Object.freeze(initialValues);
+    editor.publicationState = 'unchecked';
+    editor.publicationNotice = '';
+    element('worldEditReleaseStatus').textContent = publicationLabel(world);
+  }
+
+  async function syncPublicationWorld(world, flight, hook) {
+    const options = callbackOptions(flight);
+    if (!options.isOperationCurrent()) return false;
+    rebasePublicationEditor(world, flight.context);
+    await hook(world, options);
+    return options.isOperationCurrent();
+  }
+
+  function publicationResult(world, action) {
+    const applied = (action === 'publish' && publicationAction(world) === 'unpublish')
+      || (action === 'unpublish' && publicationAction(world) === 'publish');
+    return message('world.publication.' + (applied ? action === 'publish' ? 'published' : 'unpublished' : 'stateChanged'), applied
+      ? action === 'publish' ? 'Publication completed.' : 'Unpublication completed.' : 'The publication state changed. Review the current status.')
+      + ' ' + publicationLabel(world);
+  }
+
+  async function confirmWorldPublication() {
+    const context = publicationContext;
+    if (!context || context.invalidated || !publicationEditorCurrent(context) || !detailCurrent(context)
+        || publicationChange(context.worldId) || context.action !== publicationAction(context.editorContext.originalWorld)
+        || (context.action === 'publish' && context.editorContext.publicationState !== 'eligible')) return false;
+    const hook = typeof applyWorldManagementUpdate === 'function' ? applyWorldManagementUpdate : null;
+    if (!hook) { status(context, message('world.manage.integrationUnavailable', 'World management is not ready.')); return false; }
+    const flight = beginOperation(context, makeAuthSessionToken());
+    if (!flight) return false;
+    invalidatePublicationRead();
+    const options = callbackOptions(flight);
+    const preflightCurrent = () => publicationPreflightCurrent(flight) && !context.invalidated;
+    const operationCurrent = () => publicationFlightCurrent(flight);
+    let phase = 'check';
+    let change = null;
+    status(context, message('world.publication.checking', 'Checking publication eligibility…'));
+    try {
+      const fresh = await publicationWorld(context, preflightCurrent);
+      if (!fresh || !preflightCurrent()) return false;
+      if (publicationSignature(fresh) !== context.confirmedSignature || publicationAction(fresh) !== context.action) {
+        context.invalidated = true;
+        await syncPublicationWorld(fresh, flight, hook);
+        if (options.isOperationCurrent()) publicationNotice(context, message('world.publication.stateChanged', 'The publication state changed. Review the current status.'));
+        return false; // Never replay a confirmed action against a changed state.
+      }
+      rebasePublicationEditor(fresh, context);
+      if (context.action === 'publish') {
+        const eligible = await publicationEligibility(context.worldId, preflightCurrent);
+        if (!preflightCurrent() || eligible === null) return false;
+        context.editorContext.publicationState = eligible ? 'eligible' : 'blocked';
+        if (!eligible) {
+          publicationNotice(context, message('world.publication.cannotPublish', 'VRChat does not currently allow this world to be published.'));
+          return false;
+        }
+      }
+      if (!preflightCurrent()) return false;
+      phase = 'write';
+      change = { sessionToken: flight.sessionToken, action: context.action, committed: false, message: '' };
+      publicationChanges.set(context.worldId, change); // Remember uncertain outcomes as well as committed writes.
+      status(context, message('world.publication.' + (context.action === 'publish' ? 'publishing' : 'unpublishing'), context.action === 'publish' ? 'Publishing…' : 'Unpublishing…'));
+      const response = await apiCall(`/api/vrc/worlds/${encodeURIComponent(context.worldId)}/publish`, {
+        method: context.action === 'publish' ? 'PUT' : 'DELETE', noAbort: true, noCache: true, noDedupe: true,
+      });
+      if (!operationCurrent()) return false;
+      const body = response.status === 204 ? null : await jsonOrNull(response);
+      if (!operationCurrent()) return false;
+      if (!response.ok || body?.error) {
+        publicationChanges.delete(context.worldId); // Explicit rejection is retryable; transport errors are not.
+        change = null;
+        throw new Error(responseMessage(body, response));
+      }
+      change.committed = true;
+      context.invalidated = true;
+      phase = 'refresh';
+      const world = await publicationWorld(context, options.isOperationCurrent);
+      if (!world || !options.isOperationCurrent()) return false;
+      phase = 'sync';
+      if (!await syncPublicationWorld(world, flight, hook)) return false;
+      publicationNotice(context, publicationResult(world, context.action));
+      if (publicationAction(world) === 'publish') {
+        phase = 'check';
+        if (publicationEditorCurrent(context)) context.editorContext.publicationState = 'checking';
+        const eligible = await publicationEligibility(context.worldId, operationCurrent);
+        if (!operationCurrent() || eligible === null) return false;
+        if (publicationEditorCurrent(context)) {
+          context.editorContext.publicationState = eligible ? 'eligible' : 'blocked';
+          if (!eligible) publicationNotice(context, message('world.publication.cannotPublish', 'VRChat does not currently allow this world to be published.'));
+        }
+      }
+      publicationChanges.delete(context.worldId);
+      return true; // Keep the matching editor and its unsaved drafts; show actual returned state.
+    } catch (error) {
+      if (!options.isOperationCurrent()) return false;
+      const key = change ? phase === 'sync' ? 'syncFailed' : change.committed ? 'changedRefreshFailed' : 'outcomeUnknown'
+        : phase === 'check' ? 'checkFailed' : context.action === 'publish' ? 'publishFailed' : 'unpublishFailed';
+      const fallback = change ? phase === 'sync' ? 'Publication changed, but updating the local view failed: {msg}'
+        : change.committed ? 'The publication request succeeded, but refreshing the world failed: {msg}'
+          : 'The publication request outcome is unknown; refresh the world before trying again: {msg}'
+        : phase === 'check' ? 'Checking publication failed: {msg}' : context.action === 'publish' ? 'Publish failed: {msg}' : 'Unpublish failed: {msg}';
+      const text = message('world.publication.' + key, fallback, { msg: error.message });
+      if (change) change.message = text;
+      else if (phase === 'check' && publicationEditorCurrent(context)) context.editorContext.publicationState = 'blocked';
+      publicationNotice(context, text);
+      return false;
+    } finally {
+      finishOperation(flight);
+    }
+  }
+
+  async function refreshWorldPublicationStatus() {
+    const editor = editContext;
+    if (!editor || !publicationWidgets() || !publicationEditorCurrent(editor) || alreadyDeleted(editor.worldId)
+        || activeFlight(editor.worldId)) return false;
+    const context = publicationContext && dialogCurrent(publicationContext) && publicationEditorCurrent(publicationContext) ? publicationContext : editor;
+    const hook = typeof applyWorldManagementUpdate === 'function' ? applyWorldManagementUpdate : null;
+    if (!hook) { publicationNotice(context, message('world.manage.integrationUnavailable', 'World management is not ready.')); syncPublicationUi(); return false; }
+    const flight = beginOperation(context, makeAuthSessionToken());
+    if (!flight) return false;
+    invalidatePublicationRead();
+    editor.publicationState = 'checking';
+    editor.publicationNotice = '';
+    const current = () => publicationFlightCurrent(flight);
+    const change = publicationChange(editor.worldId);
+    let phase = 'refresh';
+    try {
+      const world = await publicationWorld(context, current);
+      if (!world || !current()) return false;
+      if (context !== editor && publicationSignature(world) !== context.confirmedSignature) context.invalidated = true;
+      phase = 'sync';
+      if (!await syncPublicationWorld(world, flight, hook) || !current()) return false;
+      publicationChanges.delete(editor.worldId);
+      if (change) publicationNotice(context, publicationResult(world, change.action));
+      else if (context.invalidated) publicationNotice(context, message('world.publication.stateChanged', 'The publication state changed. Review the current status.'));
+      phase = 'check';
+      if (publicationAction(world) === 'publish') {
+        editor.publicationState = 'checking';
+        const eligible = await publicationEligibility(editor.worldId, current);
+        if (!current() || eligible === null) return false;
+        editor.publicationState = eligible ? 'eligible' : 'blocked';
+        if (!eligible) publicationNotice(context, message('world.publication.cannotPublish', 'VRChat does not currently allow this world to be published.'));
+      }
+      return true;
+    } catch (error) {
+      if (!current()) return false;
+      editor.publicationState = 'blocked';
+      const pending = publicationChange(editor.worldId);
+      const key = pending ? phase === 'sync' ? 'syncFailed' : pending.committed ? 'changedRefreshFailed' : 'outcomeUnknown' : 'checkFailed';
+      const text = message('world.publication.' + key, pending
+        ? phase === 'sync' ? 'Publication changed, but updating the local view failed: {msg}'
+          : pending.committed ? 'The publication request succeeded, but refreshing the world failed: {msg}'
+            : 'The publication request outcome is unknown; refresh the world before trying again: {msg}'
+        : 'Checking publication failed: {msg}', { msg: error.message });
+      if (pending) pending.message = text;
+      publicationNotice(context, text);
+      return false;
+    } finally {
+      if (current() && editor.publicationState === 'checking') editor.publicationState = 'unchecked';
+      finishOperation(flight);
+    }
+  }
+
   function deleteCurrentWorld() {
     const sessionToken = makeAuthSessionToken();
     if (!ownedDetail() || !isAuthSessionCurrent(sessionToken) || alreadyDeleted(currentWorldDetail.id)) return false;
@@ -348,7 +730,7 @@
       return null;
     }
     if (!dialogCurrent(context, sessionToken) || !detailCurrent(context, sessionToken)
-        || element(context.operation === 'edit' ? 'worldEditId' : 'worldDeleteConfirmId')?.textContent !== context.worldId) {
+        || element(context.operation === 'edit' ? 'worldEditId' : context.operation === 'delete' ? 'worldDeleteConfirmId' : 'worldPublicationConfirmId')?.textContent !== context.worldId) {
       status(context, message('world.manage.staleContext', 'This world or account changed. Reopen the dialog.'));
       return null;
     }
@@ -360,6 +742,7 @@
     worldGenerations.set(context.worldId, generation);
     const flight = { context, sessionToken, generation };
     flights.set(context.worldId, flight);
+    invalidatePublicationRead();
     syncDialogButtons();
     return flight;
   }
@@ -380,7 +763,8 @@
       operationGeneration: flight.generation,
       operation: context.operation,
       isSessionCurrent: () => sessionCurrent(context, flight.sessionToken),
-      isDetailCurrent: () => detailCurrent(context, flight.sessionToken),
+      isDetailCurrent: () => detailCurrent(context, flight.sessionToken)
+        && (!['publish', 'unpublish'].includes(context.operation) || publicationEditorCurrent(context)),
       isDialogCurrent: () => dialogCurrent(context, flight.sessionToken),
       isOperationCurrent: () => sessionCurrent(context, flight.sessionToken)
         && flights.get(context.worldId) === flight && worldGenerations.get(context.worldId) === flight.generation,
@@ -458,7 +842,7 @@
       status(context, message('world.manage.staleContext', 'This world or account changed. Reopen the dialog.'));
       return false;
     }
-    if (activeFlight(context.worldId)) return false;
+    if (activeFlight(context.worldId) || publicationChange(context.worldId)) return false;
     let payload;
     try { payload = editPayload(context); }
     catch (error) { status(context, error.message); return false; }
@@ -570,6 +954,10 @@
     confirmWorldDeletion,
     closeWorldDeleteConfirm,
     resetWorldManagementDialogs,
+    openWorldPublicationConfirm,
+    closeWorldPublicationConfirm,
+    confirmWorldPublication,
+    refreshWorldPublicationStatus,
   });
   // Register private function references, not shell/global wrappers. Lazy
   // callers must dispatch to modules.worldManagement, not modules.worlds.

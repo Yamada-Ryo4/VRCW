@@ -931,3 +931,34 @@ test('real lazy shell wrappers load worlds then management and call captured man
     });
   }
 });
+
+
+test('publication sync persists authoritative Labs metadata then withdrawal without removing favorites or selected worlds', async () => {
+  const h = harness();
+  const labs = world(A, { releaseStatus: 'public', tags: ['author_tag_cozy', 'system_labs'], publicationDate: 'none' });
+  const published = h.options(A, { operation: 'publication', isDialogCurrent: () => false }).options;
+  await h.apply('edit', labs, published);
+  assert.equal(h.state().detail.releaseStatus, 'public');
+  assert.deepEqual(h.state().detail.tags, labs.tags);
+  assert.match(h.get('worldDetailBadges').innerHTML, /world\.publication\.labs/);
+  for (const category of ['fav_worlds1', 'fav_worlds2', 'mine']) {
+    assert.equal(item(h.cache(PREFIX + category)).releaseStatus, 'public');
+    assert.deepEqual(item(h.cache(PREFIX + category)).tags, labs.tags);
+  }
+  assert.deepEqual(item(h.device()).tags, labs.tags);
+  assert.deepEqual(h.state().selected, [A, B]);
+  assert.equal(item(h.state().list).favoriteId, 'favorite-list-A');
+  const privateWorld = world(A, { releaseStatus: 'private', tags: ['author_tag_cozy'], publicationDate: 'none' });
+  const withdrawn = h.options(A, { operation: 'publication', isDialogCurrent: () => false }).options;
+  await h.apply('edit', privateWorld, withdrawn);
+  assert.equal(h.state().detail.releaseStatus, 'private');
+  assert.doesNotMatch(h.get('worldDetailBadges').innerHTML, /world\.publication\.labs/);
+  assert.deepEqual(h.state().selected, [A, B]);
+  assert.deepEqual(h.state().list.map(record => record.id), [A, B]);
+  assert.deepEqual(h.state().favorites, [[A, 'favorite-list-A'], [B, 'favorite-list-B']]);
+  assert.deepEqual(item(h.cache(PREFIX + 'fav_worlds1')).tags, privateWorld.tags);
+  assert.equal(item(h.cache(PREFIX + 'fav_worlds1')).favoriteId, 'favorite-cache-1-A');
+  assert.deepEqual(item(h.device()).tags, privateWorld.tags);
+  assert.equal(item(h.device()).localFavorite, true);
+  assert.equal(h.requests.length, 0, 'view/cache synchronization must not publish, unpublish, or delete remotely');
+});

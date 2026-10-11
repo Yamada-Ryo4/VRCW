@@ -203,7 +203,7 @@ const submitted = h => h.requests.filter(request => request.options.method === '
 // API, and token-aware fake IDB. No existing runtime or real service is loaded.
 test('registers private handlers; shell wrappers cannot recursively call themselves', async () => {
   const h = harness();
-  const names = ['editCurrentWorld', 'saveWorldEdit', 'closeWorldEditModal', 'updateWorldOwnerActions', 'deleteCurrentWorld', 'confirmWorldDeletion', 'closeWorldDeleteConfirm', 'resetWorldManagementDialogs'];
+  const names = ['editCurrentWorld', 'saveWorldEdit', 'closeWorldEditModal', 'updateWorldOwnerActions', 'deleteCurrentWorld', 'confirmWorldDeletion', 'closeWorldDeleteConfirm', 'resetWorldManagementDialogs', 'openWorldPublicationConfirm', 'closeWorldPublicationConfirm', 'confirmWorldPublication', 'refreshWorldPublicationStatus'];
   assert.deepEqual(Object.keys(h.module).sort(), names.sort());
   h.run('window.editCurrentWorld = () => { throw new Error("shell wrapper re-entered"); }; window.deleteCurrentWorld = window.editCurrentWorld');
   assert.equal(h.module.editCurrentWorld(), true);
@@ -222,7 +222,7 @@ test('fills controls from a frozen official snapshot with text/value only; publi
   assert.equal(h.get('worldEditCapacity').value, '');
   assert.equal(h.get('worldEditRecommendedCapacity').value, '');
   assert.equal(h.get('worldEditTags').value, 'cozy, music');
-  assert.equal(h.get('worldEditReleaseStatus').textContent, 'private');
+  assert.equal(h.get('worldEditReleaseStatus').textContent, 'Private');
   assert.equal(h.get('worldEditId').textContent, A);
   assert.equal(h.get('worldEditName').focusCount, 1);
   assert.equal(h.locks.count, 1);

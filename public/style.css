@@ -1826,6 +1826,42 @@ select.input-field {
   box-sizing: border-box;
 }
 
+.world-publication-section {
+  padding: 14px;
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.world-publication-section h3 {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+}
+
+.world-publication-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.world-publication-note {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#worldPublicationConfirmModal .modal-content {
+  max-width: 460px;
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
+#worldPublicationConfirmModal .modal-actions {
+  flex-wrap: wrap;
+}
+
 .world-management-status {
   color: var(--error);
   font-size: 0.82rem;
