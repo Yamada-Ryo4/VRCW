@@ -86,7 +86,7 @@ test('world cache DTO preserves labs tags without changing cloud favorite member
   assert.match(worlds, /w\.releaseStatus === 'public' && w\.tags\?\.includes\('system_labs'\) \? t\('world\.publication\.labs'\)/);
 });
 
-test('publication copy is translated with matching placeholders and v199 resources', () => {
+test('publication copy is translated with matching placeholders and v200 resources', () => {
   const context = vm.createContext({
     window: {}, document: { addEventListener() {}, querySelectorAll() { return []; }, documentElement: {} },
     localStorage: { getItem() { return 'zh'; }, setItem() {} }, navigator: { language: 'zh' },
@@ -107,6 +107,6 @@ test('publication copy is translated with matching placeholders and v199 resourc
   assert.equal(context.dictionaries.zh['world.publication.unpublish'].includes('撤回'), true);
   assert.match(context.dictionaries.en['world.publication.publishWarning'], /Labs/i);
   assert.match(context.dictionaries.en['world.publication.unpublishWarning'], /not.*delet|without.*delet/i);
-  assert.doesNotMatch(html, /\?v=198|>v198</);
-  assert.match(html, /id="appVersionBadge"[^>]*>v199</);
+  assert.doesNotMatch(html, /\?v=199|>v199</);
+  assert.match(html, /id="appVersionBadge"[^>]*>v200</);
 });

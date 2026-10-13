@@ -49,7 +49,7 @@ function getFriendProfileActionState(f) {
   const myId = (typeof currentUserId !== 'undefined' && currentUserId) || (window.myProfileData && window.myProfileData.id) || '';
   const hasLocation = !!(f && f.location && f.location.startsWith('wrld_'));
   const isOnline = !!(f && (f.state === 'online' || (f.location && f.location !== 'offline')));
-  const isFriend = !!(f && (f.isFriend || (window.allFriends && window.allFriends.some(af => af.id === id))));
+  const isFriend = isCurrentFriend(f);
   const isJoinable = !!(f && hasLocation
     && !f.location.includes('~private')
     && f.location !== 'traveling'
@@ -695,34 +695,34 @@ async function fetchFriendAvatars(userId, seq) {
 }
 
 async function deleteFriend(userId, name) {
-  if (!confirm(t('confirm.deleteFriend', {name: name}))) return;
+  const session = makeAuthSessionToken();
+  const pending = friendDeletionFlights.get(userId);
+  if (!userId || userId === currentUserId || isFriendRemoved(userId)
+      || (pending && isAuthSessionCurrent(pending.session))) return false;
+  if (!confirm(t('confirm.deleteFriend', { name }))) return false;
+  const flight = { session, profileSeq: window._fpCurrentSeq };
+  friendDeletionFlights.set(userId, flight);
   try {
-    const r = await apiCall(`/api/vrc/auth/user/friends/${userId}`, { method: 'DELETE' });
-    if (!r.ok) throw new Error(await r.text());
-    closeFriendProfile();
-    allFriends = allFriends.filter(f => f.id !== userId);
-    filterFriends();
-    // Persist the trimmed list to IDB so the 60s TTL can't resurrect the
-    // just-deleted friend on the next reload (saveFriendBasics is a closure
-    // inside loadFriendsList, so we inline an equivalent shape here).
-    try {
-      const basics = allFriends.map(f => ({
-        id: f.id,
-        displayName: f.displayName,
-        currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl,
-        userIcon: f.userIcon,
-        profilePicOverrideThumbnail: f.profilePicOverrideThumbnail,
-        tags: f.tags,
-        last_platform: f.last_platform,
-        status: f.status,
-        location: f.location,
-        state: f.state
-      }));
-      await idb.set('friend_basics', basics);
-      await idb.set('friend_basics_age', Date.now());
-    } catch (e) { /* IDB best-effort */ }
-    friendLogMsg(t('log.friendDeleted', {name: name}), 'success');
-  } catch(e) { friendLogMsg(t('log.deleteFriendFail', {msg: e.message}), 'error'); }
+    const response = await apiCall(`/api/vrc/auth/user/friends/${encodeURIComponent(userId)}`, {
+      method: 'DELETE', noAbort: true, noCache: true, noDedupe: true,
+    });
+    if (!isAuthSessionCurrent(session)) return false;
+    if (!response.ok) throw new Error(await response.text());
+    if (!isAuthSessionCurrent(session)) return false;
+    const cleanup = applyFriendRemoval(userId, session);
+    if (currentFriendProfile?.id === userId && window._fpCurrentSeq === flight.profileSeq) closeFriendProfile();
+    await cleanup;
+    if (!isAuthSessionCurrent(session)) return false;
+    friendLogMsg(t('log.friendDeleted', { name }), 'success');
+    return true;
+  } catch (error) {
+    if (isAuthSessionCurrent(session) && !isAbortError(error)) {
+      friendLogMsg(t('log.deleteFriendFail', { msg: error.message }), 'error');
+    }
+    return false;
+  } finally {
+    if (friendDeletionFlights.get(userId) === flight) friendDeletionFlights.delete(userId);
+  }
 }
 
 async function sendFriendRequest(userId, name) {

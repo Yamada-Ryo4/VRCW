@@ -19,6 +19,7 @@ function _rememberFavoriteIndex(map, groupName, itemId) {
 async function syncAllFavoriteIds() {
   const sessionToken = makeAuthSessionToken();
   const current = () => isAuthSessionCurrent(sessionToken);
+  const friendRevision = friendListRevision;
   try {
     if (!current()) return false;
     const nextFavoriteIdMap = new Map();
@@ -123,7 +124,13 @@ async function syncAllFavoriteIds() {
     worldFavoriteIdMap = nextWorldFavoriteIdMap;
     avatarFavGroupCounts = nextAvatarFavGroupCounts;
     worldFavGroupCounts = nextWorldFavGroupCounts;
-    if (!friendSyncFailed) friendFavoriteIdMap = nextFriendFavoriteIdMap;
+    if (!friendSyncFailed && friendRevision === friendListRevision) {
+      friendFavoriteIdMap = new Map([...nextFriendFavoriteIdMap.entries()].filter(([id]) => {
+        if (isFriendRemoved(id)) return false;
+        return !friendMembershipSnapshot || !isAuthSessionCurrent(friendMembershipSnapshot.session)
+          || friendMembershipSnapshot.ids.has(id);
+      }));
+    }
     avatarFavoriteIndexByGroup = nextAvatarFavoriteIndexByGroup;
     worldFavoriteIndexByGroup = nextWorldFavoriteIndexByGroup;
 
@@ -822,7 +829,7 @@ function switchTab(tab) {
     // background. The dedicated <i class="fa-solid fa-rotate-right"></i> refresh buttons inside each tab pass true.
     if (tab === "friends") {
       if (!friendsLoaded) await initFriendsTab();
-      else await fetchCurrentFriendCategory(false);
+      else await switchFriendCategory(currentFriendCategory);
     }
     if (tab === "worlds") {
       if (!worldsLoaded) await initWorldsTab();
@@ -1029,6 +1036,8 @@ async function clearAllCacheNow() {
 // and writes them to IDB. Unlike "clear cache", this preserves local favorites
 // and just overwrites stale data with fresh API responses.
 async function refreshAllPersistentCache() {
+  const friendSession = makeAuthSessionToken();
+  const friendRevision = friendListRevision;
   const btn = document.getElementById('btnRefreshAllCache');
   if (btn) { btn.disabled = true; btn.innerHTML = t('shell.refreshing'); }
   const log = (msg) => logMsg(msg, 'info');
@@ -1106,28 +1115,8 @@ async function refreshAllPersistentCache() {
     // 4. Re-fetch friends
     log(t('log.refreshingFriends'));
     try {
-      let offset = 0, friendAll = [];
-      while (true) {
-        const resp = await apiCall(`/api/vrc/auth/user/friends?offset=${offset}&n=100&offline=true`);
-        if (!resp.ok) break;
-        const batch = await resp.json();
-        if (!Array.isArray(batch) || batch.length === 0) break;
-        friendAll = friendAll.concat(batch);
-        if (batch.length < 100) break;
-        offset += 100;
-        if (offset >= 1000) break;
-      }
-      const friendBasics = friendAll.map(f => ({
-        id: f.id, displayName: f.displayName,
-        currentAvatarImageUrl: f.currentAvatarImageUrl,
-        currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl,
-        status: f.status, location: f.location,
-        last_activity: f.last_activity, last_login: f.last_login,
-        isFriend: f.isFriend, tags: f.tags
-      }));
-      await idb.set('friend_basics', friendBasics);
-      await idb.set('friend_basics_age', Date.now());
-      log(t('log.friendsCount', {count: friendAll.length}));
+      const count = await refreshFriendPersistentCache(friendSession, friendRevision);
+      if (count !== false) log(t('log.friendsCount', { count }));
     } catch (e) {
       log(t('log.friendsFail', {msg: e.message}));
     }

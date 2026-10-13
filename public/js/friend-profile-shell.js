@@ -28,7 +28,7 @@ function getFriendProfileActionState(f) {
   const myId = (typeof currentUserId !== 'undefined' && currentUserId) || (window.myProfileData && window.myProfileData.id) || '';
   const hasLocation = !!(f && f.location && f.location.startsWith('wrld_'));
   const isOnline = !!(f && (f.state === 'online' || (f.location && f.location !== 'offline')));
-  const isFriend = !!(f && (f.isFriend || (window.allFriends && window.allFriends.some(af => af.id === id))));
+  const isFriend = isCurrentFriend(f);
   const isJoinable = !!(f && hasLocation
     && !f.location.includes('~private')
     && f.location !== 'traveling'

@@ -14,11 +14,167 @@ let currentFriendCategory = 'myprofile';
 let friendsLoaded    = false;
 let currentFriendProfile = null;
 let myProfileData    = null;
+let myProfileFetchGeneration = 0;
+let friendListRevision = 0;
+let friendMembershipSnapshot = null;
+let friendCacheQueue = Promise.resolve();
+const removedFriends = new Map();
+const friendDeletionFlights = new Map();
+
+function isFriendRemoved(userId) {
+  const session = removedFriends.get(userId);
+  if (!session) return false;
+  if (isAuthSessionCurrent(session)) return true;
+  removedFriends.delete(userId);
+  return false;
+}
+
+function isCurrentFriend(user) {
+  if (!user?.id || isFriendRemoved(user.id)) return false;
+  if (friendMembershipSnapshot && isAuthSessionCurrent(friendMembershipSnapshot.session)) {
+    return friendMembershipSnapshot.ids.has(user.id);
+  }
+  return user.isFriend === true || allFriends.some(friend => friend.id === user.id);
+}
+
+async function readFriendMembership(session, current) {
+  const response = await apiCall('/api/vrc/auth/user', { noCache: true, noDedupe: true });
+  if (!current()) return null;
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  const user = await response.json();
+  if (!current()) return null;
+  if (!user || user.id !== currentUserId || !Array.isArray(user.friends)
+      || user.friends.some(id => typeof id !== 'string' || !id)) throw new Error('Invalid friend membership response');
+  const ids = new Set(user.friends);
+  for (const id of ids) {
+    if (!isFriendRemoved(id)) continue;
+    // A renewed friendship must be confirmed independently; stale friend pages
+    // and residual favorite records alone cannot lift a deletion barrier.
+    let renewed = false;
+    try {
+      const status = await apiCall(`/api/vrc/user/${encodeURIComponent(id)}/friendStatus`, { noCache: true, noDedupe: true });
+      if (!current()) return null;
+      const body = status.ok ? await status.json() : null;
+      if (!current()) return null;
+      renewed = body?.isFriend === true;
+    } catch (error) { if (!current() || isAbortError(error)) return null; }
+    if (renewed) removedFriends.delete(id);
+    else ids.delete(id);
+  }
+  return { session, ids };
+}
+
+function friendBasicRecord(friend) {
+  return {
+    id: friend.id,
+    displayName: friend.displayName,
+    currentAvatarThumbnailImageUrl: friend.currentAvatarThumbnailImageUrl,
+    userIcon: friend.userIcon,
+    profilePicOverrideThumbnail: friend.profilePicOverrideThumbnail,
+    tags: friend.tags,
+    last_platform: friend.last_platform,
+    status: friend.status,
+    statusDescription: friend.statusDescription,
+    location: friend.location,
+    state: friend.state,
+    isFriend: true,
+  };
+}
+
+function persistFriendListCache(session, current, friends, favorites, age) {
+  const basics = friends.map(friendBasicRecord);
+  const favoriteEntries = favorites ? Array.from(favorites.entries()) : null;
+  const write = friendCacheQueue.catch(() => {}).then(async () => {
+    if (!isAuthSessionCurrent(session) || !current()) return;
+    await idb.set('friend_basics', basics, session);
+    if (!isAuthSessionCurrent(session) || !current()) return;
+    await idb.set('friend_basics_age', age, session);
+    if (!isAuthSessionCurrent(session) || !current() || !favoriteEntries) return;
+    await idb.set('friend_favorite_map', favoriteEntries, session);
+  });
+  friendCacheQueue = write.catch(() => {});
+  return write;
+}
+
+async function refreshFriendPersistentCache(session, revision) {
+  const current = () => isAuthSessionCurrent(session) && revision === friendListRevision;
+  const records = new Map();
+  for (const offline of [false, true]) {
+    let offset = 0;
+    while (true) {
+      if (!current()) return false;
+      const response = await apiCall(`/api/vrc/auth/user/friends?n=100&offset=${offset}&offline=${offline}`, { noAbort: true, noCache: true, noDedupe: true });
+      if (!current()) return false;
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const batch = await response.json();
+      if (!current()) return false;
+      if (!Array.isArray(batch) || batch.some(friend => !friend || typeof friend.id !== 'string' || !friend.id)) {
+        throw new Error('Invalid friend list response');
+      }
+      for (const friend of batch) if (!isFriendRemoved(friend.id)) records.set(friend.id, friend);
+      if (batch.length < 100) break;
+      offset += batch.length;
+    }
+  }
+  const membership = await readFriendMembership(session, current);
+  if (!current() || !membership) return false;
+  const cached = await idb.get('friend_basics', session);
+  if (!current()) return false;
+  for (const friend of Array.isArray(cached) ? cached : []) {
+    if (friend?.id && membership.ids.has(friend.id) && !records.has(friend.id)) records.set(friend.id, friend);
+  }
+  const users = [...membership.ids].filter(id => !isFriendRemoved(id))
+    .map(id => records.get(id) || { id, displayName: id, state: 'unknown', status: 'unknown' });
+  await persistFriendListCache(session, current, users, null, Date.now());
+  return current() ? users.length : false;
+}
+
+async function applyFriendRemoval(userId, session) {
+  if (!isAuthSessionCurrent(session)) return false;
+  removedFriends.set(userId, session);
+  friendListRevision += 1;
+  if (friendMembershipSnapshot && isAuthSessionCurrent(friendMembershipSnapshot.session)) {
+    friendMembershipSnapshot.ids.delete(userId);
+  }
+  allFriends = allFriends.filter(friend => friend.id !== userId);
+  friendFavoriteIdMap.delete(userId);
+  for (const profile of [myProfileData, window.myProfileData]) {
+    if (!profile || profile.id !== currentUserId) continue;
+    for (const key of ['friends', 'onlineFriends', 'offlineFriends', 'activeFriends']) {
+      if (Array.isArray(profile[key])) profile[key] = profile[key].filter(id => id !== userId);
+    }
+    if (Array.isArray(profile.friends)) profile.friendCount = profile.friends.length;
+  }
+  if (currentTab === 'friends') filterFriends();
+  const stats = document.getElementById('friendStats');
+  if (stats) stats.textContent = t('friend.totalFriends', { count: allFriends.length });
+
+  const write = friendCacheQueue.catch(() => {}).then(async () => {
+    if (!isAuthSessionCurrent(session)) return;
+    const cachedBasics = await idb.get('friend_basics', session);
+    if (!isAuthSessionCurrent(session)) return;
+    const basics = (Array.isArray(cachedBasics) ? cachedBasics : allFriends)
+      .filter(friend => friend?.id && !isFriendRemoved(friend.id)).map(friendBasicRecord);
+    const cachedFavorites = await idb.get('friend_favorite_map', session);
+    if (!isAuthSessionCurrent(session)) return;
+    const favorites = new Map(Array.isArray(cachedFavorites) ? cachedFavorites : []);
+    for (const [id, entry] of friendFavoriteIdMap) favorites.set(id, entry);
+    for (const id of favorites.keys()) if (isFriendRemoved(id)) favorites.delete(id);
+    await idb.set('friend_basics', basics, session);
+    if (!isAuthSessionCurrent(session)) return;
+    await idb.set('friend_basics_age', 0, session);
+    if (!isAuthSessionCurrent(session)) return;
+    await idb.set('friend_favorite_map', Array.from(favorites.entries()), session);
+  });
+  friendCacheQueue = write.catch(() => {});
+  await write.catch(error => console.warn('Friend removal cache update failed:', error.message));
+  return isAuthSessionCurrent(session);
+}
 
 async function initFriendsTab() {
   friendsLoaded = true;
   fetchMyModerations();
-  switchFriendCategory('myprofile');
+  await switchFriendCategory(currentFriendCategory);
 }
 
 // Helper: make a sidebar button with cat-btn + btn-secondary styling identical to Models tab
@@ -29,7 +185,8 @@ function makeCatBtn(text, onclick, id) {
 
 function switchFriendCategory(cat) {
   currentFriendCategory = cat;
-  runPriorityTask(async () => {
+  return runPriorityTask(async () => {
+    if (currentFriendCategory !== cat || currentTab !== 'friends') return;
     document.querySelectorAll('#friendsPanel .cat-btn, #friendsPanel .category-btn').forEach(b => {
     b.classList.remove('active','btn-primary');
     b.classList.add('btn-secondary');
@@ -66,82 +223,73 @@ function switchFriendCategory(cat) {
 }
 
 async function fetchMyProfile(forceRefresh = false) {
-  // Show the inline view (not modal) in the right panel
+  const session = makeAuthSessionToken();
+  const generation = ++myProfileFetchGeneration;
+  const current = () => isAuthSessionCurrent(session) && generation === myProfileFetchGeneration;
+  const foreground = () => current() && currentTab === 'friends' && currentFriendCategory === 'myprofile';
   const myView = document.getElementById('friendMyProfileView');
-  const listView = document.getElementById('friendListView');
-  if (myView && (!myProfileData || forceRefresh)) { myView.style.display = ''; myView.innerHTML = '<div style="text-align:center;padding:60px;color:rgba(255,255,255,0.3);">' + escHtml(t('loading')) + '</div>'; }
-  if (listView) listView.style.display = 'none';
-  // Highlight the nav entry
-  document.querySelectorAll('#friendsPanel .cat-btn').forEach(b => b.classList.remove('active','btn-primary'));
-  const catBtn = document.getElementById('friendCatMyprofile');
-  if (catBtn) { catBtn.classList.add('active','btn-primary'); catBtn.style.display = ''; }
+  if (foreground() && myView) {
+    myView.style.display = 'block';
+    if (myProfileData) renderMyProfile(myProfileData);
+    else myView.innerHTML = '<div style="text-align:center;padding:60px;color:rgba(255,255,255,0.3);">' + escHtml(t('loading')) + '</div>';
+  }
   try {
-    // Stale-while-revalidate:
-    // 1. Render cached data immediately (name, avatar, bio — stable fields)
-    const cached = await idb.get('my_profile');
-    if (cached && !forceRefresh) {
+    const cached = await idb.get('my_profile', session);
+    if (!current()) return;
+    if (cached?.id && (!currentUserId || cached.id === currentUserId) && !forceRefresh) {
       myProfileData = cached;
-      renderMyProfile(cached);
+      window.myProfileData = cached;
+      if (foreground()) renderMyProfile(cached);
       renderSidebarMiniProfile(cached);
     }
 
-    // 2. Always fetch fresh from API (gets latest status etc.)
-    const resp = await apiCall('/api/vrc/auth/user', { cache: 'no-store' });
-    if (!resp.ok) throw new Error('Failed to fetch profile');
+    const resp = await apiCall('/api/vrc/auth/user', { noAbort: true, noCache: true, noDedupe: true });
+    if (!current()) return;
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const fresh = await resp.json();
+    if (!current()) return;
+    if (!fresh?.id || (currentUserId && fresh.id !== currentUserId)) throw new Error('Invalid profile response');
     myProfileData = fresh;
+    window.myProfileData = fresh;
+    if (foreground()) renderMyProfile(fresh);
+    renderSidebarMiniProfile(fresh);
+    await idb.set('my_profile', fresh, session);
+    if (!current()) return;
 
-    // 3. auth/user may not return location — fetch it from users/{id}
-    //    which always includes the current in-game location
-    if (fresh.id) {
-      apiCall('/api/vrc/users/' + fresh.id).then(r => r.ok ? r.json() : null).then(full => {
-        if (!full) return;
-        myProfileData.location = full.location || myProfileData.location;
-        myProfileData.state    = full.state    || myProfileData.state;
-        // Update the location row without a full re-render
-        const locRow = document.getElementById('myProfileLocRow');
-        const locEl  = document.getElementById('myProfileLocText');
-        const loc = myProfileData.location;
-        if (locRow && locEl) {
-          if (loc && loc !== 'offline' && loc !== 'private') {
-            locRow.style.display = '';
-            getLocationDisplay(loc).then(txt => {
-              locEl.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(loc)}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${txt}</a> <button onclick="inviteSelf('${escJsAttr(loc)}')" class="btn btn-xs" style="background:rgba(134,239,172,0.1);color:#4ade80;border:1px solid rgba(134,239,172,0.2);padding:2px 8px;border-radius:4px;font-size:0.75em;cursor:pointer;vertical-align:middle;"><i class="fa-solid fa-envelope"></i> ${t('friend.inviteSelf')}</button>`;
-            }).catch(() => { locEl.textContent = loc; });
-          } else if (loc === 'private') {
-            locRow.style.display = '';
-            locEl.innerHTML = t('friend.privateRoom');
-          } else {
-            locRow.style.display = 'none';
-          }
+    // auth/user can omit location; do not let this asynchronous enrichment
+    // change the active category or overwrite a newer account/profile refresh.
+    void apiCall('/api/vrc/users/' + encodeURIComponent(fresh.id), { noAbort: true, noCache: true, noDedupe: true })
+      .then(r => r.ok ? r.json() : null).then(async full => {
+        if (!current() || !full || full.id !== fresh.id) return;
+        const enriched = { ...fresh };
+        for (const key of ['location', 'state', 'status', 'statusDescription']) {
+          if (typeof full[key] === 'string') enriched[key] = full[key];
         }
+        myProfileData = enriched;
+        window.myProfileData = enriched;
+        if (foreground()) renderMyProfile(enriched);
+        renderSidebarMiniProfile(enriched);
+        await idb.set('my_profile', enriched, session);
       }).catch(() => {});
-    }
-
-    await idb.set('my_profile', fresh); // update cache
-    const u = fresh;
-    // Render profile INLINE into the right panel area
-    renderMyProfile(u);
-    // Update the sidebar mini-profile card
-    renderSidebarMiniProfile(u);
     fetchMyModerations();
-  } catch(e) {
-    if (isAbortError(e)) return;
-    // Network blip / 522 / etc.: if we already rendered cached profile content,
-    // KEEP it visible — don't replace the populated panel with a red error
-    // message. Only show the error state when there's nothing cached to fall
-    // back to.
+  } catch (error) {
+    if (!current() || isAbortError(error)) return;
     if (myProfileData) {
-      console.warn('fetchMyProfile refresh failed (keeping cached):', e.message);
-      try { friendLogMsg(t('log.profileRefreshFailCached', {msg: e.message}), 'error'); } catch(_) {}
-      return;
+      if (foreground()) renderMyProfile(myProfileData);
+      friendLogMsg(t('log.profileRefreshFailCached', { msg: error.message }), 'error');
+    } else if (foreground() && myView) {
+      myView.innerHTML = `<div style="text-align:center;padding:60px;color:var(--error);">${escHtml(t('toast.loadFailMsg', { msg: error.message }))}</div>`;
     }
-    if (myView) myView.innerHTML = `<div style="text-align:center;padding:60px;color:var(--error);">${escHtml(t('toast.loadFailMsg', {msg: e.message}))}</div>`;
   }
 }
 
 function renderMyProfile(u) {
   const view = document.getElementById('friendMyProfileView');
+  if (!view) return;
+  const session = makeAuthSessionToken();
+  const generation = myProfileFetchGeneration;
+  const current = () => isAuthSessionCurrent(session) && generation === myProfileFetchGeneration
+    && currentTab === 'friends' && currentFriendCategory === 'myprofile' && myProfileData?.id === u.id;
   const trust  = getTrustInfo(u.tags || []);
   const vrcP   = isVRCPlus(u.tags || []);
   const langs  = getLanguages(u.tags || []);
@@ -253,8 +401,8 @@ function renderMyProfile(u) {
       if (u.location && u.location !== 'offline' && u.location !== 'private') {
         locRow.style.display = '';
         getLocationDisplay(u.location).then(txt => {
-          if (locEl) locEl.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(u.location)}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${txt}</a>`;
-        }).catch(() => { if (locEl) locEl.textContent = u.location; });
+          if (current() && locEl.isConnected !== false) locEl.innerHTML = `<a href="#" onclick="openInstanceDetail('${escJsAttr(u.location)}'); event.preventDefault();" style="color:var(--accent-light);text-decoration:none;">${txt}</a>`;
+        }).catch(() => { if (current() && locEl.isConnected !== false) locEl.textContent = u.location; });
       } else if (u.location === 'private') {
         locRow.style.display = '';
         locEl.innerHTML = t('friend.privateRoom');
@@ -296,8 +444,9 @@ function renderMyProfile(u) {
       // Fallback: check all groups if showcased/represented fields are missing.
       // noAbort: this is a user-initiated profile view, not a tab-load — it must
       // NOT be cancelled by switchTab's currentTabAbortController.abort().
-      const fetchGroups = () => apiCall('/api/vrc/users/' + u.id + '/groups?n=50', { noAbort: true }).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)));
+      const fetchGroups = () => apiCall('/api/vrc/users/' + encodeURIComponent(u.id) + '/groups?n=50', { noAbort: true }).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)));
       fetchGroups().then(groups => {
+        if (!current() || el.isConnected === false) return;
         const filtered = groups.filter(g => g.isRepresenting);
         if (!filtered.length) {
           el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">' + escHtml(t('friend.noRepresentedGroup')) + '</div>';
@@ -318,9 +467,11 @@ function renderMyProfile(u) {
         </div>`;
         observeImages(el);
       }).catch(() => {
-        // First attempt failed — retry once after 1.5 s before showing error
+        if (!current() || el.isConnected === false) return;
         setTimeout(() => {
+          if (!current() || el.isConnected === false) return;
           fetchGroups().then(groups => {
+            if (!current() || el.isConnected === false) return;
             const filtered = groups.filter(g => g.isRepresenting);
             if (!filtered.length) {
               el.innerHTML = '<div style="font-size:0.9em;color:var(--text-muted);opacity:0.6;">' + escHtml(t('friend.noRepresentedGroup')) + '</div>';
@@ -341,6 +492,7 @@ function renderMyProfile(u) {
             </div>`;
             observeImages(el);
           }).catch((e) => {
+            if (!current() || el.isConnected === false) return;
             el.innerHTML = '<div style="font-size:0.85em;color:var(--text-muted);opacity:0.6;">' + escHtml(t('toast.groupsLoadFail', {msg: String(e.message || e)})) + '</div>';
           });
         }, 1500);
@@ -358,30 +510,38 @@ function renderMyProfile(u) {
 const FRIENDS_CACHE_TTL = 60 * 1000; // 60s
 async function fetchCurrentFriendCategory(forceRefresh = false) {
   const seq = ++currentGlobalFetchSeq;
+  const session = makeAuthSessionToken();
+  const revision = friendListRevision;
   const cat = currentFriendCategory;
-  const refreshAuthEpoch = typeof authSessionEpoch === 'number' ? authSessionEpoch : null;
   const isRefreshCurrent = () => seq === currentGlobalFetchSeq
-    && cat === currentFriendCategory
-    && (refreshAuthEpoch == null || authSessionEpoch === refreshAuthEpoch);
+    && cat === currentFriendCategory && currentTab === 'friends'
+    && revision === friendListRevision && isAuthSessionCurrent(session);
   const listEl = document.getElementById('friendList');
   const statsEl = document.getElementById('friendStats');
   if (!listEl) return;
 
-  // Use a temporary map to build the fresh list while preserving existing rendering
   const friendMap = new Map();
+  const nextFriendFavoriteIdMap = new Map();
+  let onlineFriendSnapshotComplete = false;
+  let offlineFriendSnapshotComplete = false;
+  let favoriteRefreshFailed = false;
+  const authoritativeFriendIds = new Set();
 
   // ── Step 1: Load basics from cache immediately ──────────────────────────
   let cacheIsFresh = false;
   try {
-    const cachedBasics = await idb.get('friend_basics') || [];
+    await friendCacheQueue;
     if (!isRefreshCurrent()) return;
-    const cacheAge = await idb.get('friend_basics_age') || 0;
+    const cached = await idb.get('friend_basics', session);
+    const cachedBasics = Array.isArray(cached) ? cached.filter(friend => friend?.id && !isFriendRemoved(friend.id)) : [];
+    if (!isRefreshCurrent()) return;
+    const cacheAge = await idb.get('friend_basics_age', session) || 0;
     if (!isRefreshCurrent()) return;
     
-    const cachedFavMap = await idb.get('friend_favorite_map');
+    const cachedFavMap = await idb.get('friend_favorite_map', session);
     if (!isRefreshCurrent()) return;
-    if (cachedFavMap) {
-      friendFavoriteIdMap = new Map(cachedFavMap);
+    if (Array.isArray(cachedFavMap)) {
+      friendFavoriteIdMap = new Map(cachedFavMap.filter(([id]) => !isFriendRemoved(id)));
     }
     
     cacheIsFresh = cachedBasics.length > 0 && !forceRefresh && (Date.now() - cacheAge) < FRIENDS_CACHE_TTL;
@@ -426,60 +586,46 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
 
   const updateFriendBatch = (batch) => {
     if (!isRefreshCurrent()) return;
-    batch.forEach(f => {
-      friendMap.set(f.id, f);
-      // Also update the global allFriends array
-      const idx = allFriends.findIndex(ex => ex.id === f.id);
-      if (idx !== -1) allFriends[idx] = Object.assign(allFriends[idx], f);
-      else allFriends.push(f);
+    batch.forEach(friend => {
+      if (!friend?.id || isFriendRemoved(friend.id)) return;
+      const fresh = { ...friend, isFriend: true };
+      friendMap.set(fresh.id, fresh);
+      authoritativeFriendIds.add(fresh.id);
+      if (friendMembershipSnapshot && isAuthSessionCurrent(friendMembershipSnapshot.session)) {
+        friendMembershipSnapshot.ids.add(fresh.id);
+      }
+      const idx = allFriends.findIndex(existing => existing.id === fresh.id);
+      if (idx !== -1) allFriends[idx] = { ...allFriends[idx], ...fresh };
+      else allFriends.push(fresh);
     });
     debouncedFilter();
-    // Update basics cache (persist only non-volatile fields)
-    saveFriendBasics();
   };
 
-  const saveFriendBasics = () => {
-    const basics = allFriends.map(f => ({
-      id: f.id,
-      displayName: f.displayName,
-      currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl,
-      userIcon: f.userIcon,
-      profilePicOverrideThumbnail: f.profilePicOverrideThumbnail,
-      tags: f.tags,
-      last_platform: f.last_platform,
-      // Persist last known volatile fields to avoid filter flash on next load
-      status: f.status,
-      location: f.location,
-      state: f.state
-    }));
-    if (!isRefreshCurrent()) return;
-    idb.set('friend_basics', basics).catch(()=>{});
-    idb.set('friend_basics_age', Date.now()).catch(()=>{});
+  const fetchFriendPages = async offline => {
+    let offset = 0;
+    while (true) {
+      if (!isRefreshCurrent()) return false;
+      const response = await apiCall(`/api/vrc/auth/user/friends?n=100&offset=${offset}&offline=${offline}`, { noCache: true, noDedupe: true });
+      if (!isRefreshCurrent()) return false;
+      if (!response.ok) return false;
+      const batch = await response.json();
+      if (!isRefreshCurrent()) return false;
+      if (!Array.isArray(batch) || batch.some(friend => !friend || typeof friend.id !== 'string' || !friend.id)) return false;
+      updateFriendBatch(batch);
+      if (batch.length < 100) return true;
+      offset += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
   };
 
   try {
-    // 1. Fetch Online Friends (High Priority, Fast)
-    let onlineOffset = 0;
-    while (true) {
-      if (seq !== currentGlobalFetchSeq) return;
-      const r = await apiCall(`/api/vrc/auth/user/friends?n=100&offset=${onlineOffset}&offline=false`);
-      if (!r.ok) break;
-      const batch = await r.json();
-      if (!batch || !batch.length || seq !== currentGlobalFetchSeq) break;
-      updateFriendBatch(batch);
-      if (batch.length < 100) break;
-      onlineOffset += 100;
-    }
-
-    // 2. Fetch Favorite IDs & Refresh them in Parallel (Priority to Favorites)
-    const favoriteGroups = ['group_0', 'group_1', 'group_2', 'group_3'];
-    const favoriteIds = new Set();
+    onlineFriendSnapshotComplete = await fetchFriendPages(false);
+    if (!isRefreshCurrent()) return;
+    const favoriteGroups = [...new Set(['group_0', 'group_1', 'group_2', 'group_3', ...friendFavGroups.map(group => group.name)])];
     
     // Build favorites in a temporary map. Do not clear the last known map until
     // every group page succeeds; a partial response must never look like an
     // authoritative "not favorited" result.
-    const nextFriendFavoriteIdMap = new Map();
-    let favoriteRefreshFailed = false;
     await Promise.all(favoriteGroups.map(async group => {
       let offset = 0;
       while (true) {
@@ -498,8 +644,7 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
         if (!batch.length) break;
         if (!isRefreshCurrent()) return;
         batch.forEach(fav => {
-          if (!fav || !fav.favoriteId || !fav.id) return;
-          favoriteIds.add(fav.favoriteId);
+          if (!fav || !fav.favoriteId || !fav.id || isFriendRemoved(fav.favoriteId)) return;
           // VRChat shape: favoriteId is the target user ID; id is the
           // favorite-record ID used by DELETE /favorites/{id}.
           const entry = nextFriendFavoriteIdMap.get(fav.favoriteId);
@@ -518,48 +663,55 @@ async function fetchCurrentFriendCategory(forceRefresh = false) {
       console.warn('Friend favorite refresh incomplete; retaining previous map');
     }
 
-    // High-concurrency refresh for all Favorites (parallel fetch /users/{id})
-    const fIds = [...favoriteIds];
-    const CONCURRENCY = 50;
-    for (let i = 0; i < fIds.length; i += CONCURRENCY) {
-      if (!isRefreshCurrent()) return;
-      const chunk = fIds.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(chunk.map(uid =>
-        apiCall(`/api/vrc/users/${uid}`).then(r => r.ok ? r.json() : null)
-      ));
-      if (!isRefreshCurrent()) return;
-      const freshBatch = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
-      updateFriendBatch(freshBatch);
-      if (statsEl) statsEl.textContent = t('friend.refreshingReady', {count: friendMap.size});
-    }
-    if (isRefreshCurrent() && !favoriteRefreshFailed) {
-      friendFavoriteIdMap = nextFriendFavoriteIdMap;
-      idb.set('friend_favorite_map', Array.from(friendFavoriteIdMap.entries())).catch(() => {});
-      debouncedFilter();
-    }
-
-
-    // 3. Fetch Offline Friends (Background, Low Priority)
-    if (cat === 'all' || cat === 'offline') {
-      let offlineOffset = 0;
-      while (offlineOffset < 3000) {
-        if (cat !== currentFriendCategory) return;
-        const r = await apiCall(`/api/vrc/auth/user/friends?n=100&offset=${offlineOffset}&offline=true`);
-        if (!r.ok) break;
-        const batch = await r.json();
-        if (!batch || !batch.length) break;
-        updateFriendBatch(batch);
-        if (batch.length < 100) break;
-        offlineOffset += 100;
-        await new Promise(r => setTimeout(r, 200)); // Be nice to API
+    // Favorites are not friendship evidence: /users/{id} still resolves after
+    // unfriend, and upstream favorite records can outlive the relationship.
+    offlineFriendSnapshotComplete = await fetchFriendPages(true);
+    if (!isRefreshCurrent()) return;
+    let membership = null;
+    try { membership = await readFriendMembership(session, isRefreshCurrent); }
+    catch (error) { if (isRefreshCurrent()) console.warn('Friend membership unavailable:', error.message); }
+    if (!isRefreshCurrent()) return;
+    const complete = onlineFriendSnapshotComplete && offlineFriendSnapshotComplete && !!membership;
+    if (complete) {
+      friendMembershipSnapshot = membership;
+      for (const id of membership.ids) authoritativeFriendIds.add(id);
+      allFriends = allFriends.filter(friend => membership.ids.has(friend.id) && !isFriendRemoved(friend.id));
+      const missing = [...membership.ids].filter(id => !allFriends.some(friend => friend.id === id));
+      for (let i = 0; i < missing.length; i += 8) {
+        const chunk = missing.slice(i, i + 8);
+        const results = await Promise.allSettled(chunk.map(async id => {
+          const response = await apiCall(`/api/vrc/users/${encodeURIComponent(id)}`, { noCache: true, noDedupe: true });
+          if (!isRefreshCurrent() || !response.ok) return null;
+          const user = await response.json();
+          return isRefreshCurrent() && user?.id === id ? user : null;
+        }));
+        if (!isRefreshCurrent()) return;
+        updateFriendBatch(results.filter(result => result.status === 'fulfilled' && result.value).map(result => result.value));
+      }
+      for (const id of missing) {
+        if (!isFriendRemoved(id) && !allFriends.some(friend => friend.id === id)) {
+          allFriends.push({ id, displayName: id, state: 'unknown', status: 'unknown', isFriend: true });
+        }
       }
     }
-
-    if (statsEl) statsEl.textContent = t('friend.totalFriends', {count: allFriends.length});
-    friendLogMsg(t('log.friendsSynced'), 'success');
-  } catch (e) {
-    console.error('Fetch error:', e);
+    if (!favoriteRefreshFailed) {
+      friendFavoriteIdMap = new Map([...nextFriendFavoriteIdMap.entries()]
+        .filter(([id]) => !isFriendRemoved(id) && (!complete || membership.ids.has(id))));
+    }
+    if (_filterDebounceTimer) { clearTimeout(_filterDebounceTimer); _filterDebounceTimer = null; }
+    filterFriends();
+    await persistFriendListCache(session, isRefreshCurrent, allFriends,
+      favoriteRefreshFailed ? null : friendFavoriteIdMap, complete ? Date.now() : 0);
+    if (!isRefreshCurrent()) return;
+    if (statsEl) statsEl.textContent = t('friend.totalFriends', { count: allFriends.length });
+    friendLogMsg(t(complete && !favoriteRefreshFailed ? 'log.friendsSynced' : 'log.friendsSyncError'),
+      complete && !favoriteRefreshFailed ? 'success' : 'error');
+  } catch (error) {
+    if (!isRefreshCurrent() || isAbortError(error)) return;
+    console.error('Fetch error:', error);
     friendLogMsg(t('log.friendsSyncError'), 'error');
+  } finally {
+    if (_filterDebounceTimer) clearTimeout(_filterDebounceTimer);
   }
 }
 
@@ -726,7 +878,7 @@ function filterFriends() {
   const q      = (document.getElementById('friendSearch')?.value||'').toLowerCase().trim();
   const sortBy = document.getElementById('friendSortBy')?.value || 'status';
   const cat    = currentFriendCategory;
-  let list     = [...allFriends];
+  let list     = allFriends.filter(friend => !isFriendRemoved(friend.id));
 
   // Apply Category Filter
   if (cat === 'online') {
