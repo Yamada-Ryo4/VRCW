@@ -1651,33 +1651,26 @@ async function joinWorldInstance() {
   try {
     // Map internal pref keys to VRChat API fields
     // 'invite' and 'inviteplus' both use type:'private'; inviteplus adds canRequestInvite:true
-    const apiType = (_joinType === 'invite' || _joinType === 'inviteplus') ? 'private' : _joinType;
-    const instanceBody = {
-      worldId,
-      type:    apiType,
-      region:  _joinRegion,
-      ownerId: myId,
-    };
-    if (_joinType === 'inviteplus') instanceBody.canRequestInvite = true;
+    const instanceBody = instanceCreateBody(worldId, _joinType, _joinRegion, myId);
 
     const r = await apiCall('/api/vrc/instances', {
       method: 'POST',
       json: instanceBody,
       noAbort: true
     });
-    if (!r.ok) throw new Error(t('toast.createInstanceFail', {status: r.status}));
+    if (!r.ok) throw await instanceApiError(r, t('toast.createInstanceFail', {status: r.status}));
     const inst = await r.json();
-    const location = inst.location || (worldId + ':' + (inst.instanceId || inst.id));
+    const location = createdInstanceLocation(inst, worldId);
 
     // 2. Invite self
     if (statusEl) statusEl.textContent = t('world.sendingInvite');
     const r2 = await apiCall(`/api/vrc/invite/myself/to/${encodeURIComponent(location)}`, { method: 'POST', noAbort: true });
-    if (!r2.ok) throw new Error(t('toast.inviteFailHttp', {status: r2.status}));
+    if (!r2.ok) throw await instanceApiError(r2, t('toast.inviteFailHttp', {status: r2.status}));
 
     if (statusEl) { statusEl.innerHTML = t('log.inviteSelfSent'); statusEl.style.color = 'var(--success)'; }
     allJoinBtns.forEach(b => { b.innerHTML = t('world.invited'); });
   } catch(e) {
-    if (statusEl) { statusEl.innerHTML = '<i class="fa-solid fa-xmark"></i> ' + e.message; statusEl.style.color = 'var(--error)'; }
+    if (statusEl) { statusEl.textContent = '✗ ' + e.message; statusEl.style.color = 'var(--error)'; }
     allJoinBtns.forEach(b => {
       if (b.id === 'worldDetailJoinBtn') b.innerHTML = '<i class="fa-solid fa-bolt"></i> ';
       else b.innerHTML = t('world.joinWorld');
