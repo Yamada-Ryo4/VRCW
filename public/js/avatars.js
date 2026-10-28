@@ -1496,37 +1496,52 @@ async function downloadSingleAvatar(av) {
     console.warn(`[Download] Failed to fetch fresh data for ${av.id}, using cached version:`, e);
   }
 
-  // Collect all candidate URLs (prefer no-variant first, then security, skip impostor)
+  // Collect all candidate URLs (prefer the plain package, skip impostor).
+  // A "security" variant URL signs to a CDN object VRChat does not always
+  // publish (403 AccessDenied); the plain /file path is the real bundle, so
+  // security URLs are rewritten instead of downloaded as-is.
+  const downloadAssetUrl = url => (typeof url === 'string' && url.includes('/variant/security'))
+    ? url.split('/variant/security').join('/file')
+    : url;
   const candidateUrls = [];
   const fallbackUrls = [];
   for (const pkg of av.unityPackages || []) {
     if (!pkg.assetUrl) continue;
     if (pkg.variant && pkg.variant.includes("impostor")) continue;
-    
+    const assetUrl = downloadAssetUrl(pkg.assetUrl);
+
     const plat = (pkg.platform || "").toLowerCase();
     if (plat === "standalonewindows" || plat === "pc") {
       if (!pkg.variant || pkg.variant === "") {
-        candidateUrls.unshift(pkg.assetUrl); // top priority
+        candidateUrls.unshift(assetUrl); // top priority
       } else {
-        candidateUrls.push(pkg.assetUrl);
+        candidateUrls.push(assetUrl);
       }
     } else {
       if (!pkg.variant || pkg.variant === "") {
-        fallbackUrls.unshift(pkg.assetUrl);
+        fallbackUrls.unshift(assetUrl); // top priority
       } else {
-        fallbackUrls.push(pkg.assetUrl);
+        fallbackUrls.push(assetUrl);
       }
     }
   }
 
   // Fallback 1: try root assetUrl (older API format)
   if (candidateUrls.length === 0 && av.assetUrl) {
-    candidateUrls.push(av.assetUrl);
+    candidateUrls.push(downloadAssetUrl(av.assetUrl));
   }
 
   // Fallback 2: try non-PC packages (e.g. Android/Quest)
   if (candidateUrls.length === 0 && fallbackUrls.length > 0) {
     candidateUrls.push(...fallbackUrls);
+  }
+
+  // The plain package and a rewritten security package can produce the same
+  // /file URL; download each candidate once.
+  const seenUrls = new Set();
+  for (let i = 0; i < candidateUrls.length; i++) {
+    if (seenUrls.has(candidateUrls[i])) { candidateUrls.splice(i, 1); i--; }
+    else seenUrls.add(candidateUrls[i]);
   }
 
   if (candidateUrls.length === 0) {
